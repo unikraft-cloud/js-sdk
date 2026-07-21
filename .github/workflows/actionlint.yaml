@@ -1,0 +1,24 @@
+name: actionlint
+
+on:
+  pull_request:
+    branches:
+    - prod-staging
+    paths:
+    - '.github/workflows/**'
+
+  workflow_call:
+
+# Automatically cancel in-progress actions on the same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request_target' && github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Run actionlint
+      uses: unikraft-cloud/x/.github/actions/actionlint@prod-staging
