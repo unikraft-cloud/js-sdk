@@ -7,6 +7,13 @@ name: release
 #
 # Pushes that do not change the version (docs, CI, refactors) are skipped rather
 # than failed, since npm rejects republishing an existing version.
+#
+# Authentication uses npm trusted publishing (OIDC): npm exchanges the GitHub
+# Actions ID token for a short-lived publish credential, so no long-lived
+# NPM_TOKEN secret is involved. The trusted publisher registered on npmjs.com
+# must name this repository and this workflow file (.github/workflows/
+# release.yaml); renaming or moving this file breaks publishing until the npm
+# side is updated to match.
 on:
   push:
     branches:
@@ -19,7 +26,7 @@ concurrency:
 
 permissions:
   contents: read
-  id-token: write # required for npm provenance
+  id-token: write # required for trusted publishing and provenance
 
 jobs:
   release:
@@ -30,9 +37,13 @@ jobs:
     - name: Set up Node
       uses: actions/setup-node@v4
       with:
-        node-version: 20
-        cache: npm
+        node-version: 24
         registry-url: https://registry.npmjs.org
+
+    # Trusted publishing requires npm >= 11.5.1, which is newer than the npm
+    # bundled with some Node 24 patch releases.
+    - name: Update npm
+      run: npm install -g npm@latest
 
     - name: Resolve release
       id: release
@@ -88,8 +99,9 @@ jobs:
       if: steps.release.outputs.publish == 'true'
       run: npm run test
 
+    # Provenance attestations are generated automatically when publishing from
+    # a public repository via trusted publishing, so --provenance is implied.
+    # --access comes from publishConfig in package.json.
     - name: Publish to npm
       if: steps.release.outputs.publish == 'true'
-      run: npm publish --provenance --access public --tag ${{ steps.release.outputs.dist_tag }}
-      env:
-        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      run: npm publish --tag ${{ steps.release.outputs.dist_tag }}

@@ -130,8 +130,16 @@ There are two channels, mirroring the OpenAPI spec branches:
 | `prod-staging` | `prod-staging` | `next`       | `0.1.1-next.0` |
 
 Pushing to a channel branch publishes the current `package.json` version under
-the corresponding dist-tag (see `.github/workflows/release.yaml`). Publishing
-requires the `NPM_TOKEN` repository secret.
+the corresponding dist-tag (see `.github/workflows/release.yaml`).
+
+Publishing uses [npm trusted publishing][npm-tp]: the workflow exchanges its
+GitHub Actions OIDC token for a short-lived npm credential, so there is no
+`NPM_TOKEN` secret to rotate, and npm attaches a provenance attestation
+automatically. The trusted publisher is registered on npmjs.com against this
+repository and the `release.yaml` workflow file — renaming or moving that file
+breaks publishing until the npm-side configuration is updated to match.
+
+[npm-tp]: https://docs.npmjs.com/trusted-publishers
 
 The version is bumped automatically: the `sync` workflow
 (`.github/workflows/sync.yaml`) regenerates `src/api` from the spec and, if the
