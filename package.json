@@ -1,0 +1,98 @@
+{
+  "name": "@unikraft/cloud",
+  "version": "0.1.0",
+  "description": "Official JavaScript/TypeScript SDK for the Unikraft Cloud Platform API",
+  "license": "BSD-3-Clause",
+  "author": "Unikraft GmbH",
+  "homepage": "https://unikraft.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/unikraft-cloud/js-sdk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/unikraft-cloud/js-sdk/issues"
+  },
+  "keywords": ["unikraft", "unikraft-cloud", "kraftcloud", "sdk", "unikernel", "cloud", "api"],
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "sideEffects": false,
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/esm/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      }
+    },
+    "./api": {
+      "import": {
+        "types": "./dist/esm/api/index.d.ts",
+        "default": "./dist/esm/api/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/api/index.d.ts",
+        "default": "./dist/cjs/api/index.js"
+      }
+    },
+    "./api/platform": {
+      "import": {
+        "types": "./dist/esm/api/platform/index.d.ts",
+        "default": "./dist/esm/api/platform/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/api/platform/index.d.ts",
+        "default": "./dist/cjs/api/platform/index.js"
+      }
+    },
+    "./api/controlplane": {
+      "import": {
+        "types": "./dist/esm/api/controlplane/index.d.ts",
+        "default": "./dist/esm/api/controlplane/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/api/controlplane/index.d.ts",
+        "default": "./dist/cjs/api/controlplane/index.js"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": ["dist", "README.md", "LICENSE.md"],
+  "scripts": {
+    "build": "npm run build:esm && npm run build:cjs && node scripts/fixup.mjs",
+    "build:esm": "tsc -p tsconfig.esm.json",
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/node": "^20.19.43",
+    "typescript": "^5.6.3",
+    "undici": "^6.28.0",
+    "vitest": "^3.2.7"
+  },
+  "peerDependencies": {
+    "undici": "^6.11.0"
+  },
+  "peerDependenciesMeta": {
+    "undici": {
+      "optional": true
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
