@@ -49,18 +49,60 @@ jobs:
     - name: Show diff
       run: git --no-pager diff --stat
 
+    # The release workflow publishes whatever version is in package.json when a
+    # channel branch is pushed, and npm rejects republishing an existing
+    # version, so every sync has to move the version forward.
+    #
+    # npm versions are a single global sequence shared by both dist-tags, so the
+    # two channels cannot both bump the plain patch or they collide. Instead:
+    #
+    #   prod-staging  0.1.0        -> 0.1.1-next.0   (prepatch)
+    #                 0.1.1-next.0 -> 0.1.1-next.1   (prerelease)
+    #   prod-stable   0.1.1-next.1 -> 0.1.1          (patch, promotes)
+    #                 0.1.1        -> 0.1.2          (patch)
+    - name: Bump version
+      id: bump
+      run: |
+        if git diff --quiet -- src/api; then
+          echo "src/api unchanged; skipping version bump."
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        current=$(node -p 'require("./package.json").version')
+        if [ "${{ inputs.channel }}" = "prod-stable" ]; then
+          # `npm version patch` drops an existing prerelease suffix rather than
+          # incrementing, so this promotes 0.1.1-next.N to 0.1.1.
+          npm version patch --no-git-tag-version
+        else
+          case "$current" in
+          *-*) npm version prerelease --preid next --no-git-tag-version ;;
+          *)   npm version prepatch --preid next --no-git-tag-version ;;
+          esac
+        fi
+
+        {
+          echo "changed=true"
+          echo "version=$(node -p 'require("./package.json").version')"
+        } >> "$GITHUB_OUTPUT"
+
     - name: Create pull request
+      if: steps.bump.outputs.changed == 'true'
       uses: peter-evans/create-pull-request@v6
       with:
         base: ${{ inputs.channel }}
         branch: sync/${{ inputs.channel }}
-        commit-message: "chore: Update SDK from OpenAPI spec"
-        title: "chore: Update SDK from OpenAPI spec (${{ inputs.channel }})"
+        commit-message: "chore: Update SDK from OpenAPI spec (v${{ steps.bump.outputs.version }})"
+        title: "chore: Update SDK from OpenAPI spec (${{ inputs.channel }}, v${{ steps.bump.outputs.version }})"
         body: |
           Automated regeneration of the plumbing client from the
           `${{ inputs.channel }}` OpenAPI specification.
+
+          Version bumped to `v${{ steps.bump.outputs.version }}`.
         author: Unikraft Bot <monkey@unikraft.io>
         committer: Unikraft Bot <monkey@unikraft.io>
         signoff: true
         add-paths: |
           src/api
+          package.json
+          package-lock.json

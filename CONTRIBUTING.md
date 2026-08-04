@@ -124,15 +124,32 @@ Commit the regenerated `src/api` together with the change that motivated it.
 
 There are two channels, mirroring the OpenAPI spec branches:
 
-| Channel        | OpenAPI branch | npm dist-tag |
-| -------------- | -------------- | ------------ |
-| `prod-stable`  | `prod-stable`  | `latest`     |
-| `prod-staging` | `prod-staging` | `next`       |
+| Channel        | OpenAPI branch | npm dist-tag | Version shape  |
+| -------------- | -------------- | ------------ | -------------- |
+| `prod-stable`  | `prod-stable`  | `latest`     | `0.1.1`        |
+| `prod-staging` | `prod-staging` | `next`       | `0.1.1-next.0` |
 
 Pushing to a channel branch publishes the current `package.json` version under
-the corresponding dist-tag (see `.github/workflows/release-stable.yaml`). Bump
-the version in `package.json` to cut a release. Publishing requires the
-`NPM_TOKEN` repository secret.
+the corresponding dist-tag (see `.github/workflows/release.yaml`). Publishing
+requires the `NPM_TOKEN` repository secret.
+
+The version is bumped automatically: the `sync` workflow
+(`.github/workflows/sync.yaml`) regenerates `src/api` from the spec and, if the
+generated output actually changed, bumps `package.json` in the pull request it
+opens. npm versions form one global sequence shared by both dist-tags, so the
+channels bump differently to avoid collisions:
+
+- `prod-staging` bumps the prerelease — `0.1.0` → `0.1.1-next.0` →
+  `0.1.1-next.1` → …
+- `prod-stable` bumps the patch, which promotes a prerelease by dropping its
+  suffix — `0.1.1-next.1` → `0.1.1`, then `0.1.1` → `0.1.2`.
+
+To cut a release outside a sync, bump `package.json` by hand, keeping the shape
+required by the channel (`npm version prerelease --preid next` on
+`prod-staging`, `npm version patch` on `prod-stable`). The release workflow
+skips pushes whose version is already published, and fails if the version shape
+does not match the channel — this is what keeps `latest` from ever pointing at a
+prerelease.
 
 ## Code style
 

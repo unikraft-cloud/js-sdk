@@ -1,8 +1,12 @@
 name: release
 
-# Publishes the package to npm. The release channel maps to an npm dist-tag:
-#   prod-stable  -> latest
-#   prod-staging -> next
+# Publishes the package to npm. The release channel maps to an npm dist-tag and
+# to a version shape (the sync workflow is what moves the version forward):
+#   prod-stable  -> latest, stable versions      (0.1.1)
+#   prod-staging -> next,   -next.N prereleases  (0.1.1-next.0)
+#
+# Pushes that do not change the version (docs, CI, refactors) are skipped rather
+# than failed, since npm rejects republishing an existing version.
 on:
   push:
     branches:
@@ -30,25 +34,62 @@ jobs:
         cache: npm
         registry-url: https://registry.npmjs.org
 
-    - name: Resolve dist-tag
-      id: tag
+    - name: Resolve release
+      id: release
       run: |
+        name=$(node -p 'require("./package.json").name')
+        version=$(node -p 'require("./package.json").version')
+
         if [ "${{ github.ref_name }}" = "prod-stable" ]; then
-          echo "dist_tag=latest" >> "$GITHUB_OUTPUT"
+          dist_tag=latest
         else
-          echo "dist_tag=next" >> "$GITHUB_OUTPUT"
+          dist_tag=next
         fi
 
+        {
+          echo "name=$name"
+          echo "version=$version"
+          echo "dist_tag=$dist_tag"
+        } >> "$GITHUB_OUTPUT"
+
+        # Nothing to do when this version is already on the registry. Checked
+        # before the shape guard below so that pre-existing versions predating
+        # the -next scheme skip cleanly instead of failing.
+        if npm view "$name@$version" version >/dev/null 2>&1; then
+          echo "publish=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::$name@$version is already published; skipping release."
+          exit 0
+        fi
+        echo "publish=true" >> "$GITHUB_OUTPUT"
+
+        # Never let `latest` point at a prerelease, or `next` at a stable
+        # version that prod-stable is supposed to own.
+        case "$dist_tag:$version" in
+        latest:*-*)
+          echo "::error::prod-stable must publish a stable version, got $version"
+          exit 1
+          ;;
+        next:*-next.*) ;;
+        next:*)
+          echo "::error::prod-staging must publish a -next.N prerelease, got $version"
+          exit 1
+          ;;
+        esac
+
     - name: Install dependencies
+      if: steps.release.outputs.publish == 'true'
       run: npm ci
 
     - name: Build
+      if: steps.release.outputs.publish == 'true'
       run: npm run build
 
     - name: Test
+      if: steps.release.outputs.publish == 'true'
       run: npm run test
 
     - name: Publish to npm
-      run: npm publish --provenance --access public --tag ${{ steps.tag.outputs.dist_tag }}
+      if: steps.release.outputs.publish == 'true'
+      run: npm publish --provenance --access public --tag ${{ steps.release.outputs.dist_tag }}
       env:
         NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
