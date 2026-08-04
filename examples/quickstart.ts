@@ -33,7 +33,7 @@ async function main() {
   // Operations chain off a reference: this waits for the instance to come up,
   // then reads the tail of its console log.
   const { output } = await fra.instances
-    .get({ uuid: instance.uuid as string })
+    .get({ uuid: instance.uuid })
     .wait({ state: "running", timeoutSeconds: 30 })
     .logs({ offset: -4096 });
 
@@ -47,10 +47,10 @@ async function main() {
 
   // A handle resolves to the metro that actually holds the instance, so the
   // suspend is sent there and nowhere else.
-  await ukc.instances.get({ name: instance.name as string }).suspend();
+  await ukc.instances.get({ name: instance.name }).suspend();
 
   // Bulk operations take one ref or a list of them.
-  await fra.instances.delete([{ uuid: instance.uuid as string }]);
+  await fra.instances.delete([{ uuid: instance.uuid }]);
 }
 
 main().catch((err) => {
