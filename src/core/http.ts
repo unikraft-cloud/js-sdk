@@ -5,6 +5,8 @@
 // A single UnikraftCloudError is defined here so `instanceof` works across
 // every resource of both the platform and control-plane APIs.
 
+import { stripTrailingSlashes } from "./url.js";
+
 /** A single error entry returned within a response envelope. */
 export interface ResponseError {
   /** The HTTP status code associated with the error. */
@@ -294,7 +296,7 @@ export class ApiClient {
   #proxy?: Promise<ProxyTransport | undefined>;
 
   constructor(config: ApiClientConfig) {
-    this.baseUrl = config.baseUrl.replace(/\/+$/, "");
+    this.baseUrl = stripTrailingSlashes(config.baseUrl);
     this.token = config.token;
     this.#hasCustomFetch = typeof config.fetch === "function";
     const resolvedFetch = config.fetch ?? globalThis.fetch;
@@ -334,7 +336,7 @@ export class ApiClient {
     options: CallOptions,
     accept: string,
   ): Promise<{ response: Response; url: string }> {
-    const base = (options.baseUrl ?? this.baseUrl).replace(/\/+$/, "");
+    const base = stripTrailingSlashes(options.baseUrl ?? this.baseUrl);
     const url = base + args.path + encodeQuery(args.query);
 
     const headers: Record<string, string> = {

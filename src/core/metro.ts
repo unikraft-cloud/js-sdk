@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026, Unikraft GmbH.
 
+import { stripTrailingSlashes } from "./url.js";
+
 /**
  * A Unikraft Cloud metro (region) code, or a full `http(s)://` base URL for a
  * self-hosted or staging deployment. The known metros are enumerated for
@@ -72,7 +74,7 @@ export function withMetro<T extends object>(value: T, metro: Metro): WithMetro<T
  */
 export function metroBaseUrl(metro: Metro): string {
   if (/^https?:\/\//i.test(metro)) {
-    return metro.replace(/\/+$/, "").replace(/\/v1$/, "");
+    return stripTrailingSlashes(metro).replace(/\/v1$/, "");
   }
   return `https://api.${metro}.unikraft.cloud`;
 }
