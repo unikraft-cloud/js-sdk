@@ -703,6 +703,43 @@ export interface NodeActivateResponseData {
 }
 
 /**
+ * The request message for license deactivation. The caller is identified by
+ * an HTTP message signature (RFC 9421) made with the node's stable private
+ * key, the same mechanism used by the private node-facing APIs (e.g.
+ * NodeHeartbeat) -- not by any field in this message.
+ */
+
+export interface NodeDeactivateRequest {
+  /**
+   * The serial number of the last issued certificate.
+   */
+  serial: string;
+}
+
+/**
+ * The response message for license deactivation.
+ */
+
+export interface NodeDeactivateResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the response.
+   */
+  message?: string;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
  * NodeState defines the provisioning lifecycle state of a machine which will
  * run the Unikraft Cloud Platform.
  */

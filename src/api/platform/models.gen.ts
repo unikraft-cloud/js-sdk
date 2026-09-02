@@ -3,42 +3,6 @@
 // Type definitions for the Unikraft Cloud API, generated from the OpenAPI
 // specification. These mirror the wire format exactly.
 
-export interface AddUsersRequest {
-  users: User[];
-}
-
-export interface AddUsersResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The response data for this request.
-   */
-  data: AddUsersResponseData;
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface AddUsersResponseData {
-  /**
-   * The status of the operation for each user in the request.
-   */
-  results?: DataResult[];
-}
-
 /**
  * AdjustmentType defines the type of adjustment to be made in an autoscaling
  * step policy.
@@ -816,6 +780,15 @@ export interface CreateCheckpointInstancesRequestItem {
    * No wait performed for a value of 0.
    */
   timeout_s?: number;
+  /**
+   * (Optional).  Tags to associate with the checkpoint.
+   */
+  tags?: string[];
+  /**
+   * (Optional). Automatic delete-on-idle configuration for the new
+   * checkpoint.
+   */
+  autokill?: ItemCheckpointAutokill;
 }
 
 /**
@@ -1006,6 +979,24 @@ export interface CreateInstanceRequest {
    */
   tags?: string[];
   /**
+   * (Optional).  Annotations to associate with the instance.
+   *
+   * Unlike tags, annotations also reach the guest: they are included in the
+   * instance's startdata, and selected keys can be injected into the console
+   * log output.
+   *
+   * Keys follow the Kubernetes annotation key syntax, `[<prefix>/]<name>`: the
+   * optional prefix is a non-wildcard DNS subdomain of at most 253 characters,
+   * and the name is at most 63 characters of `[-_.a-zA-Z0-9]` starting and
+   * ending with an alphanumeric.  Values are unconstrained apart from ASCII
+   * control characters.  An instance holds at most 256 annotations.
+   *
+   * When the instance inherits annotations from a template, branch, or
+   * checkpoint, the given annotations are merged into them rather than
+   * replacing them.  On a key clash the value given here wins.
+   */
+  annotations?: Record<string, string>;
+  /**
    * Template instances.
    * An existing instance can be saved as a template. This template is then
    * used to create new instances that inherit the exact configuration and
@@ -1048,7 +1039,7 @@ export interface CreateInstanceRequest {
   dependencies?: NameOrUUID[];
   /**
    * (Optional).  Reference to an existing instance to branch from.
-   * The instance can be running, stopped, or a template.  If the source
+   * The instance can be running or stopped, If the source
    * instance is running, a snapshot will be taken asynchronously and the
    * new instance will wait for it to complete before starting.
    * Mutually exclusive with `image` and `template`.
@@ -1073,6 +1064,25 @@ export interface CreateInstanceRequest {
    * A list of one to four interfaces to attach
    */
   network_interfaces?: CreateInstanceRequestNetworkInterface[];
+  /**
+   * (Optional).  The type of virtual machine to use for the instance.
+   * Defaults to `micro`, which runs on Firecracker.  `full` runs on QEMU
+   * instead and is required for GPU passthrough (see `gpus`) and, in the
+   * future, Windows VMs.  QEMU-backed instances currently do not support
+   * scale-to-zero, templates, branching, or checkpointing, and only
+   * support block-based volumes (no virtiofs).  Requires a plan with full
+   * VM support and cannot be combined with `template`, `branch_from`, or
+   * `checkpoint`.
+   */
+  type?: InstanceType;
+  /**
+   * (Optional).  Number of GPUs to attach to the instance.  Currently
+   * restricted to at most 1.  Requires `type` to be `full` and a plan
+   * with GPU support.  A GPU stays assigned to the instance, even while
+   * stopped, until the instance is deleted.  Cannot be combined with
+   * `template`, `branch_from`, or `checkpoint`.
+   */
+  gpus?: number;
 }
 
 /**
@@ -1857,11 +1867,6 @@ export interface DataLicense {
    * List of enabled features.
    */
   features?: string[];
-}
-
-export interface DataResult {
-  uuid: string;
-  added: boolean;
 }
 
 export interface DeleteAutoscaleConfigurationPolicyResponse {
@@ -3384,6 +3389,12 @@ export interface GetVolumesResponseData {
 }
 
 /**
+ * The health state reported by a single health checker.
+ */
+
+export type HealthState = "unknown" | "healthy" | "degraded";
+
+/**
  * The response message for a health check of the platform.
  */
 
@@ -3416,7 +3427,14 @@ export interface HealthzResponse {
  */
 
 export interface HealthzResponseData {
-  checks?: Record<string, string>;
+  /**
+   * The health state of each registered checker, keyed by checker name.
+   * Valid keys are "images", "systemd", and "user-defined"; a checker's
+   * key is only present if it is enabled. Checkers report only their
+   * aggregate state; per-check detail (e.g. which default image is
+   * missing, or which user-defined script failed) is not exposed here.
+   */
+  checks?: Record<string, HealthState>;
   versions?: Record<string, string>;
   license?: DataLicense;
 }
@@ -3433,6 +3451,12 @@ export interface Image {
   env?: Record<string, string>;
   tags?: string[];
   users?: string[];
+  /**
+   * Whether the image is pinned and exempt from cache eviction.  Only
+   * populated (and only ever `true`) for callers with image manager
+   * permissions; omitted otherwise, including when the image is not pinned.
+   */
+  persistent?: boolean;
 }
 
 /**
@@ -3787,6 +3811,19 @@ export interface Instance {
    */
   tags?: string[];
   /**
+   * The annotations associated with the instance.
+   *
+   * Keys follow the Kubernetes annotation key syntax, `[<prefix>/]<name>`: the
+   * optional prefix is a non-wildcard DNS subdomain of at most 253 characters,
+   * and the name is at most 63 characters of `[-_.a-zA-Z0-9]` starting and
+   * ending with an alphanumeric.  Values are unconstrained apart from ASCII
+   * control characters, which are rejected because they would corrupt the
+   * console log output annotations can be forwarded to.
+   *
+   * An instance holds at most 256 annotations.
+   */
+  annotations?: Record<string, string>;
+  /**
    * An optional field representing the status of the request.  This field is
    * only set when this message object is used as a response message.
    */
@@ -3878,6 +3915,15 @@ export interface Instance {
    * The DNS resolver configured inside the guest.
    */
   nameserver?: string;
+  /**
+   * The type of virtual machine used to run the instance.
+   */
+  type: InstanceType;
+  /**
+   * GPUs attached to the instance.  Only present for instances of type
+   * `full`.
+   */
+  gpus?: InstanceGpu[];
 }
 
 /**
@@ -3934,6 +3980,22 @@ export interface InstanceCreateArgsInstanceCreateRequestRoms {
  */
 
 export type InstanceFeature = "delete-on-stop";
+
+/**
+ * A GPU attached to the instance.
+ */
+
+export interface InstanceGpu {
+  /**
+   * The UUID of the GPU.
+   */
+  uuid: string;
+  /**
+   * The GPU model, given as its PCI vendor and device ID in the form
+   * `<vendor>:<device>`.
+   */
+  model: string;
+}
 
 /**
  * An instance network interface.
@@ -4271,6 +4333,19 @@ export interface InstanceTemplateAutokill {
 }
 
 /**
+ * The type of virtual machine used to run an instance.
+ *
+ * | Type    | Description |
+ * |---------|-------------|
+ * | `micro` | A lightweight microVM (default).  Boots in milliseconds and is
+ * suitable for most workloads. |
+ * | `full`  | A full virtual machine with broader hardware support, such as
+ * GPU passthrough.  Requires a plan with full VM support. |
+ */
+
+export type InstanceType = "micro" | "full";
+
+/**
  * A volume defines a storage which can be attached to the instance.
  *
  * Volumes can be used to store persistent data which should remain available
@@ -4319,6 +4394,18 @@ export interface ItemAutokill {
 }
 
 /**
+ * Automatic delete-on-idle configuration for the checkpoint instance.
+ */
+
+export interface ItemCheckpointAutokill {
+  /**
+   * Time in milliseconds after the checkpoint was last used for restoring
+   * before it is deleted. A value of 0 disables checkpoint autokill.
+   */
+  time_ms?: number;
+}
+
+/**
  * The operations available on a checkpoint instance's properties.
  */
 
@@ -4355,7 +4442,8 @@ export type MutableInstanceProperty =
   | "roms"
   | "dependencies"
   | "sched_priority"
-  | "plugins";
+  | "plugins"
+  | "annotations";
 
 /**
  * The mutable operations available on a service group's properties.
@@ -4459,6 +4547,142 @@ export type PaginationOrder = "asc" | "desc";
  */
 
 export type PaginationSortBy = "create_time";
+
+/**
+ * The request item for pinning a single image.
+ */
+
+export interface PinImageRequestItem {
+  /**
+   * The image URL to pull and pin.
+   */
+  url: string;
+  /**
+   * Optional credentials for authenticating to an OCI registry.
+   * Only valid for OCI registry URLs; the platform rejects this
+   * field for non-OCI schemes.
+   */
+  credentials?: string;
+  /**
+   * Optional HTTP headers to send when fetching the image.
+   */
+  headers?: Record<string, string>;
+  /**
+   * Controls when the image is pulled relative to what is already cached on
+   * the node.  If unset, this is inferred from the URL.
+   */
+  pull_policy?: PullPolicy;
+  /**
+   * Number of seconds to wait for the pull to complete.  Required and must
+   * be non-zero; `-1` waits up to the platform's maximum timeout.
+   */
+  timeout_s: number;
+  /**
+   * Avoid duplicate pulls by merging with any in-flight request for the
+   * same image.  Defaults to `true`.
+   */
+  merge_requests?: boolean;
+  /**
+   * (Optional).  Automatically unpin the image after a period of inactivity.
+   */
+  autokill?: PinImageRequestItemAutokill;
+}
+
+export interface PinImageRequestItemAutokill {
+  /**
+   * Automatically unpin the image after this many milliseconds of
+   * inactivity.  `0` (the default) disables this.
+   */
+  time_ms: number;
+}
+
+/**
+ * The response message for pinning one or more images.
+ */
+
+export interface PinImagesResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the response.
+   * This field is useful when the status is not `success`.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: PinImagesResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.  This is the time it took to process
+   * the request and generate the response.
+   */
+  op_time_us: number;
+}
+
+export interface PinImagesResponseData {
+  /**
+   * The result of pinning each requested image.
+   */
+  images?: PinImagesResponseImage[];
+}
+
+/**
+ * The result of pinning a single image.  On success, `uuid` through `tags`
+ * are set; on failure, only `message` and `error` are set (the image
+ * being pulled is not otherwise identified in the response).
+ */
+
+export interface PinImagesResponseImage {
+  /**
+   * Indicates whether this image was pulled and pinned successfully.
+   */
+  status: ResponseStatus;
+  /**
+   * The UUID of the image.  Only set on success.
+   */
+  uuid?: string;
+  /**
+   * The name of the image.  Only set on success.
+   */
+  name?: string;
+  /**
+   * The time the image was created.  Only set on success.
+   */
+  created_at?: string;
+  /**
+   * The current state of the image (e.g. `ready`).  Only set on success.
+   */
+  state?: string;
+  /**
+   * The image URL.  Only set on success.
+   */
+  url?: string;
+  /**
+   * Whether the image is pinned and exempt from cache eviction.  Only set
+   * on success, where it is always `true`.
+   */
+  persistent?: boolean;
+  /**
+   * The tags associated with the image.  Only set on success.
+   */
+  tags?: string[];
+  /**
+   * Set when the image could not be pulled; carries the agent's error, if
+   * any (e.g. a registry connectivity issue).
+   */
+  message?: string;
+  /**
+   * An optional error code providing additional information about the
+   * status.  This field is only set when the status is not `success`.
+   */
+  error?: number;
+}
 
 /**
  * PullPolicy defines when an image should be pulled.
@@ -5325,6 +5549,84 @@ export interface TemplateAutokill {
   time_ms?: number;
 }
 
+/**
+ * The request item for unpinning a single image.
+ */
+
+export interface UnpinImageRequestItem {
+  /**
+   * The UUID of the image to unpin.  Only UUID is supported; name, URL,
+   * tag, and digest are not.
+   */
+  uuid: string;
+}
+
+/**
+ * The response message for unpinning one or more images.
+ */
+
+export interface UnpinImagesResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the response.
+   * This field is useful when the status is not `success`.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: UnpinImagesResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.  This is the time it took to process
+   * the request and generate the response.
+   */
+  op_time_us: number;
+}
+
+export interface UnpinImagesResponseData {
+  /**
+   * The result of unpinning each requested image.
+   */
+  images?: UnpinImagesResponseImage[];
+}
+
+/**
+ * The result of unpinning a single image.
+ */
+
+export interface UnpinImagesResponseImage {
+  /**
+   * Indicates whether this image was unpinned successfully.
+   */
+  status: ResponseStatus;
+  /**
+   * The UUID of the image.
+   */
+  uuid: string;
+  /**
+   * The name of the image.  Only set on success, and only if the image
+   * has a name.
+   */
+  name?: string;
+  /**
+   * An optional message providing additional information about the status.
+   * This field is useful when the status is not `success`.
+   */
+  message?: string;
+  /**
+   * An optional error code providing additional information about the
+   * status.  This field is only set when the status is not `success`.
+   */
+  error?: number;
+}
+
 export interface UpdateCertificateByUUIDRequestBody {
   /**
    * The new certificate chain.
@@ -5573,6 +5875,8 @@ export interface UpdateInstanceByUUIDRequestBody {
    * - For "dependencies": array of instance identifiers (name or UUID)
    * - For "sched_priority": SchedPriority enum value ("normal", "medium",
    * "high", "admin")
+   * - For "annotations": object (for SET/ADD) or string/array of strings (for
+   * DEL)
    */
   value?: unknown;
 }
@@ -5621,6 +5925,8 @@ export interface UpdateInstancesRequestItem {
    * - For "dependencies": array of instance identifiers (name or UUID)
    * - For "sched_priority": SchedPriority enum value ("normal", "medium",
    * "high", "admin")
+   * - For "annotations": object (for SET/ADD) or string/array of strings (for
+   * DEL)
    */
   value?: unknown;
   /**
@@ -6202,145 +6508,6 @@ export interface UpdateVolumesResponseUpdatedVolume {
    * This field is useful when the status is not `success`.
    */
   error?: number;
-}
-
-export interface User {
-  /**
-   * The UUID of the user.
-   */
-  uuid: string;
-  /**
-   * The name of the user.
-   */
-  name: string;
-  /**
-   * Authentication token(s) associated with the user.
-   */
-  auth_token: string[];
-  /**
-   * The permission level of the user.
-   */
-  permissions?: UserPermission[];
-  /**
-   * The user ID (UID) on the host system.
-   */
-  uid?: number;
-  /**
-   * Whether the user account is disabled.
-   */
-  disabled?: boolean;
-  /**
-   * Per-VM Configuration limits for the user.
-   */
-  vmdb?: UserVmdb;
-  /**
-   * Network configuration limits for the user.
-   */
-  net?: UserNet;
-  /**
-   * Global VM configuration limits for the user.
-   */
-  vmm?: UserVmm;
-  /**
-   * Storage configuration limits for the user.
-   */
-  stor?: UserStor;
-  /**
-   * Autoscale configuration limits for the user.
-   */
-  autoscale?: UserAutoscale;
-}
-
-export interface UserAutoscale {
-  /**
-   * Minimum size of an autoscale group.
-   */
-  min_size?: number;
-  /**
-   * Maximum size of an autoscale group.
-   */
-  max_size?: number;
-}
-
-export interface UserNet {
-  /**
-   * Maximum number of service groups the user can have at one moment.
-   */
-  max_service_groups?: number;
-  /**
-   * Maximum number of services across all service groups the user can have
-   * at one moment.
-   */
-  max_services?: number;
-  /**
-   * Maximum number of TLS certificates the user can have at one moment.
-   */
-  max_certificates?: number;
-}
-
-export type UserPermission =
-  | "root"
-  | "override_edns_blacklist"
-  | "developer"
-  | "volume_manager"
-  | "override_vm_priority";
-
-export interface UserStor {
-  /**
-   * Maximum number of volumes the user can have at one moment.
-   */
-  max_volumes?: number;
-  /**
-   * Minimum size of a volume in MB.
-   */
-  min_volume_mb?: number;
-  /**
-   * Maximum size of a volume in MB.
-   */
-  max_volume_mb?: number;
-  /**
-   * Maximum total size of all volumes in MB.
-   */
-  max_total_volume_mb?: number;
-}
-
-export interface UserVmdb {
-  /**
-   * Maximum number of VM instances the user can have at one moment.
-   */
-  max_instances?: number;
-  /**
-   * Minimum amount of memory assigned to a VM in MB.
-   */
-  min_memory_mb?: number;
-  /**
-   * Default amount of memory assigned to a VM in MB.
-   */
-  def_memory_mb?: number;
-  /**
-   * Maximum amount of memory assigned to a VM in MB.
-   */
-  max_memory_mb?: number;
-  /**
-   * Minimum number of vCPUs assigned to a VM.
-   */
-  min_vcpus?: number;
-  /**
-   * Maximum number of vCPUs assigned to a VM.
-   */
-  max_vcpus?: number;
-}
-
-export interface UserVmm {
-  /**
-   * Maximum number of vCPUs the user can have assigned to live instances.
-   */
-  max_vcpus?: number;
-  /**
-   * Maximum amount of memory in MB the user can have assigned to live
-   * instances.
-   */
-  max_memory_mb?: number;
 }
 
 /**

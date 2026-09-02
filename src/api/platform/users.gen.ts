@@ -8,24 +8,6 @@ import type * as models from "./models.gen.js";
  */
 export class UsersApi extends ApiClient {
   /**
-   * Add Users
-   */
-  addUsers(
-    params: {
-      body: models.AddUsersRequest;
-    } & CallOptions,
-  ): Promise<models.AddUsersResponse> {
-    return this.request<models.AddUsersResponse>(
-      {
-        method: "POST",
-        path: `/v1/users`,
-        body: params.body,
-      },
-      params,
-    );
-  }
-
-  /**
    * Get Current User Quotas
    */
   getUser(params: CallOptions = {}): Promise<models.QuotasResponse> {
