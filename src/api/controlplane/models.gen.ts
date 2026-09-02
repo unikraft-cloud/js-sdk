@@ -156,6 +156,14 @@ export interface CheckAuthorizationResponseData {
    * The global image registry.
    */
   registry: string;
+  /**
+   * The UUID of the organization the token is associated with.
+   */
+  organization_uuid: string;
+  /**
+   * The UUID of the user who approved the login.
+   */
+  user_uuid: string;
 }
 
 /**
@@ -252,6 +260,10 @@ export interface GetAuthorizationResponseData {
    * The global image registry.
    */
   registry: string;
+  /**
+   * The UUID of the organization the token is associated with.
+   */
+  organization_uuid: string;
 }
 
 export interface Image {
