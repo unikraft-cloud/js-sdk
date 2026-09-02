@@ -62,6 +62,16 @@
         "default": "./dist/cjs/api/controlplane/index.js"
       }
     },
+    "./api/plugins/sandbox": {
+      "import": {
+        "types": "./dist/esm/api/plugins/sandbox/index.d.ts",
+        "default": "./dist/esm/api/plugins/sandbox/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/api/plugins/sandbox/index.d.ts",
+        "default": "./dist/cjs/api/plugins/sandbox/index.js"
+      }
+    },
     "./package.json": "./package.json"
   },
   "files": ["dist", "README.md", "LICENSE.md"],

@@ -1,9 +1,14 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026, Unikraft GmbH.
 //
-// The raw ("plumbing") layer of both Unikraft Cloud APIs, in one place.
+// The raw ("plumbing") layer of every Unikraft Cloud API, in one place.
 // Everything here mirrors the OpenAPI specification: operations are named after
 // their `operationId`, and responses come back as the untouched envelope.
+//
+// The platform and control-plane APIs share one set of credentials and are
+// grouped under {@link Api}. Plugin APIs are not: a plugin answers on a single
+// instance's route, so its client is constructed per sandbox rather than per
+// account.
 //
 // The idiomatic ("porcelain") layer lives at the package root and is built on
 // top of this.
@@ -34,8 +39,10 @@ export class Api {
 
 export { ControlPlaneApi } from "./controlplane/index.js";
 export { PlatformApi } from "./platform/index.js";
+export { SandboxPluginApi } from "./plugins/sandbox/index.js";
 
-// Namespaced so the two specifications' identically-named types (`models`,
-// `ImagesApi`, ...) do not collide.
+// Namespaced so the specifications' identically-named types (`models`,
+// `ImagesApi`, `ResponseStatus`, ...) do not collide.
 export * as platform from "./platform/index.js";
 export * as controlplane from "./controlplane/index.js";
+export * as sandbox from "./plugins/sandbox/index.js";

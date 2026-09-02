@@ -5,12 +5,12 @@
     "moduleResolution": "Bundler",
     "noEmit": true,
     "types": ["node"],
-    "baseUrl": ".",
     "paths": {
       "@unikraft/cloud": ["./src/index.ts"],
       "@unikraft/cloud/api": ["./src/api/index.ts"],
       "@unikraft/cloud/api/platform": ["./src/api/platform/index.ts"],
-      "@unikraft/cloud/api/controlplane": ["./src/api/controlplane/index.ts"]
+      "@unikraft/cloud/api/controlplane": ["./src/api/controlplane/index.ts"],
+      "@unikraft/cloud/api/plugins/sandbox": ["./src/api/plugins/sandbox/index.ts"]
     }
   },
   "include": ["src/**/*.ts", "test/**/*.ts", "examples/**/*.ts", "scripts/**/*.mjs"]
