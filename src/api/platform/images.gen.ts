@@ -50,4 +50,40 @@ export class ImagesApi extends ApiClient {
       params,
     );
   }
+
+  /**
+   * Pin Images
+   */
+  pinImages(
+    params: {
+      body: models.PinImageRequestItem[];
+    } & CallOptions,
+  ): Promise<models.PinImagesResponse> {
+    return this.request<models.PinImagesResponse>(
+      {
+        method: "POST",
+        path: `/v1/images`,
+        body: params.body,
+      },
+      params,
+    );
+  }
+
+  /**
+   * Unpin Images
+   */
+  unpinImages(
+    params: {
+      body: models.UnpinImageRequestItem[];
+    } & CallOptions,
+  ): Promise<models.UnpinImagesResponse> {
+    return this.request<models.UnpinImagesResponse>(
+      {
+        method: "DELETE",
+        path: `/v1/images`,
+        body: params.body,
+      },
+      params,
+    );
+  }
 }

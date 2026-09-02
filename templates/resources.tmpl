@@ -29,9 +29,10 @@ export * as models from "./models.gen.js";
 {{ range $tag := uniqueTags $ops }}export { {{ pascalcase $tag }}Api } from "./{{ kebabcase $tag }}.gen.js";
 {{ end }}
 {{- define "method" -}}
+{{- $po := . -}}
 {{- $op := .Operation -}}
 {{- $path := .Path -}}
-{{- range pathParameters $op }}{{ $path = replace (printf "{%s}" .Name) (printf "${%s}" (tsSafeName .Name)) $path }}{{ end -}}
+{{- range pathParameters $po }}{{ $path = replace (printf "{%s}" .Name) (printf "${%s}" (tsSafeName .Name)) $path }}{{ end -}}
 {{- $ret := qualifyModels "models" (tsTypeRef (responseJSONSchema $op)) -}}
 {{- /* Operations whose response is a server-sent event stream have no JSON
        response body, so they would otherwise be typed `Promise<void>`. Yield
@@ -51,7 +52,7 @@ export * as models from "./models.gen.js";
 {{- end -}}
 {{- $bodyRef := requestJSONSchema $op -}}
 {{- $bodyReq := requestBodyRequired $op -}}
-{{- $query := queryParameters $op -}}
+{{- $query := queryParameters $po -}}
 {{- /* The Fetch standard forbids a request body on GET and HEAD, and no JS
        runtime lets us send one. The spec still models filters for those
        operations as a body, but it exposes every one of them as repeatable
@@ -65,7 +66,7 @@ export * as models from "./models.gen.js";
 {{ with $op.Summary }}{{ tsDoc . "  " }}
 {{ else }}{{ with $op.Description }}{{ tsDoc . "  " }}
 {{ end }}{{ end }}  {{ tsSafeName (camelcase $op.OperationID) }}(
-    {{- range pathParameters $op }}
+    {{- range pathParameters $po }}
     {{ tsSafeName .Name }}: {{ qualifyModels "models" (paramToTsType .) }},
     {{- end }}
     {{- if or $query $bodyRef }}

@@ -351,7 +351,7 @@ await ukc.instances.stop([{ name: "web" }, { uuid: "550e8400-e29b-41d4-a716-4466
 | `ukc.volumes`      | `create`, `get`, `each`, `list`, `update`, `edit`, `delete`, `attach`, `detach`                  |
 | `ukc.services`     | `create`, `get`, `each`, `list`, `update`, `edit`, `delete`                                      |
 | `ukc.certificates` | `create`, `get`, `each`, `list`, `update`, `delete`                                             |
-| `ukc.users`        | `quotas`, `quotasByUuid`, `add`                                                                 |
+| `ukc.users`        | `quotas`, `quotasByUuid`                                                                       |
 
 Handles add the per-resource operations: `refresh`, `start`, `stop`, `suspend`,
 `delete`, `update`, `edit`, `wait`, `logs`, `metrics`, `history` on an instance;

@@ -42,20 +42,6 @@ export class Users extends Resource<UsersApi> {
     );
   }
 
-  /**
-   * Add one or more users to the account. Membership is account-wide, so this
-   * targets a single metro: the client's, or the default when the scope spans
-   * several.
-   */
-  async add(spec: models.AddUsersRequest, opts: ScopeOptions = {}) {
-    const endpoint = await this.oneEndpoint("Adding users", opts);
-    return listTagged(
-      this.api.addUsers({ body: spec, ...this.call(endpoint, opts) }),
-      "results",
-      endpoint.metro,
-    );
-  }
-
   /** Read per-metro quotas concurrently; report every metro that failed. */
   async #quotas(
     opts: ScopeOptions,

@@ -156,6 +156,14 @@ export interface CheckAuthorizationResponseData {
    * The global image registry.
    */
   registry: string;
+  /**
+   * The UUID of the organization the token is associated with.
+   */
+  organization_uuid: string;
+  /**
+   * The UUID of the user who approved the login.
+   */
+  user_uuid: string;
 }
 
 /**
@@ -252,6 +260,10 @@ export interface GetAuthorizationResponseData {
    * The global image registry.
    */
   registry: string;
+  /**
+   * The UUID of the organization the token is associated with.
+   */
+  organization_uuid: string;
 }
 
 export interface Image {
@@ -700,6 +712,43 @@ export interface NodeActivateResponseData {
    * The issued license certificate in base64 URL encoded PEM format.
    */
   license: string;
+}
+
+/**
+ * The request message for license deactivation. The caller is identified by
+ * an HTTP message signature (RFC 9421) made with the node's stable private
+ * key, the same mechanism used by the private node-facing APIs (e.g.
+ * NodeHeartbeat) -- not by any field in this message.
+ */
+
+export interface NodeDeactivateRequest {
+  /**
+   * The serial number of the last issued certificate.
+   */
+  serial: string;
+}
+
+/**
+ * The response message for license deactivation.
+ */
+
+export interface NodeDeactivateResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the response.
+   */
+  message?: string;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
 }
 
 /**
