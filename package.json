@@ -15,7 +15,7 @@
   "keywords": ["unikraft", "unikraft-cloud", "kraftcloud", "sdk", "unikernel", "cloud", "api"],
   "type": "module",
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "sideEffects": false,
   "main": "./dist/cjs/index.js",
@@ -89,13 +89,13 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
-    "@types/node": "^20.19.43",
+    "@types/node": "^22.19.1",
     "typescript": "^5.6.3",
-    "undici": "^6.28.0",
+    "undici": "^8.10.1",
     "vitest": "^3.2.7"
   },
   "peerDependencies": {
-    "undici": "^6.11.0"
+    "undici": "^8.10.1"
   },
   "peerDependenciesMeta": {
     "undici": {

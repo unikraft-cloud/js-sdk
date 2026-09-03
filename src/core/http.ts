@@ -193,7 +193,7 @@ async function createProxyTransport(): Promise<ProxyTransport | undefined> {
   }
 
   if (typeof undici.EnvHttpProxyAgent !== "function" || typeof undici.fetch !== "function") {
-    warnProxy("the installed `undici` is too old; upgrade to >= 6.11 for proxy support.");
+    warnProxy("the installed `undici` is too old; upgrade to undici >= 8 for proxy support.");
     return undefined;
   }
 
