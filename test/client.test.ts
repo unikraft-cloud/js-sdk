@@ -10,6 +10,7 @@ import {
   UnikraftCloudError,
   collect,
   metroBaseUrl,
+  pluginBaseUrl,
   toQuery,
 } from "../src/index.js";
 
@@ -100,6 +101,24 @@ describe("metroBaseUrl", () => {
 
   it("drops a trailing /v1 the operation paths already carry", () => {
     expect(metroBaseUrl("https://api.staging.internal/v1")).toBe("https://api.staging.internal");
+  });
+});
+
+describe("pluginBaseUrl", () => {
+  const uuid = "0f8d1b6e-3a1c-4f2e-9b7a-2c5d8e4f6a10";
+
+  // The second row exists because the segment is the plugin's name on the
+  // instance, and not a fixed "sandbox".
+  it.each(["sandbox", "shell"])("routes through the instance, under %s", (name) => {
+    expect(pluginBaseUrl("https://api.fra.unikraft.cloud", uuid, name)).toBe(
+      `https://api.fra.unikraft.cloud/v1/instances/${uuid}/plugins/${name}`,
+    );
+  });
+
+  it("never doubles the slash before /v1", () => {
+    const expected = `http://127.0.0.1:8080/v1/instances/${uuid}/plugins/sandbox`;
+    expect(pluginBaseUrl("http://127.0.0.1:8080/", uuid, "sandbox")).toBe(expected);
+    expect(pluginBaseUrl("http://127.0.0.1:8080///", uuid, "sandbox")).toBe(expected);
   });
 });
 
