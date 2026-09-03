@@ -89,8 +89,12 @@ export interface ApiClientConfig {
  * The kind of failure represented by an {@link UnikraftCloudError}. `"fanout"`
  * covers failures that are not a single request's fault: a multi-metro
  * operation where some metros failed, or an ambiguous or unusable metro scope.
+ * `"config"` covers a call that could never be sent as configured — a missing
+ * token, or two options that contradict each other. `"timeout"` covers a wait
+ * that ran out of time; it carries no `status`, because no single request
+ * failed.
  */
-export type UnikraftCloudErrorKind = "http" | "network" | "parse" | "fanout";
+export type UnikraftCloudErrorKind = "http" | "network" | "parse" | "fanout" | "config" | "timeout";
 
 /** Error thrown when a request fails at the transport or HTTP level. */
 export class UnikraftCloudError extends Error {
