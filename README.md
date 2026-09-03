@@ -385,9 +385,36 @@ try {
 }
 ```
 
-`err.kind` is `"http"`, `"network"`, `"parse"`, or `"fanout"` (a multi-metro
-operation that partly failed, or an unusable scope — see `MetroFanoutError`
-above).
+`err.kind` says which layer failed:
+
+| `kind`      | Meaning                                                                                                              |
+| ----------- | -------------------------------------------------------------------------------------------------------------------- |
+| `"http"`    | The server answered with a non-2xx status. `err.status` and `err.errors` carry the detail.                            |
+| `"network"` | The request never got an answer: a refused connection, a reset, a DNS miss, an unreachable proxy.                     |
+| `"parse"`   | The server answered, but the body is not the JSON the operation expects.                                             |
+| `"fanout"`  | A multi-metro operation that partly failed, or an unusable scope — see `MetroFanoutError` above.                      |
+| `"config"`  | The call could never be sent as configured: a missing token, or two options that contradict each other.               |
+| `"timeout"` | A wait ran out of time. It carries no `status`, because no single request failed; the last failure is in `err.cause`. |
+
+### Waiting
+
+The transport sends each request exactly once. It has no retries, and nothing
+in the SDK retries a call you made.
+
+Waiting is a separate, explicit step, and it takes one of two shapes:
+
+- **The server waits.** `instance.wait({ state: "running" })` forwards the
+  deadline to the platform, which holds the connection open. One request.
+- **The SDK polls.** Where the platform has nothing to hold open, the SDK asks
+  again on a schedule. `waitUntilReady` owns that loop: the delay doubles from
+  100 ms to 2 s with jitter, the deadline is 60 s, and a `signal` aborts the
+  wait together with the probe in flight. Only a failure that can still change
+  is worth another probe — a network fault, or a `404`/`502`/`503`/`504`. A
+  `401` or a `403` is rethrown at once, so a rejected token reports itself
+  instead of timing out.
+
+Both reject on failure rather than returning. A poll that runs out of time
+throws `kind: "timeout"`.
 
 ## Self-hosted and staging deployments
 
