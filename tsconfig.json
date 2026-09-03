@@ -5,7 +5,6 @@
     "moduleResolution": "Bundler",
     "noEmit": true,
     "types": ["node"],
-    "baseUrl": ".",
     "paths": {
       "@unikraft/cloud": ["./src/index.ts"],
       "@unikraft/cloud/api": ["./src/api/index.ts"],
