@@ -51,6 +51,8 @@ export class Session {
 
   #metros?: MetrosApi;
   #discovery?: Promise<MetroEndpoint[]>;
+  /** The endpoints discovery reported, by metro code. */
+  readonly #discovered = new Map<Metro, MetroEndpoint>();
 
   constructor(config: SessionConfig) {
     this.platform = config.platform;
@@ -110,7 +112,22 @@ export class Session {
         { kind: "fanout" },
       );
     }
+    for (const endpoint of endpoints) this.#discovered.set(endpoint.metro, endpoint);
     return endpoints;
+  }
+
+  /**
+   * The endpoint for a metro code, from what the session already knows. Sends
+   * no request.
+   *
+   * A resource carries its metro code, not the URL it was read through. The two
+   * differ when the client is pinned to a URL, and when the control plane
+   * reports an endpoint that the code does not build (staging, for example).
+   * Falls back to the URL derived from the code.
+   */
+  endpointFor(metro: Metro): MetroEndpoint {
+    if (this.pinned) return this.pinned;
+    return this.#discovered.get(metro) ?? metroEndpoint(metro);
   }
 
   /**
