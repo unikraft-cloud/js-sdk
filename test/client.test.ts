@@ -95,6 +95,7 @@ describe("metroBaseUrl", () => {
   it("uses a full URL verbatim", () => {
     expect(metroBaseUrl("https://api.staging.internal")).toBe("https://api.staging.internal");
     expect(metroBaseUrl("http://127.0.0.1:8080/")).toBe("http://127.0.0.1:8080");
+    expect(metroBaseUrl("http://127.0.0.1:8080///")).toBe("http://127.0.0.1:8080");
   });
 
   it("drops a trailing /v1 the operation paths already carry", () => {
