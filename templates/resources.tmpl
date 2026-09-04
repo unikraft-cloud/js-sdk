@@ -50,9 +50,34 @@ export * as models from "./models.gen.js";
 {{- else -}}
 {{- $sse = false -}}
 {{- end -}}
+{{- /* Likewise for operations that answer with an unenveloped
+       `application/octet-stream` body: there is no JSON schema to derive a
+       return type from, so return the bytes via ApiClient.bytes(). */ -}}
+{{- $oct := false -}}
+{{- range $entry := sortedResponseCodes $op.Responses -}}
+{{- if and (not $oct) (or (hasPrefix "2" $entry.Code) (eq $entry.Code "default")) -}}
+{{- with $entry.Ref -}}{{- with .Value -}}
+{{- with index .Content "application/octet-stream" -}}{{- $oct = true -}}{{- end -}}
+{{- end -}}{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if and $oct (eq $ret "void") -}}
+{{- $ret = "Uint8Array" -}}
+{{- else -}}
+{{- $oct = false -}}
+{{- end -}}
 {{- $bodyRef := requestJSONSchema $op -}}
 {{- $bodyReq := requestBodyRequired $op -}}
 {{- $query := queryParameters $po -}}
+{{- $header := list -}}
+{{- with $po.PathItem -}}
+{{- range .Parameters -}}{{- with .Value -}}
+{{- if eq .In "header" -}}{{- $header = append $header . -}}{{- end -}}
+{{- end -}}{{- end -}}
+{{- end -}}
+{{- range $op.Parameters -}}{{- with .Value -}}
+{{- if eq .In "header" -}}{{- $header = append $header . -}}{{- end -}}
+{{- end -}}{{- end -}}
 {{- /* The Fetch standard forbids a request body on GET and HEAD, and no JS
        runtime lets us send one. The spec still models filters for those
        operations as a body, but it exposes every one of them as repeatable
@@ -69,10 +94,13 @@ export * as models from "./models.gen.js";
     {{- range pathParameters $po }}
     {{ tsSafeName .Name }}: {{ qualifyModels "models" (paramToTsType .) }},
     {{- end }}
-    {{- if or $query $bodyRef }}
+    {{- if or $query $header $bodyRef }}
     params: {
       {{- range $query }}
       "{{ .Name }}"?: {{ qualifyModels "models" (paramToTsType .) }};
+      {{- end }}
+      {{- range $header }}
+      "{{ .Name }}"{{ if not .Required }}?{{ end }}: {{ qualifyModels "models" (paramToTsType .) }};
       {{- end }}
       {{- if $bodyRef }}
       body{{ if not $bodyReq }}?{{ end }}: {{ qualifyModels "models" (tsTypeRef $bodyRef) }};
@@ -82,7 +110,7 @@ export * as models from "./models.gen.js";
     params: CallOptions = {},
     {{- end }}
   ): {{ if $sse }}AsyncGenerator<{{ $ret }}, void, void>{{ else }}Promise<{{ $ret }}>{{ end }} {
-    return this.{{ if $sse }}stream{{ else }}request{{ end }}<{{ $ret }}>(
+    return this.{{ if $sse }}stream<{{ $ret }}>{{ else if $oct }}bytes{{ else }}request<{{ $ret }}>{{ end }}(
       {
         method: "{{ .Method }}",
         path: `{{ $path }}`,
@@ -97,7 +125,19 @@ export * as models from "./models.gen.js";
         body: params.body,
         {{- end }}
       },
+      {{- if $header }}
+      {
+        ...params,
+        headers: {
+          {{- range $header }}
+          ...(params["{{ .Name }}"] !== undefined ? { "{{ .Name }}": String(params["{{ .Name }}"]) } : {}),
+          {{- end }}
+          ...params.headers,
+        },
+      },
+      {{- else }}
       params,
+      {{- end }}
     );
   }
 {{- end -}}

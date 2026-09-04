@@ -164,7 +164,8 @@ function hasProxyEnv(): boolean {
  * Build a dispatcher that honours the proxy environment variables, using
  * undici's `EnvHttpProxyAgent` (which also respects `NO_PROXY`). Returns
  * undefined when no proxy is configured or `undici` is unavailable. Never
- * throws — proxy support is best-effort. Callers cache the result per client.
+ * throws — proxy support is best-effort. Callers go through
+ * {@link proxyTransport}, which memoises the result process-wide.
  *
  * The dispatcher and fetch come from the SAME undici module. A dispatcher must
  * only be used with its own version's `fetch`: mixing a standalone-undici
@@ -202,6 +203,18 @@ async function createProxyTransport(): Promise<ProxyTransport | undefined> {
     warnProxy("failed to construct undici's EnvHttpProxyAgent.", cause);
     return undefined;
   }
+}
+
+/**
+ * Process-global memo for {@link createProxyTransport} to reuse the same
+ * connection pool across every client.
+ */
+let proxyMemo: Promise<ProxyTransport | undefined> | undefined;
+
+/** Resolve the shared proxy transport, building it at most once per process. */
+function proxyTransport(): Promise<ProxyTransport | undefined> {
+  proxyMemo ??= createProxyTransport();
+  return proxyMemo;
 }
 
 /**
@@ -292,8 +305,6 @@ export class ApiClient {
   protected readonly proxyFromEnv: boolean;
   // Whether the caller supplied a custom fetch (suppresses env-proxy injection).
   readonly #hasCustomFetch: boolean;
-  // Resolved lazily on first request, then reused for the client's lifetime.
-  #proxy?: Promise<ProxyTransport | undefined>;
 
   constructor(config: ApiClientConfig) {
     this.baseUrl = stripTrailingSlashes(config.baseUrl);
@@ -315,14 +326,14 @@ export class ApiClient {
   }
 
   /**
-   * Resolve the proxy transport (undici fetch + dispatcher) once per client.
-   * Skipped when a custom fetch was supplied — the caller owns transport, and
-   * a standalone-undici dispatcher is incompatible with a foreign fetch.
+   * Resolve the proxy transport (undici fetch + dispatcher), shared process-wide
+   * by {@link proxyTransport}. Skipped when a custom fetch was supplied — the
+   * caller owns transport, and a standalone-undici dispatcher is incompatible
+   * with a foreign fetch.
    */
   #proxyTransport(): Promise<ProxyTransport | undefined> {
     if (!this.proxyFromEnv || this.#hasCustomFetch) return Promise.resolve(undefined);
-    this.#proxy ??= createProxyTransport();
-    return this.#proxy;
+    return proxyTransport();
   }
 
   /**
@@ -424,6 +435,43 @@ export class ApiClient {
     }
 
     return parsed as T;
+  }
+
+  /**
+   * Perform a request whose response is an unenveloped `application/octet-stream`
+   * body and return it verbatim. Used by operations that download bytes — a raw
+   * command log or a file — where routing through {@link ApiClient.request}
+   * would `JSON.parse` the payload.
+   *
+   * The whole body is buffered, as `Response.bytes()` does; nothing is streamed
+   * (unlike {@link ApiClient.stream}, which is named for its SSE delivery).
+   */
+  protected async bytes(args: RequestArgs, options: CallOptions = {}): Promise<Uint8Array> {
+    const { response } = await this.#send(args, options, "application/octet-stream");
+
+    if (!response.ok) {
+      // A failure is still enveloped JSON (and may be an empty body, e.g. the
+      // 410 returned for deleted logs), so decode it the way stream() does.
+      const text = await response.text();
+      let parsed: unknown;
+      try {
+        parsed = text.length > 0 ? JSON.parse(text) : undefined;
+      } catch {
+        // Not an envelope; the raw text is reported as the error body instead.
+      }
+      const envelope = parsed as ApiResponse<unknown> | undefined;
+      throw new UnikraftCloudError(
+        envelope?.message ?? `HTTP ${response.status} ${response.statusText}`,
+        {
+          kind: "http",
+          status: response.status,
+          errors: envelope?.errors,
+          body: parsed ?? text,
+        },
+      );
+    }
+
+    return new Uint8Array(await response.arrayBuffer());
   }
 
   /**
