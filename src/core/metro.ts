@@ -35,12 +35,19 @@ export const DEFAULT_METRO: Metro = "fra";
  */
 export type MetroScope = "all" | Metro | ReadonlyArray<Metro>;
 
-/** A metro paired with the platform API base URL that serves it. */
+/**
+ * A metro paired with the platform API base URL that serves it.
+ *
+ * The fields are `readonly` because the session shares one endpoint object
+ * three ways: it holds the object in the discovery cache, `availableMetros()`
+ * returns the object to the caller, and `endpointFor()` returns it again to
+ * route a plugin request. A write to `baseUrl` moves every later request.
+ */
 export interface MetroEndpoint {
   /** Metro code (e.g. `"fra"`), or the base URL itself for an explicit endpoint. */
-  metro: Metro;
+  readonly metro: Metro;
   /** Fully-qualified platform API base URL for this metro. */
-  baseUrl: string;
+  readonly baseUrl: string;
 }
 
 /** Pair a metro with its base URL. */

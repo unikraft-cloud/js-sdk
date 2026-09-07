@@ -2,6 +2,7 @@
 // Copyright (c) 2026, Unikraft GmbH.
 
 import { Api } from "./api/index.js";
+import { readEnv } from "./core/env.js";
 import type { ApiClientConfig, FetchLike } from "./core/http.js";
 import {
   CONTROLPLANE_BASE_URL,
@@ -59,11 +60,6 @@ export interface UnikraftCloudConfig {
   proxyFromEnv?: boolean;
 }
 
-function readEnv(name: string): string | undefined {
-  if (typeof process !== "undefined" && process.env) return process.env[name];
-  return undefined;
-}
-
 /**
  * The idiomatic resource clients for one metro scope. Every operation on these
  * covers the scope: reads fan out and are merged, and each result carries the
@@ -82,8 +78,12 @@ export class Scope {
   readonly users: Users;
   /** Which metros these clients cover. */
   readonly scope: MetroScope;
-
-  protected readonly session: Session;
+  /**
+   * The transport and metro knowledge these clients share: one set of
+   * credentials, one metro discovery. Pass it on rather than rebuilding it —
+   * `Sandbox.create({ client })` borrows exactly this.
+   */
+  readonly session: Session;
 
   constructor(session: Session, scope: MetroScope) {
     this.session = session;
@@ -375,6 +375,7 @@ export {
   type CertificateRef,
   type CertificateUpdate,
 } from "./resources/certificates.js";
+export { pluginBaseUrl } from "./core/plugin.js";
 export { Users, type Quota } from "./resources/users.js";
 
 // Wire types, namespaced per API surface.
