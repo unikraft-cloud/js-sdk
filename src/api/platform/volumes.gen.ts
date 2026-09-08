@@ -4,7 +4,7 @@ import type * as models from "./models.gen.js";
 
 /**
  * Low-level "plumbing" client for the {@link https://unikraft.com|Unikraft
- * Cloud} `Volumes` resource. Methods return the raw response envelope.
+ * Cloud} `volumes` resource. Methods return the raw response envelope.
  */
 export class VolumesApi extends ApiClient {
   /**
@@ -82,7 +82,7 @@ export class VolumesApi extends ApiClient {
   }
 
   /**
-   * Create template volume
+   * Create Template Volume
    */
   createTemplateVolume(
     params: {
@@ -118,7 +118,7 @@ export class VolumesApi extends ApiClient {
   }
 
   /**
-   * Delete template volume by UUID
+   * Delete Template Volume by UUID
    */
   deleteTemplateVolumeByUuid(
     uuid: string,
@@ -134,7 +134,7 @@ export class VolumesApi extends ApiClient {
   }
 
   /**
-   * Delete template volumes
+   * Delete Template Volumes
    */
   deleteTemplateVolumes(
     params: {
@@ -223,7 +223,7 @@ export class VolumesApi extends ApiClient {
   }
 
   /**
-   * Get template volume by UUID
+   * Get Template Volume by UUID
    */
   getTemplateVolumeByUuid(
     uuid: string,
@@ -244,7 +244,7 @@ export class VolumesApi extends ApiClient {
   }
 
   /**
-   * List template volumes
+   * List Template Volumes
    */
   getTemplateVolumes(
     params: {
@@ -253,9 +253,9 @@ export class VolumesApi extends ApiClient {
       details?: boolean;
       count?: number;
       from?: string;
-      tags?: string[];
       order?: models.PaginationOrder;
       sortby?: models.PaginationSortBy;
+      tags?: string[];
     } & CallOptions = {},
   ): Promise<models.GetTemplateVolumesResponse> {
     return this.request<models.GetTemplateVolumesResponse>(
@@ -268,9 +268,9 @@ export class VolumesApi extends ApiClient {
           details: params["details"],
           count: params["count"],
           from: params["from"],
-          tags: params["tags"],
           order: params["order"],
           sortby: params["sortby"],
+          tags: params["tags"],
         },
       },
       params,
@@ -308,9 +308,9 @@ export class VolumesApi extends ApiClient {
       details?: boolean;
       count?: number;
       from?: string;
-      tags?: string[];
       order?: models.PaginationOrder;
       sortby?: models.PaginationSortBy;
+      tags?: string[];
     } & CallOptions = {},
   ): Promise<models.GetVolumesResponse> {
     return this.request<models.GetVolumesResponse>(
@@ -323,9 +323,9 @@ export class VolumesApi extends ApiClient {
           details: params["details"],
           count: params["count"],
           from: params["from"],
-          tags: params["tags"],
           order: params["order"],
           sortby: params["sortby"],
+          tags: params["tags"],
         },
       },
       params,
@@ -333,7 +333,7 @@ export class VolumesApi extends ApiClient {
   }
 
   /**
-   * Update template volume by UUID
+   * Update Template Volume by UUID
    */
   updateTemplateVolumeByUuid(
     uuid: string,
@@ -352,7 +352,7 @@ export class VolumesApi extends ApiClient {
   }
 
   /**
-   * Update template volumes
+   * Update Template Volumes
    */
   updateTemplateVolumes(
     params: {

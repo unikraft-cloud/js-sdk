@@ -4,7 +4,7 @@ import type * as models from "./models.gen.js";
 
 /**
  * Low-level "plumbing" client for the {@link https://unikraft.com|Unikraft
- * Cloud} `Node` resource. Methods return the raw response envelope.
+ * Cloud} `node` resource. Methods return the raw response envelope.
  */
 export class NodeApi extends ApiClient {
   /**

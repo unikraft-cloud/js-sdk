@@ -8,6 +8,6 @@ export { CertificatesApi } from "./certificates.gen.js";
 export { ImagesApi } from "./images.gen.js";
 export { InstancesApi } from "./instances.gen.js";
 export { NodeApi } from "./node.gen.js";
-export { ServiceGroupsApi } from "./service-groups.gen.js";
+export { ServicesApi } from "./services.gen.js";
 export { UsersApi } from "./users.gen.js";
 export { VolumesApi } from "./volumes.gen.js";

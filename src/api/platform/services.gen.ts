@@ -4,9 +4,9 @@ import type * as models from "./models.gen.js";
 
 /**
  * Low-level "plumbing" client for the {@link https://unikraft.com|Unikraft
- * Cloud} `ServiceGroups` resource. Methods return the raw response envelope.
+ * Cloud} `services` resource. Methods return the raw response envelope.
  */
-export class ServiceGroupsApi extends ApiClient {
+export class ServicesApi extends ApiClient {
   /**
    * Create Service Group
    */

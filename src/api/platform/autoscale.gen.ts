@@ -4,7 +4,7 @@ import type * as models from "./models.gen.js";
 
 /**
  * Low-level "plumbing" client for the {@link https://unikraft.com|Unikraft
- * Cloud} `Autoscale` resource. Methods return the raw response envelope.
+ * Cloud} `autoscale` resource. Methods return the raw response envelope.
  */
 export class AutoscaleApi extends ApiClient {
   /**

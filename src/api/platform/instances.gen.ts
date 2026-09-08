@@ -4,11 +4,11 @@ import type * as models from "./models.gen.js";
 
 /**
  * Low-level "plumbing" client for the {@link https://unikraft.com|Unikraft
- * Cloud} `Instances` resource. Methods return the raw response envelope.
+ * Cloud} `instances` resource. Methods return the raw response envelope.
  */
 export class InstancesApi extends ApiClient {
   /**
-   * Create checkpoint instances
+   * Create Checkpoint Instances
    */
   createCheckpointInstances(
     params: {
@@ -62,7 +62,7 @@ export class InstancesApi extends ApiClient {
   }
 
   /**
-   * Delete checkpoint instance by UUID
+   * Delete Checkpoint Instance by UUID
    */
   deleteCheckpointInstanceByUuid(
     uuid: string,
@@ -78,7 +78,7 @@ export class InstancesApi extends ApiClient {
   }
 
   /**
-   * Delete checkpoint instances
+   * Delete Checkpoint Instances
    */
   deleteCheckpointInstances(
     params: {
@@ -167,7 +167,7 @@ export class InstancesApi extends ApiClient {
   }
 
   /**
-   * Get checkpoint history
+   * Get Checkpoint History
    */
   getCheckpointHistory(
     params: {
@@ -189,7 +189,7 @@ export class InstancesApi extends ApiClient {
   }
 
   /**
-   * Get checkpoint history by UUID
+   * Get Checkpoint History by UUID
    */
   getCheckpointHistoryByUuid(
     uuid: string,
@@ -205,7 +205,7 @@ export class InstancesApi extends ApiClient {
   }
 
   /**
-   * Get checkpoint instance by UUID
+   * Get Checkpoint Instance by UUID
    */
   getCheckpointInstanceByUuid(
     uuid: string,
@@ -226,7 +226,7 @@ export class InstancesApi extends ApiClient {
   }
 
   /**
-   * List checkpoint instances
+   * List Checkpoint Instances
    */
   getCheckpointInstances(
     params: {
@@ -234,10 +234,10 @@ export class InstancesApi extends ApiClient {
       name?: string[];
       details?: boolean;
       count?: number;
-      tags?: string[];
       from?: string;
       order?: models.PaginationOrder;
       sortby?: models.PaginationSortBy;
+      tags?: string[];
     } & CallOptions = {},
   ): Promise<models.GetCheckpointInstancesResponse> {
     return this.request<models.GetCheckpointInstancesResponse>(
@@ -249,10 +249,10 @@ export class InstancesApi extends ApiClient {
           name: params["name"],
           details: params["details"],
           count: params["count"],
-          tags: params["tags"],
           from: params["from"],
           order: params["order"],
           sortby: params["sortby"],
+          tags: params["tags"],
         },
       },
       params,
@@ -281,7 +281,7 @@ export class InstancesApi extends ApiClient {
   }
 
   /**
-   * Get instances checkpoint history
+   * Get Instances Checkpoint History
    */
   getInstanceHistory(
     params: {
@@ -303,7 +303,7 @@ export class InstancesApi extends ApiClient {
   }
 
   /**
-   * Get instance checkpoint history by UUID
+   * Get Instance Checkpoint History by UUID
    */
   getInstanceHistoryByUuid(
     uuid: string,
@@ -408,9 +408,9 @@ export class InstancesApi extends ApiClient {
       details?: boolean;
       count?: number;
       from?: string;
-      tags?: string[];
       order?: models.PaginationOrder;
       sortby?: models.PaginationSortBy;
+      tags?: string[];
     } & CallOptions = {},
   ): Promise<models.GetInstancesResponse> {
     return this.request<models.GetInstancesResponse>(
@@ -423,9 +423,9 @@ export class InstancesApi extends ApiClient {
           details: params["details"],
           count: params["count"],
           from: params["from"],
-          tags: params["tags"],
           order: params["order"],
           sortby: params["sortby"],
+          tags: params["tags"],
         },
       },
       params,
@@ -462,10 +462,10 @@ export class InstancesApi extends ApiClient {
       name?: string[];
       details?: boolean;
       count?: number;
-      tags?: string[];
       from?: string;
       order?: models.PaginationOrder;
       sortby?: models.PaginationSortBy;
+      tags?: string[];
     } & CallOptions = {},
   ): Promise<models.GetTemplateInstancesResponse> {
     return this.request<models.GetTemplateInstancesResponse>(
@@ -477,10 +477,10 @@ export class InstancesApi extends ApiClient {
           name: params["name"],
           details: params["details"],
           count: params["count"],
-          tags: params["tags"],
           from: params["from"],
           order: params["order"],
           sortby: params["sortby"],
+          tags: params["tags"],
         },
       },
       params,
@@ -599,7 +599,7 @@ export class InstancesApi extends ApiClient {
   }
 
   /**
-   * Update checkpoint instance by UUID
+   * Update Checkpoint Instance by UUID
    */
   updateCheckpointInstanceByUuid(
     uuid: string,
@@ -618,7 +618,7 @@ export class InstancesApi extends ApiClient {
   }
 
   /**
-   * Update checkpoint instances
+   * Update Checkpoint Instances
    */
   updateCheckpointInstances(
     params: {
