@@ -29,7 +29,7 @@ export const DEFAULT_PLUGIN_ROM = "plugins/sandbox:latest";
  * runs whatever command it is handed, so its image only has to carry a shell
  * and a main process that stays alive. Any replacement must do both.
  */
-export const DEFAULT_IMAGE = "official/debian-slim:latest";
+export const DEFAULT_IMAGE = "debian-slim:latest";
 
 /**
  * How long a stopped sandbox is kept before the platform deletes it, in
