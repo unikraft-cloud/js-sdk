@@ -194,6 +194,33 @@ describe("a client pinned to one metro", () => {
     await expect(ukc.instances.get({ name: "missing" })).rejects.toMatchObject({ status: 404 });
   });
 
+  it("reads a per-entry failure out of a 200 error envelope", async () => {
+    // The platform answers a read of an instance it does not hold with HTTP 200
+    // and the summary message `Failed to perform all operations`. Only the entry
+    // inside `data` says what went wrong, and only its `error` code says that
+    // the instance is absent rather than that the request failed.
+    const { fetch } = fakeFetch([
+      {
+        body: {
+          status: "error",
+          op_time_us: 1,
+          message: "Failed to perform all operations",
+          data: {
+            instances: [
+              { status: "error", uuid: "u1", message: "No instance with uuid 'u1'", error: 8 },
+            ],
+          },
+        },
+      },
+    ]);
+    const ukc = new UnikraftCloud({ token: "t", metro: "fra", fetch });
+
+    await expect(ukc.instances.get({ uuid: "u1" })).rejects.toMatchObject({
+      status: 404,
+      message: "No instance with uuid 'u1'",
+    });
+  });
+
   it("auto-paginates list() across pages", async () => {
     const first = Array.from({ length: 100 }, (_, n) => ({ uuid: `u${n}`, name: `i${n}` }));
     const second = [{ uuid: "u100", name: "i100" }];
@@ -549,18 +576,39 @@ describe("metro scope", () => {
     }
   });
 
-  it("reports a resource missing everywhere as a 404 naming the metros searched", async () => {
-    const { fetch } = routedFetch((url) => {
-      if (url.pathname === "/v1/metros") return { body: metrosBody(["fra", "dal"]) };
-      return { body: okBody({ instances: [] }) };
-    });
-    const ukc = new UnikraftCloud({ token: "t", fetch });
+  it.each([
+    { shape: "an empty list", miss: okBody({ instances: [] }) },
+    {
+      // What a metro really answers for a name filter that matches nothing. A
+      // search reaches every metro, so most of them reply this way on a hit
+      // elsewhere, and the reply has to read as absence rather than failure.
+      shape: "a per-entry 'no such instance' failure",
+      miss: {
+        status: "error",
+        op_time_us: 1,
+        message: "Failed to perform all operations",
+        data: {
+          instances: [
+            { status: "error", name: "nope", message: "No instance with name 'nope'", error: 8 },
+          ],
+        },
+      },
+    },
+  ])(
+    "reports a resource missing everywhere as a 404 naming the metros searched, given $shape",
+    async ({ miss }) => {
+      const { fetch } = routedFetch((url) => {
+        if (url.pathname === "/v1/metros") return { body: metrosBody(["fra", "dal"]) };
+        return { body: miss };
+      });
+      const ukc = new UnikraftCloud({ token: "t", fetch });
 
-    await expect(ukc.instances.get({ name: "nope" })).rejects.toMatchObject({
-      status: 404,
-      message: 'instance name "nope" not found in fra, dal',
-    });
-  });
+      await expect(ukc.instances.get({ name: "nope" })).rejects.toMatchObject({
+        status: 404,
+        message: 'instance name "nope" not found in fra, dal',
+      });
+    },
+  );
 
   it("groups a bulk operation by the metro each ref lives in", async () => {
     const { fetch, calls } = routedFetch((url) => {
