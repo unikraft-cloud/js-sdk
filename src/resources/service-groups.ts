@@ -2,7 +2,7 @@
 // Copyright (c) 2026, Unikraft GmbH.
 
 import type * as models from "../api/platform/models.gen.js";
-import { ServiceGroupsApi } from "../api/platform/service-groups.gen.js";
+import { ServicesApi } from "../api/platform/services.gen.js";
 import { fanout } from "../core/fanout.js";
 import { HandleSet } from "../core/handle-set.js";
 import { type HandleSteps, type MetroTarget, ResourceHandle } from "../core/handle.js";
@@ -219,11 +219,11 @@ export class ServiceGroupSet extends HandleSet<ServiceGroupHandle<ServiceGroup>,
 }
 
 /** Idiomatic client for Unikraft Cloud service groups. */
-export class ServiceGroups extends Resource<ServiceGroupsApi> {
+export class ServiceGroups extends Resource<ServicesApi> {
   protected readonly noun = "service group";
 
   constructor(session: Session, scope: MetroScope) {
-    super(session, scope, new ServiceGroupsApi(session.platform));
+    super(session, scope, new ServicesApi(session.platform));
   }
 
   /** Create a service group in a single metro and return a handle to it. */

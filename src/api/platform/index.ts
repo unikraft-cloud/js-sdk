@@ -10,7 +10,7 @@ import { CertificatesApi } from "./certificates.gen.js";
 import { ImagesApi } from "./images.gen.js";
 import { InstancesApi } from "./instances.gen.js";
 import { NodeApi } from "./node.gen.js";
-import { ServiceGroupsApi } from "./service-groups.gen.js";
+import { ServicesApi } from "./services.gen.js";
 import { UsersApi } from "./users.gen.js";
 import { VolumesApi } from "./volumes.gen.js";
 
@@ -38,7 +38,7 @@ export class PlatformApi {
   /** Persistent volumes. */
   readonly volumes: VolumesApi;
   /** Service groups (load-balanced networking). */
-  readonly services: ServiceGroupsApi;
+  readonly services: ServicesApi;
   /** TLS certificates. */
   readonly certificates: CertificatesApi;
   /** Autoscale configurations and policies. */
@@ -53,7 +53,7 @@ export class PlatformApi {
   constructor(config: ApiClientConfig) {
     this.instances = new InstancesApi(config);
     this.volumes = new VolumesApi(config);
-    this.services = new ServiceGroupsApi(config);
+    this.services = new ServicesApi(config);
     this.certificates = new CertificatesApi(config);
     this.autoscale = new AutoscaleApi(config);
     this.images = new ImagesApi(config);

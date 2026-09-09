@@ -25,13 +25,18 @@ OUTPUT        ?= ./src/api
 .PHONY: all
 all: generate build
 
+# TypeSpec namespaces its schemas (`Instances.Instance`), which is not a legal
+# TypeScript identifier; --namespace-flatten=strip restores the bare names the
+# hand-written layers refer to.
 .PHONY: generate
 generate: ## Regenerate every plumbing client from the OpenAPI specs.
+	rm -f $(OUTPUT)/platform/*.gen.ts
 	$(OPENAPI_GEN) \
 		-i $(PLATFORM_SPEC) \
 		-o $(OUTPUT)/platform \
 		-t $(TEMPLATES) \
-		-v package=api
+		-v package=api \
+		--namespace-flatten=strip
 	$(OPENAPI_GEN) \
 		-i $(CONTROLPLANE_SPEC) \
 		-o $(OUTPUT)/controlplane \

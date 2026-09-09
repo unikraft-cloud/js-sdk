@@ -10,125 +10,11 @@
 
 export type AdjustmentType = "change" | "exact" | "percentage";
 
-export interface AttachVolumeByUUIDRequestBody {
-  /**
-   * UUID or name of the instance to attach the volume to.
-   */
-  attach_to: NameOrUUID;
-  /**
-   * Path of the mountpoint.
-   *
-   * The path must be absolute, not contain `.` and `..` components, and not
-   * contain colons (`:`). The path must point to an empty directory. If the
-   * directory does not exist, it is created.
-   */
-  at: string;
-  /**
-   * Whether the volume should be mounted read-only.
-   */
-  readonly?: boolean;
-}
-
 /**
- * A single request item for attaching a volume to an instance.
- */
-
-export interface AttachVolumesRequestItem {
-  /**
-   * UUID or name of the instance to attach the volume to.
-   */
-  attach_to: NameOrUUID;
-  /**
-   * Path of the mountpoint.
-   *
-   * The path must be absolute, not contain `.` and `..` components, and not
-   * contain colons (`:`). The path must point to an empty directory. If the
-   * directory does not exist, it is created.
-   */
-  at: string;
-  /**
-   * Whether the volume should be mounted read-only.
-   */
-  readonly?: boolean;
-  /**
-   * The UUID of the volume to attach. Mutually exclusive with name.
-   * Exactly one of uuid or name must be provided.
-   */
-  uuid?: string;
-  /**
-   * The name of the volume to attach. Mutually exclusive with UUID.
-   * Exactly one of uuid or name must be provided.
-   */
-  name?: string;
-}
-
-/**
- * The response message for attaching one or more volume(s) given their
- * UUID(s) or name(s).
- */
-
-export interface AttachVolumesResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * The response data for this request.
-   */
-  data: AttachVolumesResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface AttachVolumesResponseAttachedVolume {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * The UUID of the volume that was attached.
-   */
-  uuid: string;
-  /**
-   * The name of the volume that was attached.
-   */
-  name: string;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  error?: number;
-}
-
-export interface AttachVolumesResponseData {
-  /**
-   * The volume(s) which were attached by the request.
-   */
-  volumes?: AttachVolumesResponseAttachedVolume[];
-}
-
-/**
- * AutoscalePolicy defines the autoscale policy for a service.
- * Right now it contains fields from both the `ondemand` and `step` policies.
- * They are marked both as optional, so only one of them should be set at a
- * time. This is a current limitation of the API design.
+ * AutoscalePolicy defines the autoscale policy for a service. Right now it
+ * contains fields from both the `ondemand` and `step` policies. They are
+ * marked both as optional, so only one of them should be set at a time. This
+ * is a current limitation of the API design.
  */
 
 export interface AutoscalePolicy {
@@ -137,23 +23,28 @@ export interface AutoscalePolicy {
    */
   name: string;
   /**
-   * If the policy is enabled.
+   * Whether the policy is enabled.
    */
   enabled?: boolean;
   /**
-   * Metric to use for the step policy.
+   * Metric to use for the step policy (only for step policies).
    */
   metric?: StepPolicyMetric;
   /**
-   * The type of adjustment to be made in the step policy.
+   * The type of adjustment to be made in the step policy (only for step
+   * policies).
    */
   adjustment_type?: AdjustmentType;
   /**
-   * The steps for the step policy.
-   * Each step defines an adjustment value and optional bounds.
+   * The steps for the step policy. Each step defines an adjustment value and
+   * optional bounds.
    */
   steps?: AutoscalePolicyStep[];
 }
+
+/**
+ * A single step in a step autoscaling policy.
+ */
 
 export interface AutoscalePolicyStep {
   /**
@@ -170,22 +61,591 @@ export interface AutoscalePolicyStep {
   upper_bound?: number;
 }
 
-export interface Certificate {
+export interface ConfigurationInstanceCreateArgs {
   /**
-   * The UUID of the certificate.
-   *
-   * This is a unique identifier for the certificate that is generated when the
-   * certificate is created.  The UUID is used to reference the certificate in
-   * API calls and can be used to identify the certificate in all API calls that
-   * require an identifier.
+   * The ROM to use for the autoscale configuration.
+   */
+  roms?: InstanceCreateArgsInstanceCreateRequestRoms;
+  /**
+   * The template to use for the autoscale configuration.
+   */
+  template?: NameOrUUID;
+}
+
+/**
+ * The request message to create an autoscale configuration for a service group
+ * based on its UUID.
+ */
+
+export interface CreateAutoscaleConfigurationByServiceGroupUUIDRequest {
+  /**
+   * The UUID of the service to create a configuration for.
    */
   uuid: string;
   /**
-   * The name of the certificate.
-   *
-   * This is a human-readable name that can be used to identify the certificate.
-   * The name must be unique within the context of your account.  The name can
-   * also be used to identify the certificate in API calls.
+   * The minimum number of instances to keep running.
+   */
+  min_size?: number;
+  /**
+   * The maximum number of instances to keep running.
+   */
+  max_size?: number;
+  /**
+   * The warmup time in milliseconds for new instances.
+   */
+  warmup_time_ms?: number;
+  /**
+   * The cooldown time in milliseconds for the autoscale configuration.
+   */
+  cooldown_time_ms?: number;
+  /**
+   * The arguments to use when creating instances.
+   */
+  create_args: CreateAutoscaleConfigurationByServiceGroupUUIDRequestInstanceCreateArgs;
+  /**
+   * The policies to apply to the autoscale configuration.
+   */
+  policies?: AutoscalePolicy[];
+}
+
+export interface CreateAutoscaleConfigurationByServiceGroupUUIDRequestInstanceCreateArgs {
+  /**
+   * The ROM to use for the autoscale configuration.
+   */
+  roms?: InstanceCreateArgsInstanceCreateRequestRoms;
+  /**
+   * The template to use for the autoscale configuration.
+   */
+  template?: NameOrUUID;
+}
+
+/**
+ * The request message to create an autoscale configuration policy for a
+ * service.
+ */
+
+export interface CreateAutoscaleConfigurationPolicyRequest {
+  /**
+   * The name of the policy.
+   */
+  name: string;
+  /**
+   * The policy type to add to the autoscale configuration.
+   */
+  type: AutoscalePolicy;
+}
+
+export interface CreateAutoscaleConfigurationPolicyResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data: CreateAutoscaleConfigurationPolicyResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface CreateAutoscaleConfigurationPolicyResponseData {
+  policies?: CreateAutoscaleConfigurationPolicyResponsePolicy[];
+}
+
+/**
+ * Per-item result for a create autoscale configuration policy operation.
+ */
+
+export interface CreateAutoscaleConfigurationPolicyResponsePolicy {
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * An optional error code providing additional information about the status.
+   */
+  error?: number;
+}
+
+export interface CreateAutoscaleConfigurationsRequestConfiguration {
+  /**
+   * The UUID of the resource.
+   */
+  uuid?: string;
+  /**
+   * The name of the resource.
+   */
+  name?: string;
+  /**
+   * The minimum number of instances to keep running.
+   */
+  min_size?: number;
+  /**
+   * The maximum number of instances to keep running.
+   */
+  max_size?: number;
+  /**
+   * The warmup time in milliseconds for new instances.
+   */
+  warmup_time_ms?: number;
+  /**
+   * The cooldown time in milliseconds for the autoscale configuration.
+   */
+  cooldown_time_ms?: number;
+  /**
+   * The arguments to use when creating instances.
+   */
+  create_args: ConfigurationInstanceCreateArgs;
+  /**
+   * The policies to apply to the autoscale configuration.
+   */
+  policies?: AutoscalePolicy[];
+}
+
+/**
+ * The response to a CreateAutoscaleConfigurationRequest.
+ */
+
+export interface CreateAutoscaleConfigurationsResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data: CreateAutoscaleConfigurationsResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * Per-item result for a create autoscale configurations operation.
+ */
+
+export interface CreateAutoscaleConfigurationsResponseConfigurationsResponse {
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * An optional error code providing additional information about the status.
+   */
+  error?: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface CreateAutoscaleConfigurationsResponseData {
+  service_groups?: CreateAutoscaleConfigurationsResponseConfigurationsResponse[];
+}
+
+export interface DeleteAutoscaleConfigurationPolicyResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data: DeleteAutoscaleConfigurationPolicyResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface DeleteAutoscaleConfigurationPolicyResponseData {
+  policies?: DeleteAutoscaleConfigurationPolicyResponsePoliciesResponse[];
+}
+
+/**
+ * Per-item result for a delete autoscale configuration policy operation.
+ */
+
+export interface DeleteAutoscaleConfigurationPolicyResponsePoliciesResponse {
+  /**
+   * The name of the deleted policy.
+   */
+  name: string;
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * An optional error code providing additional information about the status.
+   */
+  error?: number;
+}
+
+export interface DeleteAutoscaleConfigurationsResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data: DeleteAutoscaleConfigurationsResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface DeleteAutoscaleConfigurationsResponseData {
+  service_groups?: DeleteAutoscaleConfigurationsResponseServiceGroup[];
+}
+
+/**
+ * Per-item result for a delete autoscale configurations operation.
+ */
+
+export interface DeleteAutoscaleConfigurationsResponseServiceGroup {
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * An optional error code providing additional information about the status.
+   */
+  error?: number;
+}
+
+/**
+ * The request message to delete an autoscale configuration policy by name.
+ */
+
+export interface DeletePolicyRequest {
+  /**
+   * The name of the policy to delete.
+   */
+  name: string;
+}
+
+/**
+ * The request message to get an autoscale configuration policy by name.
+ */
+
+export interface GetAutoscaleConfigurationPolicyRequest {
+  /**
+   * The Name of the policy to get.
+   */
+  name: string;
+}
+
+export interface GetAutoscaleConfigurationPolicyResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data: GetAutoscaleConfigurationPolicyResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface GetAutoscaleConfigurationPolicyResponseData {
+  policies?: GetAutoscaleConfigurationPolicyResponsePolicyResponse[];
+}
+
+/**
+ * Per-item result for a get autoscale configuration policy operation.
+ */
+
+export interface GetAutoscaleConfigurationPolicyResponsePolicyResponse {
+  /**
+   * The policy which was retrieved by the request.
+   */
+  policy: AutoscalePolicy;
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * An optional error code providing additional information about the status.
+   */
+  error?: number;
+}
+
+/**
+ * The response message for a GetAutoscaleConfigurationsRequest.
+ */
+
+export interface GetAutoscaleConfigurationsResponse {
+  /**
+   * The status of the response.
+   */
+  status: GetAutoscaleConfigurationsResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data: GetAutoscaleConfigurationsResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface GetAutoscaleConfigurationsResponseData {
+  service_groups?: GetAutoscaleConfigurationsResponseServiceGroup[];
+}
+
+/**
+ * Per-item result for a get autoscale configurations operation.
+ */
+
+export interface GetAutoscaleConfigurationsResponseServiceGroup {
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+  /**
+   * If the autoscale configuration is enabled.
+   */
+  enabled: boolean;
+  /**
+   * The minimum number of instances to keep running. Only if enabled is true.
+   */
+  min_size?: number;
+  /**
+   * The maximum number of instances to keep running. Only if enabled is true.
+   */
+  max_size?: number;
+  /**
+   * The warmup time in seconds for new instances. Only if enabled is true.
+   */
+  warmup_time_ms?: number;
+  /**
+   * The cooldown time in seconds for the autoscale configuration. Only if
+   * enabled is true.
+   */
+  cooldown_time_ms?: number;
+  /**
+   * The instance template used for the autoscale configuration. Only if
+   * enabled is true.
+   */
+  template?: ServiceGroupTemplate;
+  /**
+   * The policies applied to the autoscale configuration.
+   */
+  policies?: AutoscalePolicy[];
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * An optional error code providing additional information about the status.
+   */
+  error?: number;
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+}
+
+/**
+ * The status of the response.
+ */
+
+export type GetAutoscaleConfigurationsResponseStatus = "success" | "error" | "unconfigured";
+
+/**
+ * A ROM to use for an autoscale instance create configuration.
+ */
+
+export interface InstanceCreateArgsInstanceCreateRequestRoms {
+  /**
+   * The name of the ROM.
+   */
+  name: string;
+  /**
+   * The image of the ROM to use for the autoscale configuration. Mutually
+   * exclusive with `files`. Accepts either a plain image reference string
+   * (`"nginx:latest"`) or an object carrying additional pull configuration
+   * (`{"url": "nginx:latest", "pull_policy": "always"}`).
+   */
+  image?: string | ImageSpec;
+  /**
+   * Inline files to use as the ROM content. When specified, the platform
+   * creates an EROFS image from the provided files. Mutually exclusive with
+   * `image`.
+   */
+  files?: InlineFile[];
+}
+
+/**
+ * The instance template used for an autoscale configuration.
+ */
+
+export interface ServiceGroupTemplate {
+  /**
+   * The UUID of the template used for the autoscale configuration.
+   */
+  uuid: string;
+  /**
+   * The name of the template used for the autoscale configuration.
+   */
+  name: string;
+}
+
+/**
+ * The step policy is a type of autoscaling policy that scales the number of
+ * instances in a service by a fixed number of instances at each step. It uses
+ * a metric to determine when to scale up or down.
+ */
+
+export type StepPolicyMetric = "cpu";
+
+/**
+ * Certificate with per-item response envelope fields merged in.
+ */
+
+export interface Certificate {
+  /**
+   * Indicates whether the operation was successful for this item.
+   */
+  status?: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
    */
   name: string;
   /**
@@ -254,22 +714,13 @@ export interface Certificate {
    */
   state: CertificateState;
   /**
-   * An optional field representing the status of the request.  This field is
-   * only set when this message object is used as a response message.
+   * Validation status when state is pending.
    */
-  status?: ResponseStatus;
+  validation?: CertificateValidation;
   /**
-   * An optional message providing additional information about the status.
-   * This field is only set when this message object is used as a response
-   * message, and is useful when the status is not `success`.
+   * Service groups using this certificate.
    */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is only set when this message object is used as a response
-   * message, and is useful when the status is not `success`.
-   */
-  error?: number;
+  service_groups?: ID[];
 }
 
 /**
@@ -285,404 +736,25 @@ export interface Certificate {
  * | `valid`   | The certificate is valid and can be used by your services. |
  * | `error`   | The certificate request failed after multiple attempts. This
  * can happen, for example, if your DNS configuration is not correct, you run
- * into Let’s Encrypt™ quota limits, or the domain validation process failed
- * for some other reason. There won’t be any further automatic attempts. |
+ * into Let's Encrypt™ quota limits, or the domain validation process failed
+ * for some other reason. There won't be any further automatic attempts. |
  */
 
 export type CertificateState = "pending" | "valid" | "error";
 
 /**
- * A checkpoint history entry, representing a single checkpoint in the
- * history of an instance.
+ * Validation status for a pending certificate.
  */
 
-export interface CheckpointHistoryEntry {
+export interface CertificateValidation {
   /**
-   * The UUID of the checkpoint.
+   * The current validation attempt number.
    */
-  uuid: string;
+  attempt: number;
   /**
-   * The name of the checkpoint.
+   * The next validation attempt time.
    */
-  name: string;
-  /**
-   * The time the checkpoint was created.
-   */
-  created_at: string;
-}
-
-export interface CloneVolumeByUUIDRequestBody {
-  /**
-   * The name of the new cloned volume.  If not provided, a random name
-   * of the form `vol-X` is generated for you, where `X` is a 5 character
-   * long random alphanumeric suffix.
-   */
-  vol_name?: string;
-  /**
-   * The quota policy for the new cloned volume.  If not provided, the quota
-   * policy of the source volume is used.
-   */
-  quota_policy?: VolumeQuotaPolicy;
-  /**
-   * A list of tags to assign to the new cloned volume.
-   */
-  tags?: string[];
-}
-
-/**
- * A single request item describing the volume to clone.
- */
-
-export interface CloneVolumesRequestItem {
-  /**
-   * The name of the new cloned volume.  If not provided, a random name
-   * of the form `vol-X` is generated for you, where `X` is a 5 character
-   * long random alphanumeric suffix.
-   */
-  vol_name?: string;
-  /**
-   * The quota policy for the new cloned volume.  If not provided, the quota
-   * policy of the source volume is used.
-   */
-  quota_policy?: VolumeQuotaPolicy;
-  /**
-   * A list of tags to assign to the new cloned volume.
-   */
-  tags?: string[];
-  /**
-   * The UUID of the volume to clone.  Mutually exclusive with name.
-   */
-  uuid?: string;
-  /**
-   * The name of the volume to clone.  Mutually exclusive with UUID.
-   */
-  name?: string;
-}
-
-/**
- * The response message for cloning one or more volume(s).
- */
-
-export interface CloneVolumesResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * The response data for this request.
-   */
-  data: CloneVolumesResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface CloneVolumesResponseData {
-  /**
-   * The volume(s) which were cloned by the request.
-   */
-  volumes?: CloneVolumesResponseVolume[];
-}
-
-export interface CloneVolumesResponseVolume {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * The UUID of the newly cloned volume.
-   */
-  uuid: string;
-  /**
-   * The name of the newly cloned volume.
-   */
-  name: string;
-  /**
-   * The state of the volume.
-   */
-  state: VolumeState;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  error?: number;
-}
-
-export interface ConfigurationInstanceCreateArgs {
-  /**
-   * The ROM to use for the autoscale configuration.
-   */
-  roms?: InstanceCreateArgsInstanceCreateRequestRoms;
-  /**
-   * The template to use for the autoscale configuration.
-   */
-  template?: NameOrUUID;
-}
-
-/**
- * Connection handlers to use for the service.  Handlers define how the service
- * will handle incoming connections and forward traffic from the Internet to
- * your application.  For example, a service can be configured to terminate TLS
- * connections, redirect HTTP traffic, or enable HTTP mode for load balancing.
- * You configure the handlers for every published service port individually.
- *
- * There are currently 3 supported handlers:
- *
- * | Handler    | Description |
- * |------------|-------------|
- * | `tls`      | Terminate the TLS connection at the Unikraft Cloud gateway
- * using our wildcard certificate issued for the kraft.cloud domain. The
- * gateway forwards the unencrypted traffic to your application. |
- * | `http`     | Enable HTTP mode on the load balancer to load balance on the
- * level of individual HTTP requests. In this mode, only HTTP connections are
- * accepted. If this option is not set the load balancer works in TCP mode and
- * distributes TCP connections. |
- * | `redirect` | Redirect traffic from the source port to the destination
- * port. |
- *
- * Note that there is a set of constraints when publishing ports:
- * - Port 80: MUST have "http" and MUST not have "tls" set;
- * - Port 443: MUST have http and tls set;
- * - The `redirect` handler can only be set on port 80 (HTTP) to redirect to
- *   port 443 (HTTPS);
- * - All other ports MUST have tls and MUST not have http set.
- */
-
-export type ConnectionHandler = "tls" | "http" | "redirect";
-
-/**
- * The request message to create an autoscale configuration for a service group
- * based on its UUID.
- */
-
-export interface CreateAutoscaleConfigurationByServiceGroupUUIDRequest {
-  /**
-   * The UUID of the service to create a configuration for.
-   * Mutually exclusive with name.
-   */
-  uuid: string;
-  /**
-   * The minimum number of instances to keep running.
-   */
-  min_size?: number;
-  /**
-   * The maximum number of instances to keep running.
-   */
-  max_size?: number;
-  /**
-   * The warmup time in milliseconds for new instances.
-   */
-  warmup_time_ms?: number;
-  /**
-   * The cooldown time in milliseconds for the autoscale configuration.
-   */
-  cooldown_time_ms?: number;
-  /**
-   * The arguments to use when creating the autoscale configuration.
-   */
-  create_args: CreateAutoscaleConfigurationByServiceGroupUUIDRequestInstanceCreateArgs;
-  /**
-   * The policies to apply to the autoscale configuration.
-   */
-  policies?: AutoscalePolicy[];
-}
-
-export interface CreateAutoscaleConfigurationByServiceGroupUUIDRequestInstanceCreateArgs {
-  /**
-   * The ROM to use for the autoscale configuration.
-   */
-  roms?: InstanceCreateArgsInstanceCreateRequestRoms;
-  /**
-   * The template to use for the autoscale configuration.
-   */
-  template?: NameOrUUID;
-}
-
-/**
- * The request message to create an autoscale configuration policy for a
- * service.
- */
-
-export interface CreateAutoscaleConfigurationPolicyRequest {
-  /**
-   * The Name of the service to add a policy to.
-   */
-  name: string;
-  /**
-   * The policy type to add to the autoscale configuration.
-   */
-  type: AutoscalePolicy;
-}
-
-export interface CreateAutoscaleConfigurationPolicyResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * The response data for this request.
-   */
-  data: CreateAutoscaleConfigurationPolicyResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface CreateAutoscaleConfigurationPolicyResponseData {
-  /**
-   * The policies which were added by the request.
-   */
-  policies?: CreateAutoscaleConfigurationPolicyResponsePolicy[];
-}
-
-export interface CreateAutoscaleConfigurationPolicyResponsePolicy {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * The UUID of the service of the added policy.
-   */
-  uuid: string;
-  /**
-   * The name of the service of the added policy.
-   */
-  name: string;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  error?: number;
-}
-
-export interface CreateAutoscaleConfigurationsRequestConfiguration {
-  /**
-   * The minimum number of instances to keep running.
-   */
-  min_size?: number;
-  /**
-   * The maximum number of instances to keep running.
-   */
-  max_size?: number;
-  /**
-   * The warmup time in milliseconds for new instances.
-   */
-  warmup_time_ms?: number;
-  /**
-   * The cooldown time in milliseconds for the autoscale configuration.
-   */
-  cooldown_time_ms?: number;
-  /**
-   * The arguments to use when creating the autoscale configuration.
-   */
-  create_args: ConfigurationInstanceCreateArgs;
-  /**
-   * The policies to apply to the autoscale configuration.
-   */
-  policies?: AutoscalePolicy[];
-  /**
-   * The UUID of the service to create a configuration for.
-   * Mutually exclusive with name.
-   */
-  uuid?: string;
-  /**
-   * The name of the service to create a configuration for.
-   * Mutually exclusive with UUID.
-   */
-  name?: string;
-}
-
-/**
- * The response to a CreateAutoscaleConfigurationRequest.
- */
-
-export interface CreateAutoscaleConfigurationsResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * The response data for this request.
-   */
-  data: CreateAutoscaleConfigurationsResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface CreateAutoscaleConfigurationsResponseConfigurationsResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * The UUID of the service where the configuration was created.
-   */
-  uuid: string;
-  /**
-   * The name of the service where the configuration was created.
-   */
-  name: string;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  error?: number;
-}
-
-export interface CreateAutoscaleConfigurationsResponseData {
-  /**
-   * The configuration(s) which were created by the request.
-   */
-  service_groups?: CreateAutoscaleConfigurationsResponseConfigurationsResponse[];
+  next: string;
 }
 
 /**
@@ -694,8 +766,8 @@ export interface CreateCertificateRequest {
    * The name of the certificate.
    *
    * This is a human-readable name that can be used to identify the certificate.
-   * The name must be unique within the context of your account.  If no name is
-   * specified, a random name is generated for you.  The name can also be used
+   * The name must be unique within the context of your account. If no name is
+   * specified, a random name is generated for you. The name can also be used
    * to identify the certificate in API calls.
    */
   name?: string;
@@ -713,17 +785,18 @@ export interface CreateCertificateRequest {
    */
   common_name?: string;
   /**
-   * The chain of the certificate.
+   * The certificate chain in PEM format. Required for user-uploaded
+   * certificates.
    */
   chain: string;
   /**
-   * The private key of the certificate.
+   * The private key in PEM format. Required for user-uploaded certificates.
    */
   pkey: string;
 }
 
 /**
- * The response message for creating of a certificate.
+ * The response message for creating a new certificate.
  */
 
 export interface CreateCertificateResponse {
@@ -733,7 +806,6 @@ export interface CreateCertificateResponse {
   status: ResponseStatus;
   /**
    * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
    */
   message?: string;
   /**
@@ -745,20 +817,633 @@ export interface CreateCertificateResponse {
    */
   errors?: ResponseError[];
   /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
+   * The operation time in microseconds.
    */
   op_time_us: number;
 }
 
+/**
+ * The response data for this request.
+ */
+
 export interface CreateCertificateResponseData {
-  /**
-   * The certificate which was created by this request.
-   *
-   * Note: only one certificate can be specified in the request, so this
-   * will always contain a single entry.
-   */
   certificates?: Certificate[];
+}
+
+/**
+ * The response message for deleting of one or more certificate(s) given their
+ * UUID(s) or name(s).
+ */
+
+export interface DeleteCertificatesResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: DeleteCertificatesResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface DeleteCertificatesResponseData {
+  certificates?: DeleteCertificatesResponseDeletedCertificate[];
+}
+
+/**
+ * Per-item result for a delete certificates operation.
+ */
+
+export interface DeleteCertificatesResponseDeletedCertificate {
+  /**
+   * Indicates whether the operation was successful for this item.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+}
+
+/**
+ * The response message for getting one or more certificate(s) given their
+ * UUID(s) or name(s).
+ */
+
+export interface GetCertificatesResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: GetCertificatesResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface GetCertificatesResponseData {
+  certificates?: Certificate[];
+}
+
+/**
+ * The request body for updating a certificate by its UUID or name.
+ */
+
+export interface UpdateCertificateByUUIDRequestBody {
+  /**
+   * The new certificate chain. This is the public chain of the certificate in
+   * PEM format. The chain should include the certificate and any intermediate
+   * certificates.
+   */
+  chain: string;
+  /**
+   * The new private key. This is the private key of the certificate in PEM
+   * format. The private key must match the public key in the certificate
+   * chain.
+   */
+  pkey: string;
+}
+
+/**
+ * A single update operation to be applied to a certificate.
+ */
+
+export interface UpdateCertificatesRequestItem {
+  /**
+   * The UUID of the resource.
+   */
+  uuid?: string;
+  /**
+   * The name of the resource.
+   */
+  name?: string;
+  /**
+   * The new certificate chain. This is the public chain of the certificate in
+   * PEM format. The chain should include the certificate and any intermediate
+   * certificates.
+   */
+  chain: string;
+  /**
+   * The new private key. This is the private key of the certificate in PEM
+   * format. The private key must match the public key in the certificate
+   * chain.
+   */
+  pkey: string;
+}
+
+/**
+ * The response message for updating one or more certificate(s) given their
+ * UUID(s) or name(s).
+ */
+
+export interface UpdateCertificatesResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: UpdateCertificatesResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface UpdateCertificatesResponseData {
+  certificates?: Certificate[];
+}
+
+/**
+ * Common identity fields for a resource.
+ */
+
+export interface ID {
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+}
+
+/**
+ * Encoding type for inline file data.
+ */
+
+export type InlineDataEncoding = "text" | "base64";
+
+/**
+ * An inline file entry represents a single file within an image.
+ */
+
+export interface InlineFile {
+  /**
+   * The file path within the image.
+   */
+  path: string;
+  /**
+   * The encoding of the data field. Defaults to "text".
+   */
+  encoding?: InlineDataEncoding;
+  /**
+   * The file data, encoded according to the encoding field.
+   */
+  data: string;
+}
+
+/**
+ * An identifier for a resource — either a name or a UUID, but not both.
+ */
+
+export interface NameOrUUID {
+  /**
+   * The UUID of the resource.
+   */
+  uuid?: string;
+  /**
+   * The name of the resource.
+   */
+  name?: string;
+}
+
+/**
+ * The sort order used by list endpoints.
+ */
+
+export type PaginationOrder = "asc" | "desc";
+
+/**
+ * The sort field used by list endpoints.
+ */
+
+export type PaginationSortBy = "create_time";
+
+/**
+ * The error response message for an API request.
+ */
+
+export interface ResponseError {
+  /**
+   * The HTTP status code of the error.
+   */
+  status: number;
+}
+
+/**
+ * The response status of an API request.
+ */
+
+export type ResponseStatus = "success" | "error" | "partial_success";
+
+/**
+ * SchedPriority defines the scheduling priority for an instance.
+ * User requires the `override_vm_priority` permission to change it.
+ *
+ * The list of available scheduling priorities:
+ *
+ * | Priority | Description |
+ * |----------|-------------|
+ * | `normal` | Default scheduling priority. |
+ * | `medium` | Medium scheduling priority. |
+ * | `high`   | High scheduling priority. |
+ * | `admin`  | Admin scheduling priority. |
+ */
+
+export type SchedPriority = "normal" | "medium" | "high" | "admin";
+
+export interface GetImagesRequestTagOrDigest {
+  digest?: string;
+  tag?: string;
+}
+
+/**
+ * The response message for getting one or more image(s).
+ */
+
+export interface GetImagesResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: GetImagesResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface GetImagesResponseData {
+  images?: Image[];
+}
+
+/**
+ * An image representing a VM which can be deployed on Unikraft Cloud.
+ */
+
+export interface Image {
+  /**
+   * The image URL.
+   */
+  url: string;
+  /**
+   * The time the image was created.
+   */
+  created_at: string;
+  /**
+   * Whether the image is an initrd or ROM.
+   */
+  initrd_or_rom: boolean;
+  /**
+   * The size of the image in bytes.
+   */
+  size_in_bytes: number;
+  /**
+   * Command-line arguments for the image.
+   */
+  args?: string[];
+  /**
+   * Environment variables for the image.
+   */
+  env?: Record<string, string>;
+  /**
+   * Tags associated with the image.
+   */
+  tags?: string[];
+  /**
+   * Users associated with the image.
+   */
+  users?: string[];
+  /**
+   * Whether the image is pinned and exempt from cache eviction. Only
+   * populated (and only ever `true`) for callers with image manager
+   * permissions; omitted otherwise, including when the image is not pinned.
+   */
+  persistent?: boolean;
+}
+
+/**
+ * The request item for pinning a single image.
+ */
+
+export interface PinImageRequestItem {
+  /**
+   * The image URL to pull and pin.
+   */
+  url: string;
+  /**
+   * Optional credentials for authenticating to an OCI registry.
+   * Only valid for OCI registry URLs; the platform rejects this
+   * field for non-OCI schemes.
+   */
+  credentials?: string;
+  /**
+   * Optional HTTP headers to send when fetching the image.
+   */
+  headers?: Record<string, string>;
+  /**
+   * Controls when the image is pulled relative to what is already cached on
+   * the node. If unset, this is inferred from the URL.
+   */
+  pull_policy?: PullPolicy;
+  /**
+   * Number of seconds to wait for the pull to complete. Required and must
+   * be non-zero; `-1` waits up to the platform's maximum timeout.
+   */
+  timeout_s: number;
+  /**
+   * Avoid duplicate pulls by merging with any in-flight request for the
+   * same image. Defaults to `true`.
+   */
+  merge_requests?: boolean;
+  /**
+   * Automatically unpin the image after a period of inactivity.
+   */
+  autokill?: PinImageRequestItemAutokill;
+}
+
+/**
+ * Automatically unpin the image after a period of inactivity.
+ */
+
+export interface PinImageRequestItemAutokill {
+  /**
+   * Automatically unpin the image after this many milliseconds of
+   * inactivity. `0` (the default) disables this.
+   */
+  time_ms: number;
+}
+
+/**
+ * The response message for pinning one or more images.
+ */
+
+export interface PinImagesResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: PinImagesResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface PinImagesResponseData {
+  /**
+   * The result of pinning each requested image.
+   */
+  images?: PinImagesResponseImage[];
+}
+
+/**
+ * The result of pinning a single image. On success, `uuid` through `tags`
+ * are set; on failure, only `message` and `error` are set (the image
+ * being pulled is not otherwise identified in the response).
+ */
+
+export interface PinImagesResponseImage {
+  /**
+   * Indicates whether the operation was successful for this item.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the image. Only set on success.
+   */
+  uuid?: string;
+  /**
+   * The name of the image. Only set on success.
+   */
+  name?: string;
+  /**
+   * The time the image was created. Only set on success.
+   */
+  created_at?: string;
+  /**
+   * The current state of the image (e.g. `ready`). Only set on success.
+   */
+  state?: string;
+  /**
+   * The image URL. Only set on success.
+   */
+  url?: string;
+  /**
+   * Whether the image is pinned and exempt from cache eviction. Only set
+   * on success, where it is always `true`.
+   */
+  persistent?: boolean;
+  /**
+   * The tags associated with the image. Only set on success.
+   */
+  tags?: string[];
+}
+
+/**
+ * The request item for unpinning a single image.
+ */
+
+export interface UnpinImageRequestItem {
+  /**
+   * The UUID of the image to unpin. Only UUID is supported; name, URL,
+   * tag, and digest are not.
+   */
+  uuid: string;
+}
+
+/**
+ * The response message for unpinning one or more images.
+ */
+
+export interface UnpinImagesResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: UnpinImagesResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface UnpinImagesResponseData {
+  /**
+   * The result of unpinning each requested image.
+   */
+  images?: UnpinImagesResponseImage[];
+}
+
+/**
+ * The result of unpinning a single image.
+ */
+
+export interface UnpinImagesResponseImage {
+  /**
+   * Indicates whether the operation was successful for this item.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the image.
+   */
+  uuid: string;
+  /**
+   * The name of the image. Only set on success, and only if the image
+   * has a name.
+   */
+  name?: string;
+}
+
+/**
+ * Automatic delete-on-idle configuration for the checkpoint instance.
+ */
+
+export interface CheckpointAutokill {
+  /**
+   * Time in milliseconds after the checkpoint was last used for restoring
+   * before it is deleted. A value of 0 disables checkpoint autokill.
+   */
+  time_ms?: number;
+}
+
+/**
+ * A checkpoint history entry, representing a single checkpoint in the history
+ * of an instance.
+ */
+
+export interface CheckpointHistoryEntry {
+  /**
+   * The UUID of the checkpoint.
+   */
+  uuid: string;
+  /**
+   * The name of the checkpoint.
+   */
+  name: string;
+  /**
+   * The time the checkpoint was created.
+   */
+  created_at: string;
 }
 
 /**
@@ -771,8 +1456,7 @@ export interface CreateCheckpointInstancesRequestItem {
    */
   from: NameOrUUID;
   /**
-   * (Optional).  The name of the checkpoint.
-   * If not provided, a name will be generated.
+   * The name of the checkpoint. If not provided, a name will be generated.
    */
   name?: string;
   /**
@@ -781,18 +1465,18 @@ export interface CreateCheckpointInstancesRequestItem {
    */
   timeout_s?: number;
   /**
-   * (Optional).  Tags to associate with the checkpoint.
+   * Tags to associate with the checkpoint.
    */
   tags?: string[];
   /**
-   * (Optional). Automatic delete-on-idle configuration for the new
-   * checkpoint.
+   * Automatic delete-on-idle configuration for the new checkpoint.
    */
-  autokill?: ItemCheckpointAutokill;
+  autokill?: CheckpointAutokill;
 }
 
 /**
- * The response message for creating one or more checkpoint instances.
+ * The response message for creating one or more checkpoint(s) from existing
+ * instance(s).
  */
 
 export interface CreateCheckpointInstancesResponse {
@@ -802,7 +1486,6 @@ export interface CreateCheckpointInstancesResponse {
   status: ResponseStatus;
   /**
    * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
    */
   message?: string;
   /**
@@ -814,40 +1497,45 @@ export interface CreateCheckpointInstancesResponse {
    */
   errors?: ResponseError[];
   /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
+   * The operation time in microseconds.
    */
   op_time_us: number;
 }
 
+/**
+ * Per-item result for a create checkpoint instances operation.
+ */
+
 export interface CreateCheckpointInstancesResponseCheckpointInstance {
   /**
-   * The status of this particular checkpoint creation operation.
+   * Indicates whether the operation was successful for this item.
    */
   status: ResponseStatus;
   /**
-   * The UUID of the checkpoint instance that was created.
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
    */
   uuid: string;
   /**
-   * The name of the checkpoint instance that was created.
+   * The human-readable name of the resource.
    */
   name: string;
   /**
    * The current state of the checkpoint.
    */
   state: InstanceState;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  error?: number;
 }
+
+/**
+ * The response data for this request.
+ */
 
 export interface CreateCheckpointInstancesResponseData {
   /**
@@ -862,48 +1550,49 @@ export interface CreateCheckpointInstancesResponseData {
 
 export interface CreateInstanceRequest {
   /**
-   * (Optional).  The name of the instance.
+   * The name of the instance.
    *
-   * If not provided, a random name will be generated.  The name must be unique.
+   * If not provided, a random name will be generated. The name must be
+   * unique.
    */
   name?: string;
   /**
-   * (Optional).  The image to use for the instance.
+   * The image to use for the instance.
    *
-   * Either an image or a template must be specified.  Accepts either a plain
+   * Either an image or a template must be specified. Accepts either a plain
    * image reference string (`"nginx:latest"`) or an object carrying additional
    * pull configuration (`{"url": "nginx:latest", "pull_policy": "always"}`).
    */
   image?: string | ImageSpec;
   /**
-   * (Optional).  The arguments to pass to the instance when it starts.
+   * The arguments to pass to the instance when it starts.
    */
   args?: string[];
   /**
-   * (Optional).  Environment variables to set for the instance.
+   * Environment variables to set for the instance.
    */
   env?: Record<string, string>;
   /**
-   * (Optional).  Memory in MB to allocate for the instance.  Default is 128.
+   * Memory in MB to allocate for the instance. Default is 128.
    */
   memory_mb?: number;
   /**
-   * (Optional).  The service group configuration when creating an instance.
+   * The service group configuration when creating an instance.
    *
-   * When creating an instance, either a previously created (persistent) service
-   * group can be referenced (either through its name or UUID), or a new
-   * (ephemeral) service group can be created for the instance by specifying the
-   * list of services it should expose and optionally the domains it should use.
-   * Not used by template instances.
+   * When creating an instance, either a previously created (persistent)
+   * service group can be referenced (either through its name or UUID), or a
+   * new (ephemeral) service group can be created for the instance by
+   * specifying the list of services it should expose and optionally the
+   * domains it should use. Not used by template instances.
    */
   service_group?: CreateInstanceRequestServiceGroup;
   /**
    * Volumes to attach to the instance.
    *
    * This list can contain both existing and new volumes to create as part of
-   * the instance creation.  Existing volumes can be referenced by their name or
-   * UUID.  New volumes can be created by specifying a name, size in MiB, and
-   * mount point in the instance.  The mount point is the directory in the
+   * the instance creation. Existing volumes can be referenced by their name or
+   * UUID. New volumes can be created by specifying a name, size in MiB, and
+   * mount point in the instance. The mount point is the directory in the
    * instance where the volume will be mounted.
    */
   volumes?: CreateInstanceRequestVolume[];
@@ -913,48 +1602,47 @@ export interface CreateInstanceRequest {
    */
   autostart?: boolean;
   /**
-   * (Optional).  Number of additional replicas to create.  The total
-   * number of instances created is `replicas + 1`.  Defaults to 0.
+   * Number of additional replicas to create. The total number of instances
+   * created is `replicas + 1`. Defaults to 0.
    */
   replicas?: number;
   /**
-   * Restart policy for the instance.  This defines how the instance
-   * should behave when it stops or crashes.  Cannot be combined with
+   * Restart policy for the instance. This defines how the instance
+   * should behave when it stops or crashes. Cannot be combined with
    * the `delete-on-stop` feature.
    */
   restart_policy?: InstanceRestartPolicy;
   /**
-   * Scale-to-zero configuration for the instance.  Requires
-   * `service_group` to be set.  Cannot be combined with the
+   * Scale-to-zero configuration for the instance. Requires
+   * `service_group` to be set. Cannot be combined with the
    * `delete-on-stop` feature.
    */
   scale_to_zero?: CreateInstanceScaleToZero;
   /**
-   * (Optional).  Number of vCPUs to allocate for the instance.
-   * Defaults to 1.
+   * Number of vCPUs to allocate for the instance. Defaults to 1.
    */
   vcpus?: number;
   /**
-   * Deprecated: Use `timeout_s` instead.  Timeout in milliseconds to
-   * wait for all new instances to reach running state.  Requires
-   * `autostart` to be set.  If `timeout_s` is not set, this value is
-   * converted by rounding up to the next full second.  No wait
+   * Deprecated: Use `timeout_s` instead. Timeout in milliseconds to
+   * wait for all new instances to reach running state. Requires
+   * `autostart` to be set. If `timeout_s` is not set, this value is
+   * converted by rounding up to the next full second. No wait
    * performed for a value of 0.
    */
   wait_timeout_ms?: number;
   /**
-   * Features to enable for the instance.  Features are specific
+   * Features to enable for the instance. Features are specific
    * configurations or capabilities that can be enabled for the
-   * instance.  The `scale-to-zero` and `delete-on-stop` features are
+   * instance. The `scale-to-zero` and `delete-on-stop` features are
    * mutually exclusive.
    */
   features?: InstanceFeature[];
   /**
    * Timeout in seconds to wait for all new instances to reach running
-   * state.  Requires `autostart` to be set.  If you autostart your
+   * state. Requires `autostart` to be set. If you autostart your
    * new instance, you can wait for it to finish starting with a
    * blocking API call if you specify a wait timeout greater than
-   * zero.  No wait performed for a value of 0.
+   * zero. No wait performed for a value of 0.
    */
   timeout_s?: number;
   /**
@@ -966,34 +1654,34 @@ export interface CreateInstanceRequest {
    */
   roms?: CreateInstanceRequestRom[];
   /**
-   * (Optional).  Plugins to attach to the instance.  Plugins let you attach
-   * small helper programs to an instance and reach each one over a direct,
-   * authenticated HTTP endpoint.  Each plugin loads from its own ROM image,
-   * mounts at `/uk/plugins/<plugin_name>`, and is reachable at
-   * `.../v1/instances/<uuid>/plugins/<plugin_name>/<path>`.  At most 8 plugins
+   * Plugins to attach to the instance. Plugins let you attach small helper
+   * programs to an instance and reach each one over a direct, authenticated
+   * HTTP endpoint. Each plugin loads from its own ROM image, mounts at
+   * `/uk/plugins/<plugin_name>`, and is reachable at
+   * `.../v1/instances/<uuid>/plugins/<plugin_name>/<path>`. At most 8 plugins
    * may be attached to an instance.
    */
   plugins?: CreateInstanceRequestPlugin[];
   /**
-   * (Optional).  Tags to associate with the instance.
+   * Tags to associate with the instance.
    */
   tags?: string[];
   /**
-   * (Optional).  Annotations to associate with the instance.
+   * Annotations to associate with the instance.
    *
    * Unlike tags, annotations also reach the guest: they are included in the
    * instance's startdata, and selected keys can be injected into the console
    * log output.
    *
-   * Keys follow the Kubernetes annotation key syntax, `[<prefix>/]<name>`: the
-   * optional prefix is a non-wildcard DNS subdomain of at most 253 characters,
-   * and the name is at most 63 characters of `[-_.a-zA-Z0-9]` starting and
-   * ending with an alphanumeric.  Values are unconstrained apart from ASCII
-   * control characters.  An instance holds at most 256 annotations.
+   * Keys follow the Kubernetes annotation key syntax, `[<prefix>/]<name>`:
+   * the optional prefix is a non-wildcard DNS subdomain of at most 253
+   * characters, and the name is at most 63 characters of `[-_.a-zA-Z0-9]`
+   * starting and ending with an alphanumeric. Values are unconstrained apart
+   * from ASCII control characters. An instance holds at most 256 annotations.
    *
    * When the instance inherits annotations from a template, branch, or
    * checkpoint, the given annotations are merged into them rather than
-   * replacing them.  On a key clash the value given here wins.
+   * replacing them. On a key clash the value given here wins.
    */
   annotations?: Record<string, string>;
   /**
@@ -1009,47 +1697,46 @@ export interface CreateInstanceRequest {
    */
   sched_priority?: SchedPriority;
   /**
-   * (Optional).  Schedules for the instance.  Scheduled operations let you
-   * automatically start, stop, delete, or exec a command in the instance on
-   * a calendar-based schedule.  For `exec` schedules, set the `args` field
-   * to the command and its arguments.  Each instance stores its own
-   * schedules, and cloning preserves them.
+   * Schedules for the instance. Scheduled operations let you automatically
+   * start, stop, delete, or exec a command in the instance on a calendar-
+   * based schedule. For `exec` schedules, set the `args` field to the command
+   * and its arguments. Each instance stores its own schedules, and cloning
+   * preserves them.
    */
   schedules?: Schedule[];
   /**
-   * (Optional).  Automatic delete-on-idle/request-limit configuration.
-   * Not used for template instances.
+   * Automatic delete-on-idle/request-limit configuration. Not used for
+   * template instances.
    */
   autokill?: CreateInstanceRequestAutokill;
   /**
-   * (Optional).  The hostname of the instance.
+   * The hostname of the instance.
    *
-   * If not provided, the hostname will be set to the instance name.  The
+   * If not provided, the hostname will be set to the instance name. The
    * hostname must be a valid DNS label (e.g., "my-instance") and is used for
    * internal DNS resolution within the Unikraft Cloud network.
    */
   hostname?: string;
   /**
-   * (Optional).  Dependencies of the instance.
+   * Dependencies of the instance.
    *
    * A list of instance identifiers (name or UUID) that this instance depends
-   * on.  Dependencies define startup ordering and can be used to ensure that
+   * on. Dependencies define startup ordering and can be used to ensure that
    * prerequisite instances are running before this instance starts.
    */
   dependencies?: NameOrUUID[];
   /**
-   * (Optional).  Reference to an existing instance to branch from.
-   * The instance can be running or stopped, If the source
-   * instance is running, a snapshot will be taken asynchronously and the
-   * new instance will wait for it to complete before starting.
-   * Mutually exclusive with `image` and `template`.
+   * Reference to an existing instance to branch from. The instance can be
+   * running or stopped. If the source instance is running, a snapshot will be
+   * taken asynchronously and the new instance will wait for it to complete
+   * before starting. Mutually exclusive with `image` and `template`.
    */
   branch_from?: NameOrUUID;
   /**
-   * (Optional).  Reference to an existing checkpoint to create the instance
-   * from.  The checkpoint must be in the `checkpoint` state.  The new instance
-   * will be created with the same configuration and state as the checkpoint.
-   * Mutually exclusive with `image`, `template`, and `branch_from`.
+   * Reference to an existing checkpoint to create the instance from. The
+   * checkpoint must be in the `checkpoint` state. The new instance will be
+   * created with the same configuration and state as the checkpoint. Mutually
+   * exclusive with `image`, `template`, and `branch_from`.
    */
   checkpoint?: NameOrUUID;
   /**
@@ -1061,26 +1748,25 @@ export interface CreateInstanceRequest {
    */
   nameserver?: string;
   /**
-   * A list of one to four interfaces to attach
+   * Network interfaces to attach to the instance.
    */
   network_interfaces?: CreateInstanceRequestNetworkInterface[];
   /**
-   * (Optional).  The type of virtual machine to use for the instance.
-   * Defaults to `micro`, which runs on Firecracker.  `full` runs on QEMU
-   * instead and is required for GPU passthrough (see `gpus`) and, in the
-   * future, Windows VMs.  QEMU-backed instances currently do not support
-   * scale-to-zero, templates, branching, or checkpointing, and only
-   * support block-based volumes (no virtiofs).  Requires a plan with full
-   * VM support and cannot be combined with `template`, `branch_from`, or
-   * `checkpoint`.
+   * The type of virtual machine to use for the instance. Defaults to `micro`,
+   * which runs on Firecracker. `full` runs on QEMU instead and is required
+   * for GPU passthrough (see `gpus`) and, in the future, Windows VMs. QEMU-
+   * backed instances currently do not support scale-to-zero, templates,
+   * branching, or checkpointing, and only support block-based volumes (no
+   * virtiofs). Requires a plan with full VM support and cannot be combined
+   * with `template`, `branch_from`, or `checkpoint`.
    */
   type?: InstanceType;
   /**
-   * (Optional).  Number of GPUs to attach to the instance.  Currently
-   * restricted to at most 1.  Requires `type` to be `full` and a plan
-   * with GPU support.  A GPU stays assigned to the instance, even while
-   * stopped, until the instance is deleted.  Cannot be combined with
-   * `template`, `branch_from`, or `checkpoint`.
+   * Number of GPUs to attach to the instance. Currently restricted to at most
+   * 1. Requires `type` to be `full` and a plan with GPU support. A GPU stays
+   * assigned to the instance, even while stopped, until the instance is
+   * deleted. Cannot be combined with `template`, `branch_from`, or
+   * `checkpoint`.
    */
   gpus?: number;
 }
@@ -1104,16 +1790,14 @@ export interface CreateInstanceRequestAutokill {
 }
 
 /**
- * The domain configuration for the service group.
- *
- * A domain defines a publicly accessible domain name for the instance.  If
- * the domain name ends with a period `.`, it must be a valid Fully Qualified
- * Domain Name (FQDN), otherwise it will become a subdomain of the target
- * metro.  The domain can be associated with an existing certificate by
- * specifying the certificate's name or UUID.  If no certificate is specified
- * and a FQDN is provided, Unikraft Cloud will automatically generate a new
- * certificate for the domain based on Let's Encrypt and seek to accomplish a
- * DNS-01 challenge.
+ * The domain configuration for the service group. A domain defines a publicly
+ * accessible domain name for the instance. If the domain name ends with a
+ * period `.`, it must be a valid Fully Qualified Domain Name (FQDN), otherwise
+ * it will become a subdomain of the target metro. The domain can be associated
+ * with an existing certificate by specifying the certificate's name or UUID.
+ * If no certificate is specified and a FQDN is provided, Unikraft Cloud will
+ * automatically generate a new certificate for the domain based on Let's
+ * Encrypt and seek to accomplish a DNS-01 challenge.
  */
 
 export interface CreateInstanceRequestDomain {
@@ -1128,7 +1812,7 @@ export interface CreateInstanceRequestDomain {
   name: string;
   /**
    * A reference to an existing certificate which can be used for the
-   * specified domain.  If unspecified, Unikraft Cloud will
+   * specified domain. If unspecified, Unikraft Cloud will
    * automatically generate a new certificate for the domain based on Let's
    * Encrypt and seek to accomplish a DNS-01 challenge.
    */
@@ -1168,37 +1852,37 @@ export interface CreateInstanceRequestNetworkInterface {
 
 /**
  * A helper program attached to the instance and reachable over a direct,
- * authenticated HTTP endpoint.  A plugin runs inside the instance next to the
- * main application, loads from its own ROM image, and answers requests that
- * the Unikraft Cloud API forwards to it.
+ * authenticated HTTP endpoint. A plugin runs inside the instance next to
+ * the main application, loads from its own ROM image, and answers requests
+ * that the Unikraft Cloud API forwards to it.
  */
 
 export interface CreateInstanceRequestPlugin {
   /**
-   * The plugin name.  It becomes the `<plugin_name>` segment in the plugin
-   * endpoint (`.../plugins/<plugin_name>/<path>`).  A plugin name has a
+   * The plugin name. It becomes the `<plugin_name>` segment in the plugin
+   * endpoint (`.../plugins/<plugin_name>/<path>`). A plugin name has a
    * maximum length of 63 characters and contains only letters (`a`-`z`,
    * `A`-`Z`), digits (`0`-`9`), hyphen (`-`), and underscore (`_`).
    */
   name: string;
   /**
-   * The plugin's ROM image.  The platform loads the image, mounts it at
+   * The plugin's ROM image. The platform loads the image, mounts it at
    * `/uk/plugins/<plugin_name>`, and runs its `init` program when the plugin
-   * starts.  Accepts either a plain image reference string
+   * starts. Accepts either a plain image reference string
    * (`"user/myplugin:latest"`) or an object carrying additional pull
    * configuration (`{"url": "user/myplugin:latest", "pull_policy": "always"}`).
    */
   rom: string | ImageSpec;
   /**
-   * (Optional).  Arbitrary JSON configuration that the platform passes to the
-   * plugin's `init` program on `STDIN`.  Any JSON value works, including a
-   * string, a number, or an object.
+   * Arbitrary JSON configuration that the platform passes to the plugin's
+   * `init` program on `STDIN`. Any JSON value works, including a string, a
+   * number, or an object.
    */
   config?: unknown;
 }
 
 /**
- * Read-Only Memory (ROM) blob to attach to the instance.
+ * A ROM to attach when creating an instance.
  */
 
 export interface CreateInstanceRequestRom {
@@ -1207,109 +1891,84 @@ export interface CreateInstanceRequestRom {
    */
   name: string;
   /**
-   * (Optional).  The image of the ROM to use for the instance configuration.
-   * Mutually exclusive with `files`.  Accepts either a plain image reference
-   * string (`"nginx:latest"`) or an object carrying additional pull
-   * configuration (`{"url": "nginx:latest", "pull_policy": "always"}`).
+   * The image of the ROM to use for the instance configuration. Mutually
+   * exclusive with `files`. Accepts either a plain image reference string
+   * (`"nginx:latest"`) or an object carrying additional pull configuration
+   * (`{"url": "nginx:latest", "pull_policy": "always"}`).
    */
   image?: string | ImageSpec;
   /**
-   * (Optional).  Inline files to use as the ROM content.  When specified,
-   * the platform creates an EROFS image from the provided files.
-   * Mutually exclusive with `image`.
-   */
-  files?: InlineFile[];
-  /**
-   * (Optional).  The path at which the ROM should be automatically mounted
-   * inside the instance.  When set, the platform mounts the ROM device at
-   * the specified path so the guest does not need to mount it manually.
-   * When omitted, the ROM is exposed as a raw block device and the guest is
-   * responsible for mounting it.
+   * The path at which the ROM should be automatically mounted inside the
+   * instance. When set, the platform mounts the ROM device at the specified
+   * path so the guest does not need to mount it manually. When omitted, the
+   * ROM is exposed as a raw block device and the guest is responsible for
+   * mounting it.
    */
   at?: string;
+  /**
+   * Inline files to use as the ROM content. When specified, the platform
+   * creates an EROFS image from the provided files. Mutually exclusive with
+   * `image`.
+   */
+  files?: InlineFile[];
 }
 
 /**
- * The service group configuration when creating an instance.
- *
- * If no existing (persistent) service group is specified via its identifier,
- * a new (ephemeral) service group can be created by specifying the services
- * it should expose.  A service defines the configuration settings of an
- * exposed port by the instance.  A service is a combination of a public port,
- * an internal port, and a set of handlers that define how the service will
- * handle incoming connections.
+ * The service group configuration when creating an instance. If no existing
+ * (persistent) service group is specified via its identifier, a new
+ * (ephemeral) service group can be created by specifying the services it
+ * should expose. A service defines the configuration settings of an exposed
+ * port by the instance. A service is a combination of a public port, an
+ * internal port, and a set of handlers that define how the service will handle
+ * incoming connections.
  */
 
 export interface CreateInstanceRequestServiceGroup {
   /**
-   * If no existing (persistent) service group is specified via its
-   * identifier, a new (ephemeral) service group can be created.  In addition
-   * to the services it must expose, you can specify which domains it should
-   * use too.
-   */
-  domains?: CreateInstanceRequestDomain[];
-  /**
-   * If no existing service group identifier is provided, one or more new
-   * (ephemeral, non-persistent) service(s) can be created with the following
-   * definitions.
-   */
-  services?: Service[];
-  /**
-   * The soft limit for the number of services that can be created in this
-   * service group.
-   */
-  soft_limit?: number;
-  /**
-   * The hard limit for the number of services that can be created in this
-   * service group.
-   */
-  hard_limit?: number;
-  /**
-   * (Optional).  Reference an existing (persistent) service group by its
-   * UUID.  Mutually exclusive with name.
+   * The UUID of the resource.
    */
   uuid?: string;
   /**
-   * (Optional).  Reference an existing (persistent) service group by its
-   * name.  Mutually exclusive with UUID.
+   * The name of the resource.
    */
   name?: string;
+  domains?: CreateInstanceRequestDomain[];
+  services?: Service[];
+  soft_limit?: number;
+  hard_limit?: number;
 }
 
 /**
- * Defines the source template used to build a new instance.
+ * Template configuration when creating an instance.
  */
 
 export interface CreateInstanceRequestTemplate {
   /**
-   * (Optional).  Whether the instance needs to run in order to reach template
-   * state
-   */
-  prepare?: boolean;
-  /**
-   * (Optional).  The UUID of a template instance to create the instance from.
-   * Mutually exclusive with name.
+   * The UUID of the resource.
    */
   uuid?: string;
   /**
-   * (Optional).  The name of a template instance to create the instance from.
-   * Mutually exclusive with UUID.
+   * The name of the resource.
    */
   name?: string;
   /**
-   * (Optional). Configuration parameters to apply when building the new instance
-   * from the source template.
+   * Whether the instance needs to run in order to reach template state
+   */
+  prepare?: boolean;
+  /**
+   * Configuration parameters to apply when building the new instance from the
+   * source template.
    */
   create_args?: Instance;
   /**
-   * (Optional). Timeout in seconds for preparing the template before the
-   * preparation is aborted. Only applies when `prepare` is set. A value of
-   * 0 means no timeout.
+   * Timeout in seconds for preparing the template before the preparation is
+   * aborted. Only applies when `prepare` is set. A value of 0 means no
+   * timeout.
    */
   prepare_timeout_s?: number;
   /**
-   * (Optional). Automatic delete-on-idle configuration for the template.
-   * Only applies when `prepare` is set.
+   * Automatic delete-on-idle configuration for the template. Only applies
+   * when `prepare` is set.
    */
   autokill?: TemplateAutokill;
 }
@@ -1320,75 +1979,24 @@ export interface CreateInstanceRequestTemplate {
 
 export interface CreateInstanceRequestVolume {
   /**
-   * The UUID of an existing volume.
-   *
-   * If this is the only specified field, then it will look up an existing
-   * volume by this UUID.
+   * The UUID of the resource.
    */
   uuid?: string;
   /**
-   * The name of the volume.
-   *
-   * If this is the only specified field, then it will look up an existing
-   * volume by this name.  If the volume does not exist, the request will
-   * fail.  If a new volume is intended to be created, then this field must be
-   * specified along with the mount point in the instance and a provisioning
-   * source (size_mb or host_path).
+   * The name of the resource.
    */
   name?: string;
-  /**
-   * The mount point for the volume in the instance.
-   */
-  at: string;
-  /**
-   * Whether the volume is read-only.
-   *
-   * If this field is set to true, the volume will be mounted as read-only in
-   * the instance.  This field is optional and defaults to false and is only
-   * applicable when using an existing volume.
-   */
-  readonly?: boolean;
-  /**
-   * Quota policy for the volume.
-   */
-  quota_policy?: string;
-  /**
-   * Filesystem type to format or configure.
-   * Without custom configuration, this is either `ext4` or `virtiofs`.
-   */
-  filesystem?: string;
-  /**
-   * Tags to assign to the new volume.
-   */
-  tags?: string[];
-  /**
-   * Guest UID for managed volumes (host_path mode only).
-   */
-  uid?: number;
-  /**
-   * Guest GID for managed volumes (host_path mode only).
-   */
-  gid?: number;
-  /**
-   * Script arguments passed to volume initialization scripts.
-   */
-  args?: Record<string, string>;
-  /**
-   * Access mode of the volume, controlling sharing behavior.
-   * Defaults to read-write by a single instance (RWO).
-   */
-  access_mode?: VolumeAccessMode;
-  /**
-   * The size of the volume when creating a new volume.
-   *
-   * When creating a new volume as part of the instance create request,
-   * specify the size of the volume in MiB.
-   */
   size_mb?: number;
-  /**
-   * A host path to create a managed volume from.
-   */
   host_path?: string;
+  at: string;
+  readonly?: boolean;
+  quota_policy?: string;
+  filesystem?: string;
+  tags?: string[];
+  uid?: number;
+  gid?: number;
+  access_mode?: VolumeAccessMode;
+  args?: Record<string, string>;
 }
 
 /**
@@ -1402,7 +2010,6 @@ export interface CreateInstanceResponse {
   status: ResponseStatus;
   /**
    * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
    */
   message?: string;
   /**
@@ -1414,18 +2021,22 @@ export interface CreateInstanceResponse {
    */
   errors?: ResponseError[];
   /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
+   * The operation time in microseconds.
    */
   op_time_us: number;
 }
 
+/**
+ * The response data for this request.
+ */
+
 export interface CreateInstanceResponseData {
-  /**
-   * The instance that was created in this request.
-   */
   instances?: Instance[];
 }
+
+/**
+ * Scale-to-zero configuration when creating an instance.
+ */
 
 export interface CreateInstanceScaleToZero {
   /**
@@ -1435,15 +2046,15 @@ export interface CreateInstanceScaleToZero {
   /**
    * Whether the instance should be stateful when scaled to zero. If set to
    * true, the instance will retain its state (e.g., RAM contents) when scaled
-   * to zero.  This is useful for instances that need to maintain their state
-   * across scale-to-zero operations.  If set to false, the instance will lose
+   * to zero. This is useful for instances that need to maintain their state
+   * across scale-to-zero operations. If set to false, the instance will lose
    * its state when scaled to zero, and it will be restarted from scratch when
    * scaled back up.
    */
   stateful?: boolean;
   /**
    * The cooldown time in milliseconds before the instance can be scaled to
-   * zero again.  This is useful to prevent rapid scaling to zero and back up,
+   * zero again. This is useful to prevent rapid scaling to zero and back up,
    * which can lead to performance issues or resource exhaustion.
    */
   cooldown_time_ms?: number;
@@ -1456,127 +2067,18 @@ export interface CreateInstanceScaleToZero {
 }
 
 /**
- * The request message for creating a new service group.
- */
-
-export interface CreateServiceGroupRequest {
-  /**
-   * Name of the service group.  This is a human-readable name that can be used
-   * to identify the service group.  The name must be unique within the context
-   * of your account.  If no name is specified, a random name is generated for
-   * you.  The name can also be used to identify the service group in API calls.
-   */
-  name?: string;
-  /**
-   * Description of exposed services.
-   */
-  services: Service[];
-  /**
-   * Description of domains associated with the service group.
-   */
-  domains?: CreateServiceGroupRequestDomain[];
-  /**
-   * The soft limit is used by the Unikraft Cloud load balancer to decide when
-   * to wake up another standby instance.
-   *
-   * For example, if the soft limit is set to 5 and the service consists of 2
-   * standby instances, one of the instances receives up to 5 concurrent
-   * requests.  The 6th parallel requests wakes up the second instance.  If
-   * there are no more standby instances to wake up, the number of requests
-   * assigned to each instance will exceed the soft limit.  The load balancer
-   * makes sure that when the number of in-flight requests goes down again,
-   * instances are put into standby as fast as possible.
-   */
-  soft_limit?: number;
-  /**
-   * The hard limit defines the maximum number of concurrent requests that an
-   * instance assigned to the this service can handle.
-   *
-   * The load balancer will never assign more requests to a single instance.  In
-   * case there are no other instances available, excess requests fail (i.e.,
-   * they are blocked and not queued).
-   */
-  hard_limit?: number;
-  /**
-   * Automatic delete-on-idle configuration.
-   */
-  autokill?: CreateServiceGroupRequestAutokill;
-}
-
-/**
- * Automatic delete-on-idle configuration for service groups.
- */
-
-export interface CreateServiceGroupRequestAutokill {
-  /**
-   * Time in milliseconds after the service group becomes empty before it is
-   * deleted. A value of 0 disables autokill.
-   */
-  time_ms?: number;
-}
-
-/**
- * A domain name
- */
-
-export interface CreateServiceGroupRequestDomain {
-  /**
-   * Publicly accessible domain name.  If this name ends in a period `.` it must
-   * be a valid Full Qualified Domain Name (FQDN), otherwise it will become a
-   * subdomain of the target metro.
-   */
-  name: string;
-  /**
-   * Use an existing certificate for the domain.  If this field is
-   * specified, the domain must be associated with a valid certificate.
-   */
-  certificate?: NameOrUUID;
-}
-
-/**
- * The response message for creating of a service group.
- */
-
-export interface CreateServiceGroupResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * The response data for this request.
-   */
-  data?: CreateServiceGroupResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface CreateServiceGroupResponseData {
-  /**
-   * The service group which was created by this request.
-   *
-   * Note: only one service group can be specified in the request, so this
-   * will always contain a single entry.
-   */
-  service_groups?: ServiceGroup[];
-}
-
-/**
  * A single template instance to be created.
  */
 
 export interface CreateTemplateInstancesRequestItem {
+  /**
+   * The UUID of the resource.
+   */
+  uuid?: string;
+  /**
+   * The name of the resource.
+   */
+  name?: string;
   /**
    * Timeout in seconds to wait for the template instances to be created.
    * A value of -1 means to wait indefinitely until the instance reaches the
@@ -1584,23 +2086,13 @@ export interface CreateTemplateInstancesRequestItem {
    */
   timeout_s?: number;
   /**
-   * (Optional). Automatic delete-on-idle configuration for the new template.
+   * Automatic delete-on-idle configuration for the new template.
    */
   autokill?: ItemAutokill;
-  /**
-   * The UUID of the instance to convert into template. Mutually exclusive
-   * with name.
-   */
-  uuid?: string;
-  /**
-   * The name of the instance to convert into template. Mutually exclusive
-   * with UUID.
-   */
-  name?: string;
 }
 
 /**
- * The response message for creating one or more template instances.
+ * The response message for converting one or more instance(s) to templates.
  */
 
 export interface CreateTemplateInstancesResponse {
@@ -1610,7 +2102,6 @@ export interface CreateTemplateInstancesResponse {
   status: ResponseStatus;
   /**
    * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
    */
   message?: string;
   /**
@@ -1622,432 +2113,53 @@ export interface CreateTemplateInstancesResponse {
    */
   errors?: ResponseError[];
   /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
+   * The operation time in microseconds.
    */
   op_time_us: number;
 }
 
+/**
+ * The response data for this request.
+ */
+
 export interface CreateTemplateInstancesResponseData {
-  /**
-   * List of template instances that were created during the operation.
-   */
   instances?: CreateTemplateInstancesResponseTemplateInstance[];
 }
 
+/**
+ * Per-item result for a create template instances operation.
+ */
+
 export interface CreateTemplateInstancesResponseTemplateInstance {
   /**
-   * The status of this particular template instance creation operation.
+   * Indicates whether the operation was successful for this item.
    */
   status: ResponseStatus;
   /**
-   * The UUID of the template instance that was created.
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
    */
   uuid: string;
   /**
-   * The name of the template instance that was created.
+   * The human-readable name of the resource.
    */
   name: string;
   /**
    * The current state of the instance.
    */
   state: InstanceState;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  error?: number;
 }
 
 /**
- * The response message for creating one or more template volumes.
- */
-
-export interface CreateTemplateVolumesResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * The response data for this request
-   */
-  data: CreateTemplateVolumesResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface CreateTemplateVolumesResponseData {
-  /**
-   * The template volume(s) which were created by the request.
-   */
-  volumes?: CreateTemplateVolumesResponseTemplateVolume[];
-}
-
-export interface CreateTemplateVolumesResponseTemplateVolume {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * The UUID of the volume converted into a template.
-   */
-  uuid: string;
-  /**
-   * The name of the volume converted into a template.
-   */
-  name: string;
-  /**
-   * The state of the volume.
-   */
-  state: VolumeState;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  error?: number;
-}
-
-/**
- * The request message for creating a volume.
- */
-
-export interface CreateVolumeRequest {
-  /**
-   * The name of the volume.
-   *
-   * This is a human-readable name that can be used to identify the volume.
-   * The name must be unique within the context of your account.  If no name is
-   * specified, a random name of the form `vol-X` is generated for you, where
-   * `X` is a 5 character long random alphanumeric suffix..  The name can also
-   * be used to identify the volume in API calls.
-   */
-  name?: string;
-  /**
-   * Quota policy for the volume.
-   */
-  quota_policy?: VolumeQuotaPolicy;
-  /**
-   * Filesystem type to format or configure.
-   * Without custom configuration, this is either `ext4` or `virtiofs`.
-   */
-  filesystem?: string;
-  /**
-   * Tags to assign to the new volume.
-   */
-  tags?: string[];
-  /**
-   * Guest UID for managed volumes (host_path mode only).
-   */
-  uid?: number;
-  /**
-   * Guest GID for managed volumes (host_path mode only).
-   */
-  gid?: number;
-  /**
-   * Script arguments passed to volume initialization scripts.
-   */
-  args?: Record<string, string>;
-  /**
-   * The access mode of the volume, controlling volume sharing behavior.
-   * Defaults to `rwo` if not specified.
-   */
-  access_mode?: VolumeAccessMode;
-  /**
-   * The size of the volume in megabytes.
-   */
-  size_mb?: number;
-  /**
-   * A host path to create a managed volume from.
-   */
-  host_path?: string;
-  /**
-   * Source template volume to clone from.
-   */
-  template?: NameOrUUID;
-}
-
-/**
- * The response message for creating of a volume.
- */
-
-export interface CreateVolumeResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  data: CreateVolumeResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface CreateVolumeResponseData {
-  /**
-   * The volume(s) which were created by the request.
-   */
-  volumes?: CreateVolumeResponseVolume[];
-}
-
-export interface CreateVolumeResponseVolume {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * UUID of the newly created volume.
-   */
-  uuid: string;
-  /**
-   * The name of the newly created volume.
-   */
-  name: string;
-  /**
-   * The state of the volume.
-   */
-  state: VolumeState;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  error?: number;
-}
-
-/**
- * License information (admin only).
- */
-
-export interface DataLicense {
-  /**
-   * The serial number of the license certificate, hex-encoded.
-   */
-  serial: string;
-  /**
-   * Whether the license is currently valid.
-   */
-  valid: boolean;
-  /**
-   * List of enabled features.
-   */
-  features?: string[];
-}
-
-export interface DeleteAutoscaleConfigurationPolicyResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * The response data for this request.
-   */
-  data: DeleteAutoscaleConfigurationPolicyResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface DeleteAutoscaleConfigurationPolicyResponseData {
-  /**
-   * The policies which were deleted by the request.
-   */
-  policies?: DeleteAutoscaleConfigurationPolicyResponsePoliciesResponse[];
-}
-
-export interface DeleteAutoscaleConfigurationPolicyResponsePoliciesResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * The name of the service of the deleted policy.
-   */
-  name: string;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  error?: number;
-}
-
-export interface DeleteAutoscaleConfigurationsResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * The response data for this request.
-   */
-  data: DeleteAutoscaleConfigurationsResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface DeleteAutoscaleConfigurationsResponseData {
-  /**
-   * The configuration(s) which were deleted by the request.
-   */
-  service_groups?: DeleteAutoscaleConfigurationsResponseServiceGroup[];
-}
-
-export interface DeleteAutoscaleConfigurationsResponseServiceGroup {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * The UUID of the service where the configuration was deleted.
-   */
-  uuid: string;
-  /**
-   * The name of the service where the configuration was deleted.
-   */
-  name: string;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  error?: number;
-}
-
-/**
- * The response message for deleting of one or more certificate(s) given their
- * UUID(s) or name(s).
- */
-
-export interface DeleteCertificatesResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * The response data for this request.
-   */
-  data?: DeleteCertificatesResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface DeleteCertificatesResponseData {
-  /**
-   * The certificate(s) which were deleted by the request.
-   */
-  certificates?: DeleteCertificatesResponseDeletedCertificate[];
-}
-
-/**
- * Details of the certificate which was deleted by this request.
- */
-
-export interface DeleteCertificatesResponseDeletedCertificate {
-  /**
-   * Indicates whether the delete operation was successful or not for this
-   * certificate.
-   */
-  status: ResponseStatus;
-  /**
-   * The UUID of the certificate which was deleted.
-   */
-  uuid: string;
-  /**
-   * The name of the certificate which was deleted.
-   */
-  name: string;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  error?: number;
-}
-
-/**
- * The response message for deleting one or more checkpoint instances.
+ * The response message for deleting one or more checkpoint instance(s) given
+ * their UUID(s) or name(s).
  */
 
 export interface DeleteCheckpointInstancesResponse {
@@ -2057,7 +2169,6 @@ export interface DeleteCheckpointInstancesResponse {
   status: ResponseStatus;
   /**
    * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
    */
   message?: string;
   /**
@@ -2069,36 +2180,41 @@ export interface DeleteCheckpointInstancesResponse {
    */
   errors?: ResponseError[];
   /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
+   * The operation time in microseconds.
    */
   op_time_us: number;
 }
 
+/**
+ * Per-item result for a delete checkpoint instances operation.
+ */
+
 export interface DeleteCheckpointInstancesResponseCheckpointInstance {
   /**
-   * The UUID of the checkpoint instance that was deleted.
-   */
-  uuid: string;
-  /**
-   * The name of the checkpoint instance that was deleted.
-   */
-  name: string;
-  /**
-   * The status of this particular checkpoint instance deletion operation.
+   * Indicates whether the operation was successful for this item.
    */
   status: ResponseStatus;
   /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
+   * An optional message providing additional information.
    */
   message?: string;
   /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
+   * An optional error code.
    */
   error?: number;
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
 }
+
+/**
+ * The response data for this request.
+ */
 
 export interface DeleteCheckpointInstancesResponseData {
   /**
@@ -2114,13 +2230,13 @@ export interface DeleteCheckpointInstancesResponseData {
 
 export interface DeleteInstanceByUUIDRequestBody {
   /**
-   * Timeout in seconds to wait for the instance to be deleted.  No wait
+   * Timeout in seconds to wait for the instance to be deleted. No wait
    * performed for a value of 0.
    */
   timeout_s?: number;
   /**
-   * Delete immediately without retention.  If the instance is already
-   * being retained, this will force its deletion.  Ignored if retention
+   * Delete immediately without retention. If the instance is already
+   * being retained, this will force its deletion. Ignored if retention
    * for instances is not configured.
    */
   dont_retain?: boolean;
@@ -2132,30 +2248,29 @@ export interface DeleteInstanceByUUIDRequestBody {
 
 export interface DeleteInstanceRequestItem {
   /**
-   * Timeout in seconds to wait for the instance to be deleted.  No wait
+   * The UUID of the resource.
+   */
+  uuid?: string;
+  /**
+   * The name of the resource.
+   */
+  name?: string;
+  /**
+   * Timeout in seconds to wait for the instance to be deleted. No wait
    * performed for a value of 0.
    */
   timeout_s?: number;
   /**
-   * Delete immediately without retention.  If the instance is already
-   * being retained, this will force its deletion.  Ignored if retention
+   * Delete immediately without retention. If the instance is already
+   * being retained, this will force its deletion. Ignored if retention
    * for instances is not configured.
    */
   dont_retain?: boolean;
-  /**
-   * Mutually exclusive with name.
-   */
-  uuid?: string;
-  /**
-   * Mutually exclusive with UUID.
-   */
-  name?: string;
 }
 
 /**
  * The response message for deleting one or more instance(s) given their
- * UUID(s)
- * or name(s).
+ * UUID(s) or name(s).
  */
 
 export interface DeleteInstancesResponse {
@@ -2165,7 +2280,6 @@ export interface DeleteInstancesResponse {
   status: ResponseStatus;
   /**
    * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
    */
   message?: string;
   /**
@@ -2177,136 +2291,53 @@ export interface DeleteInstancesResponse {
    */
   errors?: ResponseError[];
   /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
+   * The operation time in microseconds.
    */
   op_time_us: number;
 }
 
+/**
+ * The response data for this request.
+ */
+
 export interface DeleteInstancesResponseData {
-  /**
-   * The instance(s) which were deleted by the request.
-   */
   instances?: DeleteInstancesResponseInstance[];
 }
 
 /**
- * Details of the instance which was deleted by this request.
+ * Per-item result for a delete instances operation.
  */
 
 export interface DeleteInstancesResponseInstance {
   /**
-   * Indicates whether the start operation was successful or not for this
-   * instance.
+   * Indicates whether the operation was successful for this item.
    */
   status: ResponseStatus;
   /**
-   * The UUID of the instance which was deleted.
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
    */
   uuid: string;
   /**
-   * The name of the instance which was deleted.
+   * The human-readable name of the resource.
    */
   name: string;
   /**
    * The previous state of the instance before it was deleted.
    */
   previous_state: string;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  error?: number;
 }
 
 /**
- * The request message to delete an autoscale configuration policy by name.
- */
-
-export interface DeletePolicyRequest {
-  /**
-   * The Name of the policy to delete.
-   */
-  name: string;
-}
-
-/**
- * The response message for deleting of one or more service group(s) given
- * their
- * UUID(s) or name(s).
- */
-
-export interface DeleteServiceGroupsResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * The response data for this request.
-   */
-  data?: DeleteServiceGroupsResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface DeleteServiceGroupsResponseData {
-  /**
-   * The service group(s) which were deleted by the request.
-   */
-  service_groups?: DeleteServiceGroupsResponseDeletedServiceGroup[];
-}
-
-/**
- * Details of the service group which was deleted by this request.
- */
-
-export interface DeleteServiceGroupsResponseDeletedServiceGroup {
-  /**
-   * Indicates whether the delete operation was successful or not for this
-   * service group.
-   */
-  status: ResponseStatus;
-  /**
-   * The UUID of the service group which was deleted.
-   */
-  uuid: string;
-  /**
-   * The name of the service group which was deleted.
-   */
-  name: string;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is only set when this message object is used as a response
-   * message, and is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is only set when this message object is used as a response
-   * message, and is useful when the status is not `success`.
-   */
-  error?: number;
-}
-
-/**
- * The response message for deleting one or more template instances.
+ * The response message for deleting one or more template instance(s) given
+ * their UUID(s) or name(s).
  */
 
 export interface DeleteTemplateInstancesResponse {
@@ -2316,7 +2347,6 @@ export interface DeleteTemplateInstancesResponse {
   status: ResponseStatus;
   /**
    * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
    */
   message?: string;
   /**
@@ -2328,478 +2358,49 @@ export interface DeleteTemplateInstancesResponse {
    */
   errors?: ResponseError[];
   /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
+   * The operation time in microseconds.
    */
   op_time_us: number;
 }
 
+/**
+ * The response data for this request.
+ */
+
 export interface DeleteTemplateInstancesResponseData {
-  /**
-   * List of template instances that were processed during the delete operation.
-   */
   instances?: DeleteTemplateInstancesResponseTemplateInstance[];
 }
 
+/**
+ * Per-item result for a delete template instances operation.
+ */
+
 export interface DeleteTemplateInstancesResponseTemplateInstance {
   /**
-   * The UUID of the template instance that was deleted.
+   * Indicates whether the operation was successful for this item.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
    */
   uuid: string;
   /**
-   * The name of the template instance that was deleted.
-   */
-  name: string;
-  /**
-   * The status of this particular template instance deletion operation.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  error?: number;
-}
-
-/**
- * The response message for deleting one or more template volumes.
- */
-
-export interface DeleteTemplateVolumesResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * The response data for this request.
-   */
-  data: DeleteTemplateVolumesResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface DeleteTemplateVolumesResponseData {
-  /**
-   * The template volume(s) which were deleted by the request.
-   */
-  volumes?: DeleteTemplateVolumesResponseTemplateVolume[];
-}
-
-export interface DeleteTemplateVolumesResponseTemplateVolume {
-  /**
-   * The UUID of the template volume that was deleted.
-   */
-  uuid: string;
-  /**
-   * The name of the template volume that was deleted.
-   */
-  name: string;
-  /**
-   * The status of this particular template volume deletion operation.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  error?: number;
-}
-
-export interface DeleteVolumesResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * The response data for this request.
-   */
-  data: DeleteVolumesResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface DeleteVolumesResponseData {
-  /**
-   * The volume(s) which were deleted by the request.
-   */
-  volumes?: DeleteVolumesResponseDeletedVolume[];
-}
-
-export interface DeleteVolumesResponseDeletedVolume {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * The UUID of the volume that was deleted.
-   */
-  uuid: string;
-  /**
-   * The name of the volume that was deleted.
-   */
-  name: string;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  error?: number;
-}
-
-export interface DetachVolumeByUUIDRequestBody {
-  /**
-   * (Optional).  UUID or name of the instance to detach the volume from.
-   * If not specified, the volume is detached from all instances.
-   */
-  from?: NameOrUUID;
-}
-
-/**
- * A single request of detaching a volume.
- */
-
-export interface DetachVolumesRequestItem {
-  /**
-   * (Optional).  UUID or name of the instance to detach the volume from.
-   * If not specified, the volume is detached from all instances.
-   */
-  from?: NameOrUUID;
-  /**
-   * The UUID of the volume to detach. Mutually exclusive with name.
-   * Exactly one of uuid or name must be provided.
-   */
-  uuid?: string;
-  /**
-   * The name of the volume to detach. Mutually exclusive with UUID.
-   * Exactly one of uuid or name must be provided.
-   */
-  name?: string;
-}
-
-export interface DetachVolumesResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * The response data for this request.
-   */
-  data: DetachVolumesResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface DetachVolumesResponseData {
-  /**
-   * The volume(s) which were detached by the request.
-   */
-  volumes?: DetachVolumesResponseDetachedVolume[];
-}
-
-export interface DetachVolumesResponseDetachedVolume {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * The UUID of the volume that was detached.
-   */
-  uuid: string;
-  /**
-   * The name of the volume that was detached.
-   */
-  name: string;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  error?: number;
-}
-
-/**
- * A domain name.
- *
- * Domain names are completely specified with all labels in the hierarchy of
- * the
- * DNS, having no parts omitted.  The domain can be associated with an existing
- * certificate by specifying the certificate's name or UUID.  If no certificate
- * is specified and a FQDN is provided, Unikraft Cloud will automatically
- * generate a new certificate for the domain based on Let's Encrypt and seek to
- * accomplish a DNS-01 challenge.
- */
-
-export interface Domain {
-  /**
-   * Publicly accessible domain name.  If this name ends in a period `.` it must
-   * be a valid Full Qualified Domain Name (FQDN), otherwise it will become a
-   * subdomain of the target metro.
-   */
-  fqdn: string;
-  /**
-   * Use an existing certificate for the domain.  If this field is
-   * specified, the domain must be associated with a valid certificate.
-   */
-  certificate?: Certificate;
-}
-
-/**
- * The request message to get an autoscale configuration policy by name.
- */
-
-export interface GetAutoscaleConfigurationPolicyRequest {
-  /**
-   * The Name of the policy to get.
+   * The human-readable name of the resource.
    */
   name: string;
 }
 
-export interface GetAutoscaleConfigurationPolicyResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * The response data for this request.
-   */
-  data: GetAutoscaleConfigurationPolicyResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface GetAutoscaleConfigurationPolicyResponseData {
-  /**
-   * The policy which was retrieved by the request.
-   */
-  policies?: GetAutoscaleConfigurationPolicyResponsePolicyResponse[];
-}
-
-export interface GetAutoscaleConfigurationPolicyResponsePolicyResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * The policy which was retrieved by the request.
-   */
-  policy: AutoscalePolicy;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  error?: number;
-}
-
 /**
- * The response message for a GetAutoscaleConfigurationsRequest.
- */
-
-export interface GetAutoscaleConfigurationsResponse {
-  /**
-   * The status of the response.
-   */
-  status: GetAutoscaleConfigurationsResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * The response data for this request.
-   */
-  data: GetAutoscaleConfigurationsResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface GetAutoscaleConfigurationsResponseData {
-  /**
-   * The configuration(s) which were retrieved by the request.
-   */
-  service_groups?: GetAutoscaleConfigurationsResponseServiceGroup[];
-}
-
-export interface GetAutoscaleConfigurationsResponseServiceGroup {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * The UUID of the service where the configuration was created.
-   */
-  uuid: string;
-  /**
-   * The name of the service where the configuration was created.
-   */
-  name: string;
-  /**
-   * If the autoscale configuration is enabled.
-   */
-  enabled: boolean;
-  /**
-   * The minimum number of instances to keep running.
-   * Only if enabled is true.
-   */
-  min_size?: number;
-  /**
-   * The maximum number of instances to keep running.
-   * Only if enabled is true.
-   */
-  max_size?: number;
-  /**
-   * The warmup time in seconds for new instances.
-   * Only if enabled is true.
-   */
-  warmup_time_ms?: number;
-  /**
-   * The cooldown time in seconds for the autoscale configuration.
-   * Only if enabled is true.
-   */
-  cooldown_time_ms?: number;
-  /**
-   * The instance template used for the autoscale configuration.
-   * Only if enabled is true.
-   */
-  template?: ServiceGroupTemplate;
-  /**
-   * The policies applied to the autoscale configuration.
-   */
-  policies?: AutoscalePolicy[];
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  error?: number;
-}
-
-/**
- * The status of the response.
- */
-
-export type GetAutoscaleConfigurationsResponseStatus = "success" | "error" | "unconfigured";
-
-/**
- * The response message for getting one or more certificate(s) given their
- * UUID(s) or name(s).
- */
-
-export interface GetCertificatesResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * The response data for this request.
-   */
-  data?: GetCertificatesResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface GetCertificatesResponseData {
-  /**
-   * The certificate(s) which were retrieved by the request.
-   */
-  certificates?: Certificate[];
-}
-
-/**
- * The response message for getting the checkpoint history.
+ * The response message for getting the checkpoint history of one or more
+ * instance(s) given their UUID(s) or name(s).
  */
 
 export interface GetCheckpointHistoryResponse {
@@ -2809,7 +2410,6 @@ export interface GetCheckpointHistoryResponse {
   status: ResponseStatus;
   /**
    * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
    */
   message?: string;
   /**
@@ -2821,11 +2421,14 @@ export interface GetCheckpointHistoryResponse {
    */
   errors?: ResponseError[];
   /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
+   * The operation time in microseconds.
    */
   op_time_us: number;
 }
+
+/**
+ * The response data for this request.
+ */
 
 export interface GetCheckpointHistoryResponseData {
   /**
@@ -2835,40 +2438,39 @@ export interface GetCheckpointHistoryResponseData {
 }
 
 /**
- * History for a single instance.
+ * Per-item result for a get checkpoint/instance history operation.
  */
 
 export interface GetCheckpointHistoryResponseInstanceHistory {
   /**
-   * The UUID of the instance.
+   * Indicates whether the operation was successful for this item.
+   */
+  status?: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
    */
   uuid: string;
   /**
-   * The name of the instance.
+   * The human-readable name of the resource.
    */
   name: string;
   /**
    * The checkpoint history entries.
    */
   history?: CheckpointHistoryEntry[];
-  /**
-   * The status of the response.
-   */
-  status?: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  error?: number;
 }
 
 /**
- * The response message for getting one or more checkpoint instances.
+ * The response message for getting one or more checkpoint instance(s) given
+ * their UUID(s) or name(s).
  */
 
 export interface GetCheckpointInstancesResponse {
@@ -2878,7 +2480,6 @@ export interface GetCheckpointInstancesResponse {
   status: ResponseStatus;
   /**
    * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
    */
   message?: string;
   /**
@@ -2890,11 +2491,14 @@ export interface GetCheckpointInstancesResponse {
    */
   errors?: ResponseError[];
   /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
+   * The operation time in microseconds.
    */
   op_time_us: number;
 }
+
+/**
+ * The response data for this request.
+ */
 
 export interface GetCheckpointInstancesResponseData {
   /**
@@ -2903,45 +2507,9 @@ export interface GetCheckpointInstancesResponseData {
   instances?: Instance[];
 }
 
-export interface GetImagesRequestTagOrDigest {
-  digest?: string;
-  tag?: string;
-}
-
-export interface GetImagesResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the response.
-   */
-  message?: string;
-  /**
-   * The response data for this request.
-   */
-  data?: GetImagesResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface GetImagesResponseData {
-  /**
-   * The list of images.
-   */
-  images?: Image[];
-}
-
 export interface GetInstanceLogsByUUIDRequestBody {
   /**
-   * The byte offset of the log output to receive.  A negative sign makes the
+   * The byte offset of the log output to receive. A negative sign makes the
    * offset relative to the end of the log.
    */
   offset?: number;
@@ -2952,12 +2520,20 @@ export interface GetInstanceLogsByUUIDRequestBody {
 }
 
 /**
- * A single item in the request.
+ * A single request item to get an instance's logs.
  */
 
 export interface GetInstancesLogsRequestItem {
   /**
-   * The byte offset of the log output to receive.  A negative sign makes the
+   * The UUID of the resource.
+   */
+  uuid?: string;
+  /**
+   * The name of the resource.
+   */
+  name?: string;
+  /**
+   * The byte offset of the log output to receive. A negative sign makes the
    * offset relative to the end of the log.
    */
   offset?: number;
@@ -2965,16 +2541,6 @@ export interface GetInstancesLogsRequestItem {
    * The amount of bytes to return at most.
    */
   limit?: number;
-  /**
-   * The UUID of the instance to retrieve logs for.  Mutually exclusive with
-   * name.
-   */
-  uuid?: string;
-  /**
-   * The name of the instance to retrieve logs for.  Mutually exclusive with
-   * UUID.
-   */
-  name?: string;
 }
 
 /**
@@ -2989,7 +2555,6 @@ export interface GetInstancesLogsResponse {
   status: ResponseStatus;
   /**
    * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
    */
   message?: string;
   /**
@@ -3001,11 +2566,14 @@ export interface GetInstancesLogsResponse {
    */
   errors?: ResponseError[];
   /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
+   * The operation time in microseconds.
    */
   op_time_us: number;
 }
+
+/**
+ * Per-item result for a get instances logs operation.
+ */
 
 export interface GetInstancesLogsResponseAvailable {
   /**
@@ -3018,23 +2586,37 @@ export interface GetInstancesLogsResponseAvailable {
   end: number;
 }
 
+/**
+ * The response data for this request.
+ */
+
 export interface GetInstancesLogsResponseData {
-  /**
-   * The instance which this requested waited on.
-   *
-   * Note: only one instance can be specified in the request, so this will
-   * always contain a single entry.
-   */
   instances?: GetInstancesLogsResponseLoggedInstance[];
 }
 
+/**
+ * Per-item result for a get instances logs operation.
+ */
+
 export interface GetInstancesLogsResponseLoggedInstance {
   /**
-   * The UUID of the instance.
+   * Indicates whether the operation was successful for this item.
+   */
+  status?: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
    */
   uuid: string;
   /**
-   * The name of the instance.
+   * The human-readable name of the resource.
    */
   name: string;
   /**
@@ -3046,7 +2628,7 @@ export interface GetInstancesLogsResponseLoggedInstance {
    */
   available: GetInstancesLogsResponseAvailable;
   /**
-   * Description of the range that was returned.  Useful for requests with
+   * Description of the range that was returned. Useful for requests with
    * offset relative to end.
    */
   range: GetInstancesLogsResponseRange;
@@ -3054,20 +2636,6 @@ export interface GetInstancesLogsResponseLoggedInstance {
    * State of the instance when the logs were retrieved.
    */
   state: InstanceState;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  error?: number;
-  /**
-   * The status of the response.
-   */
-  status?: ResponseStatus;
 }
 
 export interface GetInstancesLogsResponseRange {
@@ -3082,8 +2650,8 @@ export interface GetInstancesLogsResponseRange {
 }
 
 /**
- * The response message for getting the metrics of one or more instance(s)
- * given their UUID(s) or name(s).
+ * The response message for getting the metrics of one or more instance(s) by
+ * their UUID(s) or name(s).
  */
 
 export interface GetInstancesMetricsResponse {
@@ -3093,7 +2661,6 @@ export interface GetInstancesMetricsResponse {
   status: ResponseStatus;
   /**
    * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
    */
   message?: string;
   /**
@@ -3105,33 +2672,55 @@ export interface GetInstancesMetricsResponse {
    */
   errors?: ResponseError[];
   /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
+   * The operation time in microseconds.
    */
   op_time_us: number;
 }
 
+/**
+ * The response data for this request.
+ */
+
 export interface GetInstancesMetricsResponseData {
-  /**
-   * The instance which this requested metrics for.  Note: only one instance
-   * can be specified in the request, so this will always contain a single
-   * entry.
-   */
   instances?: GetInstancesMetricsResponseInstanceMetrics[];
 }
 
+/**
+ * Per-item result for a get instances metrics operation.
+ */
+
 export interface GetInstancesMetricsResponseInstanceMetrics {
+  /**
+   * Indicates whether the operation was successful for this item.
+   */
+  status?: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
   /**
    * Resident set size of the VMM in bytes.
    *
    * The resident set size (RSS) specifies the amount of physical memory that
    * has been touched by the instance and is currently reserved for the
-   * instance on the Unikraft Cloud server.  The RSS grows until the instance
+   * instance on the Unikraft Cloud server. The RSS grows until the instance
    * has touched all memory assigned to it via the memory_mb setting and may
    * also exceed this value as supporting services running outside the
-   * instance acquire memory.  The RSS is different from the current amount of
+   * instance acquire memory. The RSS is different from the current amount of
    * memory allocated by the application, which is likely to fluctuate over
-   * the lifetime of the application.  The RSS is not a cumulative metric.
+   * the lifetime of the application. The RSS is not a cumulative metric.
    * When the instance is stopped rss goes down to 0.
    */
   rss_bytes: number;
@@ -3140,11 +2729,11 @@ export interface GetInstancesMetricsResponseInstanceMetrics {
    */
   cpu_time_ms: number;
   /**
-   * The boot time of the instance in microseconds.  We take a pragmatic
-   * approach is to define the boot time.  We calculate this as the difference
+   * The boot time of the instance in microseconds. We take a pragmatic
+   * approach is to define the boot time. We calculate this as the difference
    * in time between the moment the virtualization toolstack is invoked to
    * respond to a VM boot request and the moment the OS starts executing user
-   * code (i.e., the end of the guest OS boot process).  This is essentially the
+   * code (i.e., the end of the guest OS boot process). This is essentially the
    * time that a user would experience in a deployment, minus the application
    * initialization time, which we leave out since it is independent from the
    * OS.
@@ -3152,9 +2741,9 @@ export interface GetInstancesMetricsResponseInstanceMetrics {
   boot_time_us: number;
   /**
    * This is the time it took for the user-level application to start listening
-   * on a non-localhost port measured in microseconds.  This is the time from
+   * on a non-localhost port measured in microseconds. This is the time from
    * when the instance started until it reasonably ready to start responding to
-   * network requests.  This is useful for measuring the time it takes for the
+   * network requests. This is useful for measuring the time it takes for the
    * instance to become operationally ready.
    */
   net_time_us: number;
@@ -3190,24 +2779,11 @@ export interface GetInstancesMetricsResponseInstanceMetrics {
    * Total number of inbound connections and HTTP requests handled.
    */
   ntotal: number;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  error?: number;
-  /**
-   * The status of the response.
-   */
-  status?: ResponseStatus;
 }
 
 /**
- * The response after retrieving an instance by its name or UUID.
+ * The response message for getting one or more instance(s) given their
+ * UUID(s) or name(s).
  */
 
 export interface GetInstancesResponse {
@@ -3217,7 +2793,6 @@ export interface GetInstancesResponse {
   status: ResponseStatus;
   /**
    * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
    */
   message?: string;
   /**
@@ -3229,58 +2804,22 @@ export interface GetInstancesResponse {
    */
   errors?: ResponseError[];
   /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
+   * The operation time in microseconds.
    */
   op_time_us: number;
 }
 
+/**
+ * The response data for this request.
+ */
+
 export interface GetInstancesResponseData {
-  /**
-   * The instance(s) that were retrieved by the request.
-   */
   instances?: Instance[];
 }
 
 /**
- * The response message for getting one or more service group(s) given their
- * UUID(s) or name(s).
- */
-
-export interface GetServiceGroupsResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * The response data for this request.
-   */
-  data?: GetServiceGroupsResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface GetServiceGroupsResponseData {
-  /**
-   * The service group(s) which were retrieved by the request.
-   */
-  service_groups?: ServiceGroup[];
-}
-
-/**
- * The response message for getting one or more template instances.
+ * The response message for getting one or more template instance(s) given
+ * their UUID(s) or name(s).
  */
 
 export interface GetTemplateInstancesResponse {
@@ -3290,7 +2829,6 @@ export interface GetTemplateInstancesResponse {
   status: ResponseStatus;
   /**
    * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
    */
   message?: string;
   /**
@@ -3302,161 +2840,17 @@ export interface GetTemplateInstancesResponse {
    */
   errors?: ResponseError[];
   /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
+   * The operation time in microseconds.
    */
   op_time_us: number;
 }
+
+/**
+ * The response data for this request.
+ */
 
 export interface GetTemplateInstancesResponseData {
-  /**
-   * List of template instances that were retrieved during the operation.
-   */
   instances?: Instance[];
-}
-
-/**
- * The response message for getting one or more template volumes.
- */
-
-export interface GetTemplateVolumesResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * The response data for this request.
-   */
-  data: GetTemplateVolumesResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface GetTemplateVolumesResponseData {
-  /**
-   * The template volume(s) which were retrieved by the request.
-   */
-  volumes?: Volume[];
-}
-
-/**
- * The response message for getting one or more volume(s) given their
- * UUID(s) or name(s).
- */
-
-export interface GetVolumesResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * The response data for this request.
-   */
-  data: GetVolumesResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface GetVolumesResponseData {
-  /**
-   * The volume(s) which were retrieved by the request.
-   */
-  volumes?: Volume[];
-}
-
-/**
- * The health state reported by a single health checker.
- */
-
-export type HealthState = "unknown" | "healthy" | "degraded";
-
-/**
- * The response message for a health check of the platform.
- */
-
-export interface HealthzResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the response.
-   */
-  message?: string;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The response data for this request.
-   */
-  data?: HealthzResponseData;
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-/**
- * Additional data returned by the health check.
- */
-
-export interface HealthzResponseData {
-  /**
-   * The health state of each registered checker, keyed by checker name.
-   * Valid keys are "images", "systemd", and "user-defined"; a checker's
-   * key is only present if it is enabled. Checkers report only their
-   * aggregate state; per-check detail (e.g. which default image is
-   * missing, or which user-defined script failed) is not exposed here.
-   */
-  checks?: Record<string, HealthState>;
-  versions?: Record<string, string>;
-  license?: DataLicense;
-}
-
-export interface Image {
-  url: string;
-  /**
-   * The time the volume was created.
-   */
-  created_at: string;
-  initrd_or_rom: boolean;
-  size_in_bytes: number;
-  args?: string[];
-  env?: Record<string, string>;
-  tags?: string[];
-  users?: string[];
-  /**
-   * Whether the image is pinned and exempt from cache eviction.  Only
-   * populated (and only ever `true`) for callers with image manager
-   * permissions; omitted otherwise, including when the image is not pinned.
-   */
-  persistent?: boolean;
 }
 
 /**
@@ -3486,50 +2880,28 @@ export interface ImageSpec {
 }
 
 /**
- * Encoding type for inline file data.
- */
-
-export type InlineDataEncoding = "text" | "base64";
-
-/**
- * An inline file entry represents a single file within an image.
- */
-
-export interface InlineFile {
-  /**
-   * The file path within the image.
-   */
-  path: string;
-  /**
-   * (Optional).  The encoding of the data field.  Defaults to "text".
-   */
-  encoding?: InlineDataEncoding;
-  /**
-   * The file data, encoded according to the encoding field.
-   */
-  data: string;
-}
-
-/**
- * An instance is a micro vm running an application.
+ * Instance with per-item response envelope fields merged in.
  */
 
 export interface Instance {
   /**
-   * The UUID of the instance.
-   *
-   * This is a unique identifier for the instance that is generated when the
-   * instance is created.  The UUID is used to reference the instance in API
-   * calls and can be used to identify the instance in all API calls that
-   * require an instance identifier.
+   * Indicates whether the operation was successful for this item.
+   */
+  status?: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
    */
   uuid: string;
   /**
-   * The name of the instance.
-   *
-   * This is a human-readable name that can be used to identify the instance.
-   * The name must be unique within the context of your account.  The name can
-   * also be used to identify the instance in API calls.
+   * The human-readable name of the resource.
    */
   name: string;
   /**
@@ -3537,37 +2909,37 @@ export interface Instance {
    */
   created_at: string;
   /**
-   * The state of the instance.  This indicates the current state of the
+   * The state of the instance. This indicates the current state of the
    * instance, such as whether it is running, stopped, or in an error state.
    */
   state: InstanceState;
   /**
-   * The internal hostname of the instance.  This address can be used privately
-   * within the Unikraft Cloud network to access the instance.  It is not
+   * The internal hostname of the instance. This address can be used privately
+   * within the Unikraft Cloud network to access the instance. It is not
    * accessible from the public Internet.
    */
   private_fqdn?: string;
   /**
-   * The image used to create the instance.  This is a reference to the
+   * The image used to create the instance. This is a reference to the
    * Unikraft image that was used to create the instance.
    */
   image: string;
   /**
-   * The amount of memory in megabytes allocated for the instance.  This is the
+   * The amount of memory in megabytes allocated for the instance. This is the
    * total amount of memory that is available to the instance for its
    * operations.
    */
   memory_mb: number;
   /**
-   * The number of vCPUs allocated for the instance.  This is the total
+   * The number of vCPUs allocated for the instance. This is the total
    * number of virtual CPUs that are available to the instance for its
    * operations.
    */
   vcpus: number;
   /**
-   * The arguments passed to the instance when it was started.  This is a
+   * The arguments passed to the instance when it was started. This is a
    * list of command-line arguments that were provided to the instance at
-   * startup.  These arguments can be used to configure the behavior of the
+   * startup. These arguments can be used to configure the behavior of the
    * instance and its applications.
    */
   args?: string[];
@@ -3576,9 +2948,9 @@ export interface Instance {
    */
   env?: Record<string, string>;
   /**
-   * The total number of times the instance has been started.  This is a counter
+   * The total number of times the instance has been started. This is a counter
    * that increments each time the instance is started, regardless of whether it
-   * was manually stopped or restarted.  This can be useful for tracking the
+   * was manually stopped or restarted. This can be useful for tracking the
    * usage of the instance over time and/or for debugging purposes.
    *
    * Not used for template instances.
@@ -3593,14 +2965,14 @@ export interface Instance {
    */
   restart_count?: number;
   /**
-   * The time the instance was started.  This is the timestamp when the
+   * The time the instance was started. This is the timestamp when the
    * instance was last started.
    * Not used for template instances.
    */
   started_at?: string;
   /**
-   * The time the instance was stopped.  This is the timestamp when the
-   * instance was last stopped.  If the instance is currently running, this
+   * The time the instance was stopped. This is the timestamp when the
+   * instance was last stopped. If the instance is currently running, this
    * field will be empty.
    * Not used for template instances.
    */
@@ -3611,36 +2983,40 @@ export interface Instance {
    */
   uptime_ms?: number;
   /**
-   * (Developer-only).  The time taken between the main controller and the
+   * Time when the instance will be permanently deleted (for deleted instances).
+   */
+  retained_until?: string;
+  /**
+   * (Developer-only). The time taken between the main controller and the
    * beginning of execution of the VMM (Virtual Machine Monitor) measured in
-   * microseconds.  This field is primarily used for debugging and performance
+   * microseconds. This field is primarily used for debugging and performance
    * analysis purposes.
    * Not used for template instances.
    */
   vmm_start_time_us?: number;
   /**
-   * (Developer-only).  The time it took the VMM (Virtual Machine Monitor) to
+   * (Developer-only). The time it took the VMM (Virtual Machine Monitor) to
    * load the instance's kernel and initramfs into VM memory measured in
-   * microseconds.  This field is primarily used for debugging and performance
+   * microseconds. This field is primarily used for debugging and performance
    * analysis purposes.
    * Not used for template instances.
    */
   vmm_load_time_us?: number;
   /**
-   * (Developer-only).  The time taken for the VMM (Virtual Machine Monitor) to
-   * become ready to execute the instance measured in microseconds.  This is the
+   * (Developer-only). The time taken for the VMM (Virtual Machine Monitor) to
+   * become ready to execute the instance measured in microseconds. This is the
    * time from when the VMM started until it was ready to execute the instance's
-   * code.  This field is primarily used for debugging and performance analysis
+   * code. This field is primarily used for debugging and performance analysis
    * purposes.
    * Not used for template instances.
    */
   vmm_ready_time_us?: number;
   /**
-   * The boot time of the instance in microseconds.  We take a pragmatic
-   * approach is to define the boot time.  We calculate this as the difference
+   * The boot time of the instance in microseconds. We take a pragmatic
+   * approach is to define the boot time. We calculate this as the difference
    * in time between the moment the virtualization toolstack is invoked to
    * respond to a VM boot request and the moment the OS starts executing user
-   * code (i.e., the end of the guest OS boot process).  This is essentially the
+   * code (i.e., the end of the guest OS boot process). This is essentially the
    * time that a user would experience in a deployment, minus the application
    * initialization time, which we leave out since it is independent from the
    * OS.
@@ -3649,59 +3025,61 @@ export interface Instance {
   boot_time_us?: number;
   /**
    * This is the time it took for the user-level application to start listening
-   * on a non-localhost port measured in microseconds.  This is the time from
+   * on a non-localhost port measured in microseconds. This is the time from
    * when the instance started until it reasonably ready to start responding to
-   * network requests.  This is useful for measuring the time it takes for the
+   * network requests. This is useful for measuring the time it takes for the
    * instance to become operationally ready.
    * Not used for template instances.
    */
   net_time_us?: number;
   /**
+   * Template creation time in microseconds.
+   */
+  template_time_us?: number;
+  /**
    * The instance stop reason.
    *
    * Provides reason as to why an instance is stopped or in the process of
-   * shutting down.  The stop reason is a bitmask that tells you the origin of
+   * shutting down. The stop reason is a bitmask that tells you the origin of
    * the shutdown:
    *
-   * | Bit     | 4          | 3          | 2          | 1          | 0 (LSB)
-   * |
+   * | Bit | 4 | 3 | 2 | 1 | 0 (LSB) |
    * |---------|------------|------------|------------|------------|--------------|
-   * | Purpose | [F]orced   | [U]ser     | [P]latform | [A]pp      | [K]ernel
-   * |
+   * | Purpose | [F]orced | [U]ser | [P]latform | [A]pp | [K]ernel |
    *
-   * - **Forced**:   This was a force stop.  A forced stop does not give the
-   *                 instance a chance to perform a clean shutdown.  Bits 0
-   *                 (Kernel) and 1 (App) can thus never be set for forced
-   *                 shutdowns.  Consequently, there won't be an `exit_code` or
-   *                 `stop_code`.
-   * - **User**:     Stop initiated by user, e.g. via an API call.
+   * - **Forced**: This was a force stop. A forced stop does not give the
+   * instance a chance to perform a clean shutdown. Bits 0
+   * (Kernel) and 1 (App) can thus never be set for forced
+   * shutdowns. Consequently, there won't be an `exit_code` or
+   * `stop_code`.
+   * - **User**: Stop initiated by user, e.g. via an API call.
    * - **Platform**: Stop initiated by platform, e.g. an autoscale policy.
-   * - **App**:      The Application exited.  The `exit_code` field will be set.
-   * - **Kernel**:   The kernel exited.  The `stop_code` field will be set.
+   * - **App**: The Application exited. The `exit_code` field will be set.
+   * - **Kernel**: The kernel exited. The `stop_code` field will be set.
    *
    * For example, the stop reason will contain the following values in the given
    * scenarios:
    *
    * | Value | Bitmask | Aliases | Scenario |
    * |-------|---------|---------|----------|
-   * | 28    | `11100` | `FUP--` | Forced user-initiated shutdown. |
-   * | 15    | `01111` | `-UPAK` | Regular user-initiated shutdown. The
-   * application and kernel have exited. The exit_code and stop_code indicate if
-   * the application and kernel shut down cleanly. |
-   * | 13    | `01101` | `-UP-K` | The user initiated a shutdown but the
-   * application was forcefully killed by the kernel during shutdown. This can be
-   * the case if the image does not support a clean application exit or the
-   * application crashed after receiving a termination signal. The exit_code
-   * won’t be present in this scenario. |
-   * | 7     | `00111` | `--PAK` | Unikraft Cloud initiated the shutdown, for
+   * | 28 | `11100` | `FUP--` | Forced user-initiated shutdown. |
+   * | 15 | `01111` | `-UPAK` | Regular user-initiated shutdown. The application
+   * and kernel have exited. The exit_code and stop_code indicate if the
+   * application and kernel shut down cleanly. |
+   * | 13 | `01101` | `-UP-K` | The user initiated a shutdown but the application
+   * was forcefully killed by the kernel during shutdown. This can be the case if
+   * the image does not support a clean application exit or the application
+   * crashed after receiving a termination signal. The exit_code won’t be present
+   * in this scenario. |
+   * | 7 | `00111` | `--PAK` | Unikraft Cloud initiated the shutdown, for
    * example, due to scale-to-zero. The application and kernel have exited. The
    * exit_code and stop_code indicate if the application and kernel shut down
    * cleanly. |
-   * | 3     | `00011` | `---AK` | The application exited. The exit_code and
+   * | 3 | `00011` | `---AK` | The application exited. The exit_code and
    * stop_code indicate if the application and kernel shut down cleanly. |
-   * | 1     | `00001` | `----K` | The instance likely expierenced a fatal crash
-   * and the stop_code contains more information about the cause of the crash. |
-   * | 0     | `00000` | `-----` | The stop reason is unknown. |
+   * | 1 | `00001` | `----K` | The instance likely expierenced a fatal crash and
+   * the stop_code contains more information about the cause of the crash. |
+   * | 0 | `00000` | `-----` | The stop reason is unknown. |
    * Not used for template instances.
    */
   stop_reason?: number;
@@ -3709,8 +3087,8 @@ export interface Instance {
    * The application exit code.
    *
    * This is the code which the application returns upon leaving its main entry
-   * point.  The encoding of the exit code is application specific.  See the
-   * documentation of the application for more details.  Usually, an exit code
+   * point. The encoding of the exit code is application specific. See the
+   * documentation of the application for more details. Usually, an exit code
    * of `0` indicates success / no failure.
    * Not used for template instances.
    */
@@ -3722,20 +3100,20 @@ export interface Instance {
    * application.
    *
    * ```
-   * MSB                                                     LSB
+   * MSB LSB
    * ┌──────────────┬──────────┬──────────┬───────────┬────────┐
-   * │ 31 ────── 24 │ 23 ── 16 │    15    │ 14 ──── 8 │ 7 ── 0 │
+   * │ 31 ────── 24 │ 23 ── 16 │ 15 │ 14 ──── 8 │ 7 ── 0 │
    * ├──────────────┼──────────┼──────────┼───────────┼────────┤
-   * │ reserved[^1] │ errno    │ shutdown │ initlevel │ reason │
+   * │ reserved[^1] │ errno │ shutdown │ initlevel │ reason │
    * └──────────────┴──────────┴──────────┴───────────┴────────┘
    * ```
    *
-   * - **errno**:     The application errno, using Linux's errno.h values.
-   *                  (Optional, can be 0.)
-   * - **shutdown**:  Whether the shutdown originated from the inittable (0) or
-   *                  from the termtable (1).
+   * - **errno**: The application errno, using Linux's errno.h values.
+   * (Optional, can be 0.)
+   * - **shutdown**: Whether the shutdown originated from the inittable (0) or
+   * from the termtable (1).
    * - **initlevel**: The initlevel at the time of the stop.
-   * - **reason**:    The reason for the stop.  See `StopCodeReason`.
+   * - **reason**: The reason for the stop. See `StopCodeReason`.
    *
    * [^1]: Reserved for future use.
    * Not used for template instances.
@@ -3745,27 +3123,27 @@ export interface Instance {
    * The restart configuration for the instance.
    *
    * When an instance stops either because the application exits or the instance
-   * crashes, Unikraft Cloud can auto-restart your instance.  Auto-restarts are
+   * crashes, Unikraft Cloud can auto-restart your instance. Auto-restarts are
    * performed according to the restart policy configured for a particular
    * instance.
    *
    * The policy can have the following values:
    *
-   * | Policy       | Description |
+   * | Policy | Description |
    * |--------------|-------------|
-   * | `never`      | Never restart the instance (default). |
-   * | `always`     | Always restart the instance when the stop is initiated from
+   * | `never` | Never restart the instance (default). |
+   * | `always` | Always restart the instance when the stop is initiated from
    * within the instance (i.e., the application exits or the instance crashes). |
    * | `on-failure` | Only restart the instance if it crashes. |
    *
    * When an instance stops, the stop reason and the configured restart policy
-   * are evaluated to decide if a restart should be performed.  Unikraft Cloud
+   * are evaluated to decide if a restart should be performed. Unikraft Cloud
    * uses an exponential back-off delay (immediate, 5s, 10s, 20s, 40s, ..., 5m)
-   * to slow down restarts in tight crash loops.  If an instance runs without
+   * to slow down restarts in tight crash loops. If an instance runs without
    * problems for 10s the back-off delay is reset and the restart sequence ends.
    *
    * The `restart.attempt` attribute reported in counts the number of restarts
-   * performed in the current sequence.  The `restart.next_at` field indicates
+   * performed in the current sequence. The `restart.next_at` field indicates
    * when the next restart will take place if a back-off delay is in effect.
    *
    * A manual start or stop of the instance aborts the restart sequence and
@@ -3778,14 +3156,14 @@ export interface Instance {
    * With conventional cloud platforms you need to keep at least one instance
    * running at all times to be able to respond to incoming requests. Performing
    * a just-in-time cold boot is simply too time-consuming and would create a
-   * response latency of multiple seconds.  This is not the case with Unikraft
-   * Cloud.  Instances on Unikraft Cloud are able to cold boot within
+   * response latency of multiple seconds. This is not the case with Unikraft
+   * Cloud. Instances on Unikraft Cloud are able to cold boot within
    * milliseconds, which allows us to perform low-latency scale-to-zero.
    *
    * To enable scale-to-zero for an instance it is sufficient to add a
-   * `scale_to_zero` configuration block.  Unikraft Cloud will then put the
+   * `scale_to_zero` configuration block. Unikraft Cloud will then put the
    * instance into standby if there is no traffic to your service within the
-   * window of a cooldown period.  When there is new traffic coming in, it is
+   * window of a cooldown period. When there is new traffic coming in, it is
    * automatically started again.
    *
    * If you have a heavyweight application that takes long to cold boot or has
@@ -3794,13 +3172,17 @@ export interface Instance {
    */
   scale_to_zero?: InstanceScaleToZero;
   /**
-   * The list of volumes attached to the instance.
-   */
-  volumes?: InstanceVolume[];
-  /**
    * The service group configuration for the instance.
    */
   service_group?: InstanceServiceGroup;
+  /**
+   * Services exposed by this instance (format: "protocol:port").
+   */
+  services?: string[];
+  /**
+   * The list of volumes attached to the instance.
+   */
+  volumes?: InstanceVolume[];
   /**
    * The network interfaces of the instance.
    * Not used for template instances.
@@ -3816,30 +3198,13 @@ export interface Instance {
    * Keys follow the Kubernetes annotation key syntax, `[<prefix>/]<name>`: the
    * optional prefix is a non-wildcard DNS subdomain of at most 253 characters,
    * and the name is at most 63 characters of `[-_.a-zA-Z0-9]` starting and
-   * ending with an alphanumeric.  Values are unconstrained apart from ASCII
+   * ending with an alphanumeric. Values are unconstrained apart from ASCII
    * control characters, which are rejected because they would corrupt the
    * console log output annotations can be forwarded to.
    *
    * An instance holds at most 256 annotations.
    */
   annotations?: Record<string, string>;
-  /**
-   * An optional field representing the status of the request.  This field is
-   * only set when this message object is used as a response message.
-   */
-  status?: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is only set when this message object is used as a response
-   * message, and is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is only set when this message object is used as a response
-   * message, and is useful when the status is not `success`.
-   */
-  error?: number;
   /**
    * The snapshot of the instance, if exists.
    */
@@ -3848,6 +3213,7 @@ export interface Instance {
    * If set to true, the instance cannot be deleted until the lock is removed.
    */
   delete_lock?: boolean;
+  features?: InstanceFeature[];
   /**
    * The current restart attempt for the instance.
    * Not used for template instances.
@@ -3862,19 +3228,19 @@ export interface Instance {
    */
   roms?: InstanceRom[];
   /**
-   * Plugins attached to the instance.  Plugins let you attach small helper
+   * Plugins attached to the instance. Plugins let you attach small helper
    * programs to an instance and reach each one over a direct, authenticated
-   * HTTP endpoint.  Each plugin loads from its own ROM image, mounts at
+   * HTTP endpoint. Each plugin loads from its own ROM image, mounts at
    * `/uk/plugins/<plugin_name>`, and is reachable at
-   * `.../v1/instances/<uuid>/plugins/<plugin_name>/<path>`.  At most 8 plugins
-   * may be attached to an instance.
+   * `.../v1/instances/<uuid>/plugins/<plugin_name>/<path>`. At most 8
+   * plugins may be attached to an instance.
    */
   plugins?: InstancePlugin[];
   /**
    * Scheduled operations for this instance.
    *
    * Each schedule defines a calendar expression and an action (`start`,
-   * `stop`, `delete`, or `exec`) to perform at matching times.  When the
+   * `stop`, `delete`, or `exec`) to perform at matching times. When the
    * action is `exec`, the `args` field of the schedule specifies the command
    * to run inside the instance.
    */
@@ -3885,11 +3251,6 @@ export interface Instance {
    */
   autokill?: InstanceAutokill;
   /**
-   * Template-specific automatic delete-on-idle configuration.
-   * Not used for non-template instances.
-   */
-  template_autokill?: InstanceTemplateAutokill;
-  /**
    * Queued property changes awaiting application.
    */
   updates?: InstancePendingUpdate[];
@@ -3898,6 +3259,11 @@ export interface Instance {
    * users with scheduling priority override permissions.
    */
   sched_priority?: SchedPriority;
+  /**
+   * Template-specific automatic delete-on-idle configuration.
+   * Not used for non-template instances.
+   */
+  template_autokill?: InstanceTemplateAutokill;
   /**
    * Checkpoint-specific automatic delete-on-idle configuration.
    * Only used for checkpoint instances.
@@ -3920,7 +3286,7 @@ export interface Instance {
    */
   type: InstanceType;
   /**
-   * GPUs attached to the instance.  Only present for instances of type
+   * GPUs attached to the instance. Only present for instances of type
    * `full`.
    */
   gpus?: InstanceGpu[];
@@ -3928,8 +3294,7 @@ export interface Instance {
 
 /**
  * Automatic delete-on-idle/request-limit configuration for non-template
- * instances.
- * Not used for template instances.
+ * instances. Not used for template instances.
  */
 
 export interface InstanceAutokill {
@@ -3945,36 +3310,15 @@ export interface InstanceAutokill {
   num_requests?: number;
 }
 
-export interface InstanceCreateArgsInstanceCreateRequestRoms {
-  /**
-   * The name of the ROM to use for the autoscale configuration.
-   */
-  name: string;
-  /**
-   * (Optional).  The image of the ROM to use for the autoscale
-   * configuration.  Mutually exclusive with `files`.  Accepts either a
-   * plain image reference string (`"nginx:latest"`) or an object carrying
-   * additional pull configuration
-   * (`{"url": "nginx:latest", "pull_policy": "always"}`).
-   */
-  image?: string | ImageSpec;
-  /**
-   * (Optional).  Inline files to use as the ROM content.  When specified,
-   * the platform creates an EROFS image from the provided files.
-   * Mutually exclusive with `image`.
-   */
-  files?: InlineFile[];
-}
-
 /**
  * Features are specific configurations or capabilities that can be enabled for
  * the instance.
  *
  * The list of available features to enable for the instance:
  *
- * | Feature          | Description |
- * |------------------|-------------|
- * | `delete_on_stop` | The instance will be deleted when it is stopped. This
+ * | Feature            | Description |
+ * |--------------------|-------------|
+ * | `delete-on-stop`   | The instance will be deleted when it is stopped. This
  * is useful for instances that are not needed after they are stopped, such as
  * temporary or ephemeral instances. |
  */
@@ -3998,14 +3342,10 @@ export interface InstanceGpu {
 }
 
 /**
- * An instance network interface.
+ * A network interface attached to an instance.
  */
 
 export interface InstanceNetworkInterface {
-  /**
-   * The UUID of the network interface. This is a unique identifier for the
-   * network interface that is generated when the instance is created.
-   */
   uuid: string;
   /**
    * The private IP address of the network interface. This is the internal IP
@@ -4029,8 +3369,8 @@ export interface InstanceNetworkInterface {
   tap_name?: string;
   /**
    * Whether the interface is automatically configured inside the guest
-   * (IP address, routes, etc.).  When absent or true, autoconfiguration
-   * is enabled.  Present and false when the guest is expected to
+   * (IP address, routes, etc.). When absent or true, autoconfiguration
+   * is enabled. Present and false when the guest is expected to
    * configure the interface manually.
    */
   autoconfig?: boolean;
@@ -4061,7 +3401,7 @@ export interface InstanceNetworkInterfaceRelay {
 }
 
 /**
- * A queued property change awaiting application (typically on next restart).
+ * A queued property change awaiting application on an instance.
  */
 
 export interface InstancePendingUpdate {
@@ -4074,8 +3414,7 @@ export interface InstancePendingUpdate {
    */
   op: MutableInstanceOperation;
   /**
-   * The new value for the property.  Type depends on the property being
-   * updated.
+   * The new value for the property. Type depends on the property being updated.
    */
   value: unknown;
   /**
@@ -4083,7 +3422,7 @@ export interface InstancePendingUpdate {
    */
   status: InstancePendingUpdateStatus;
   /**
-   * Error message.  Only present when status is "failed".
+   * Error message. Only present when status is "failed".
    */
   error?: string;
 }
@@ -4096,36 +3435,36 @@ export type InstancePendingUpdateStatus = "pending" | "failed";
 
 /**
  * A helper program attached to the instance and reachable over a direct,
- * authenticated HTTP endpoint.  A plugin runs inside the instance next to the
- * main application, loads from its own ROM image, and answers requests that
- * the Unikraft Cloud API forwards to it.
+ * authenticated HTTP endpoint. A plugin runs inside the instance next to
+ * the main application, loads from its own ROM image, and answers requests
+ * that the Unikraft Cloud API forwards to it.
  */
 
 export interface InstancePlugin {
   /**
-   * The plugin name.  It becomes the `<plugin_name>` segment in the plugin
-   * endpoint (`.../plugins/<plugin_name>/<path>`).  A plugin name has a
+   * The plugin name. It becomes the `<plugin_name>` segment in the plugin
+   * endpoint (`.../plugins/<plugin_name>/<path>`). A plugin name has a
    * maximum length of 63 characters and contains only letters (`a`-`z`,
    * `A`-`Z`), digits (`0`-`9`), hyphen (`-`), and underscore (`_`).
    */
   name: string;
   /**
    * The plugin's ROM image, given as an image reference string such as
-   * `user/myplugin:latest`.  The platform loads the image, mounts it at
-   * `/uk/plugins/<plugin_name>`, and runs its `init` program when the plugin
-   * starts.
+   * `user/myplugin:latest`. The platform loads the image, mounts it at
+   * `/uk/plugins/<plugin_name>`, and runs its `init` program when the
+   * plugin starts.
    */
   rom: string;
   /**
-   * (Optional).  Arbitrary JSON configuration that the platform passes to the
-   * plugin's `init` program on `STDIN`.  Any JSON value works, including a
-   * string, a number, or an object.
+   * Arbitrary JSON configuration that the platform passes to the plugin's
+   * `init` program on `STDIN`. Any JSON value works, including a string, a
+   * number, or an object.
    */
   config?: unknown;
 }
 
 /**
- * Records the current restart attempt of an instance.
+ * Restart attempt information for an instance.
  */
 
 export interface InstanceRestartAttempt {
@@ -4144,11 +3483,9 @@ export interface InstanceRestartAttempt {
  * The restart policy of an instance.
  *
  * When an instance stops either because the application exits or the instance
- * crashes, Unikraft Cloud can auto-restart your instance.  Auto-restarts are
+ * crashes, Unikraft Cloud can auto-restart your instance. Auto-restarts are
  * performed according to the restart policy configured for a particular
- * instance.
- *
- * The policy can have the following values:
+ * instance. The policy can have the following values:
  *
  * | Policy       | Description |
  * |--------------|-------------|
@@ -4158,26 +3495,21 @@ export interface InstanceRestartAttempt {
  * | `on-failure` | Only restart the instance if it crashes. |
  *
  * When an instance stops, the stop reason and the configured restart policy
- * are
- * evaluated to decide if a restart should be performed.  Unikraft Cloud uses
- * an
- * exponential back-off delay (immediate, 5s, 10s, 20s, 40s, ..., 5m) to slow
- * down restarts in tight crash loops. If an instance runs without problems for
- * 10s the back-off delay is reset and the restart sequence ends.
- *
+ * are evaluated to decide if a restart should be performed. Unikraft Cloud
+ * uses an exponential back-off delay (immediate, 5s, 10s, 20s, 40s, ..., 5m)
+ * to slow down restarts in tight crash loops. If an instance runs without
+ * problems for 10s the back-off delay is reset and the restart sequence ends.
  * The `restart.attempt` attribute reported in counts the number of restarts
- * performed in the current sequence.  The `restart.next_at` field indicates
- * when the next restart will take place if a back-off delay is in effect.
- *
- * A manual start or stop of the instance aborts the restart sequence and
- * resets
+ * performed in the current sequence. The `restart.next_at` field indicates
+ * when the next restart will take place if a back-off delay is in effect. A
+ * manual start or stop of the instance aborts the restart sequence and resets
  * the back-off delay.
  */
 
 export type InstanceRestartPolicy = "never" | "always" | "on-failure";
 
 /**
- * Read-Only Memory (ROM) blob to attach to the instance.
+ * A ROM attached to an instance.
  */
 
 export interface InstanceRom {
@@ -4186,22 +3518,22 @@ export interface InstanceRom {
    */
   name: string;
   /**
-   * (Optional).  The image of the ROM to use for the instance configuration.
-   * Mutually exclusive with `files`.
+   * The image of the ROM to use for the instance configuration. Mutually
+   * exclusive with `files`.
    */
   image?: string;
   /**
-   * (Optional).  The path at which the ROM should be automatically mounted
-   * inside the instance.  When set, the platform mounts the ROM device at
-   * the specified path so the guest does not need to mount it manually.
-   * When omitted, the ROM is exposed as a raw block device and the guest is
-   * responsible for mounting it.
+   * The path at which the ROM should be automatically mounted inside the
+   * instance. When set, the platform mounts the ROM device at the specified
+   * path so the guest does not need to mount it manually. When omitted, the
+   * ROM is exposed as a raw block device and the guest is responsible for
+   * mounting it.
    */
   at?: string;
   /**
-   * (Optional).  Inline files to use as the ROM content.  When specified,
-   * the platform creates an EROFS image from the provided files.
-   * Mutually exclusive with `image`.
+   * Inline files to use as the ROM content. When specified, the platform
+   * creates an EROFS image from the provided files. Mutually exclusive with
+   * `image`.
    */
   files?: InlineFile[];
 }
@@ -4210,9 +3542,8 @@ export interface InstanceRom {
  * Scale-to-zero defines the configuration for scaling the instance to zero.
  * When an instance is scaled-to-zero it can be either stopped (and fully
  * shutdown) or paused wherein the state of the instance is preserved (e.g.,
- * RAM
- * contents) and the instance can be resumed later without losing its state,
- * i.e. "stateful".
+ * RAM contents) and the instance can be resumed later without losing its
+ * state, i.e. "stateful".
  */
 
 export interface InstanceScaleToZero {
@@ -4227,15 +3558,15 @@ export interface InstanceScaleToZero {
   /**
    * Whether the instance should be stateful when scaled to zero. If set to
    * true, the instance will retain its state (e.g., RAM contents) when scaled
-   * to zero.  This is useful for instances that need to maintain their state
-   * across scale-to-zero operations.  If set to false, the instance will lose
+   * to zero. This is useful for instances that need to maintain their state
+   * across scale-to-zero operations. If set to false, the instance will lose
    * its state when scaled to zero, and it will be restarted from scratch when
    * scaled back up.
    */
   stateful?: boolean;
   /**
    * The cooldown time in milliseconds before the instance can be scaled to
-   * zero again.  This is useful to prevent rapid scaling to zero and back up,
+   * zero again. This is useful to prevent rapid scaling to zero and back up,
    * which can lead to performance issues or resource exhaustion.
    */
   cooldown_time_ms?: number;
@@ -4263,29 +3594,19 @@ export interface InstanceScaleToZero {
 export type InstanceScaleToZeroPolicy = "off" | "on" | "idle";
 
 /**
- * The service group configuration for the instance.
- *
- * This is a reference to the service group that the instance is part of.  The
- * service group defines the services (e.g. ports, connection handling) that
- * the instance exposes and how they are configured.
+ * The service group configuration for the instance. This is a reference to the
+ * service group that the instance is part of. The service group defines the
+ * services (e.g. ports, connection handling) that the instance exposes and how
+ * they are configured.
  */
 
 export interface InstanceServiceGroup {
   /**
-   * The UUID of the service group.
-   *
-   * This is a unique identifier for the service group that is generated when
-   * the service is created.  The UUID is used to reference the service group
-   * in API calls and can be used to identify the service in all API calls
-   * that require an service identifier.
+   * The UUID of the resource.
    */
   uuid: string;
   /**
-   * The name of the service group.
-   *
-   * This is a human-readable name that can be used to identify the service
-   * group.  The name is unique within the context of your account.  The name
-   * can also be used to identify the service group in API calls.
+   * The human-readable name of the resource.
    */
   name: string;
   /**
@@ -4295,13 +3616,10 @@ export interface InstanceServiceGroup {
 }
 
 /**
- * The snapshot UUID of the instance.
+ * A snapshot reference for an instance.
  */
 
 export interface InstanceSnapshot {
-  /**
-   * The UUID of the snapshot.
-   */
   uuid: string;
 }
 
@@ -4321,7 +3639,7 @@ export type InstanceState =
   | "checkpoint";
 
 /**
- * Automatic delete-on-idle configuration for template instances.
+ * Autokill configuration for a template instance.
  */
 
 export interface InstanceTemplateAutokill {
@@ -4337,41 +3655,31 @@ export interface InstanceTemplateAutokill {
  *
  * | Type    | Description |
  * |---------|-------------|
- * | `micro` | A lightweight microVM (default).  Boots in milliseconds and is
+ * | `micro` | A lightweight microVM (default). Boots in milliseconds and is
  * suitable for most workloads. |
  * | `full`  | A full virtual machine with broader hardware support, such as
- * GPU passthrough.  Requires a plan with full VM support. |
+ * GPU passthrough. Requires a plan with full VM support. |
  */
 
 export type InstanceType = "micro" | "full";
 
 /**
- * A volume defines a storage which can be attached to the instance.
- *
- * Volumes can be used to store persistent data which should remain available
- * even if the instance is stopped or restarted.
+ * A volume defines a storage which can be attached to the instance. Volumes
+ * can be used to store persistent data which should remain available even if
+ * the instance is stopped or restarted.
  */
 
 export interface InstanceVolume {
   /**
-   * The UUID of the volume.
-   *
-   * This is a unique identifier for the volume that is generated when the
-   * volume is created.  The UUID is used to reference the volume in API calls
-   * and can be used to identify the volume in all API calls that require a
-   * volume identifier.
+   * The UUID of the resource.
    */
   uuid: string;
   /**
-   * The name of the volume.
-   *
-   * This is a human-readable name that can be used to identify the volume.
-   * The name must be unique within the context of your account.  The name can
-   * also be used to identify the volume in API calls.
+   * The human-readable name of the resource.
    */
   name: string;
   /**
-   * The mount point of the volume in the instance.  This is the directory in
+   * The mount point of the volume in the instance. This is the directory in
    * the instance where the volume will be mounted.
    */
   at: string;
@@ -4387,20 +3695,8 @@ export interface InstanceVolume {
 
 export interface ItemAutokill {
   /**
-   * Time in milliseconds after the template was last used for cloning
-   * before it is deleted. A value of 0 disables template autokill.
-   */
-  time_ms?: number;
-}
-
-/**
- * Automatic delete-on-idle configuration for the checkpoint instance.
- */
-
-export interface ItemCheckpointAutokill {
-  /**
-   * Time in milliseconds after the checkpoint was last used for restoring
-   * before it is deleted. A value of 0 disables checkpoint autokill.
+   * Time in milliseconds after the template was last used for cloning before
+   * it is deleted. A value of 0 disables template autokill.
    */
   time_ms?: number;
 }
@@ -4418,7 +3714,7 @@ export type MutableCheckpointInstanceOperation = "set" | "add" | "del";
 export type MutableCheckpointInstanceProperty = "tags" | "delete_lock" | "autokill";
 
 /**
- * The operations available on an instance's properties.
+ * Mutable instance operations.
  */
 
 export type MutableInstanceOperation = "set" | "add" | "del";
@@ -4446,24 +3742,7 @@ export type MutableInstanceProperty =
   | "annotations";
 
 /**
- * The mutable operations available on a service group's properties.
- */
-
-export type MutableServiceGroupOperation = "set" | "add" | "del";
-
-/**
- * The mutable properties of a service group.
- */
-
-export type MutableServiceGroupProperty =
-  | "services"
-  | "domains"
-  | "soft_limit"
-  | "hard_limit"
-  | "autokill";
-
-/**
- * The operations available on a template instance's properties.
+ * Mutable template instance operations.
  */
 
 export type MutableTemplateInstanceOperation = "set" | "add" | "del";
@@ -4473,45 +3752,6 @@ export type MutableTemplateInstanceOperation = "set" | "add" | "del";
  */
 
 export type MutableTemplateInstanceProperty = "tags" | "delete_lock" | "autokill";
-
-/**
- * The operations available on a template volume's properties.
- */
-
-export type MutableTemplateVolumeOperation = "set" | "add" | "del";
-
-/**
- * The mutable properties of a template volume.
- */
-
-export type MutableTemplateVolumeProperty = "tags" | "delete_lock";
-
-/**
- * The operations available on a volume's properties.
- */
-
-export type MutableVolumeOperation = "set" | "add" | "del";
-
-/**
- * The mutable properties of a volume.
- */
-
-export type MutableVolumeProperty = "size_mb" | "tags" | "quota_policy" | "delete_lock";
-
-/**
- * An identifier for a resource.  Either a name or a UUID.
- */
-
-export interface NameOrUUID {
-  /**
-   * The UUID of the resource.
-   */
-  uuid?: string;
-  /**
-   * The name of the resource.
-   */
-  name?: string;
-}
 
 /**
  * An object that routes all traffic through another interface.
@@ -4525,163 +3765,13 @@ export interface NetworkInterfaceRelay {
    */
   relay_dns?: boolean;
   /**
-   * UUID of the existing interface to relay through.
-   * Mutually exclusive with name.
+   * The UUID of the resource.
    */
   uuid?: string;
   /**
-   * Name of the existing interface to relay through.
-   * Mutually exclusive with UUID.
+   * The name of the resource.
    */
   name?: string;
-}
-
-/**
- * The sort order used by list endpoints.
- */
-
-export type PaginationOrder = "asc" | "desc";
-
-/**
- * The sort field used by list endpoints.
- */
-
-export type PaginationSortBy = "create_time";
-
-/**
- * The request item for pinning a single image.
- */
-
-export interface PinImageRequestItem {
-  /**
-   * The image URL to pull and pin.
-   */
-  url: string;
-  /**
-   * Optional credentials for authenticating to an OCI registry.
-   * Only valid for OCI registry URLs; the platform rejects this
-   * field for non-OCI schemes.
-   */
-  credentials?: string;
-  /**
-   * Optional HTTP headers to send when fetching the image.
-   */
-  headers?: Record<string, string>;
-  /**
-   * Controls when the image is pulled relative to what is already cached on
-   * the node.  If unset, this is inferred from the URL.
-   */
-  pull_policy?: PullPolicy;
-  /**
-   * Number of seconds to wait for the pull to complete.  Required and must
-   * be non-zero; `-1` waits up to the platform's maximum timeout.
-   */
-  timeout_s: number;
-  /**
-   * Avoid duplicate pulls by merging with any in-flight request for the
-   * same image.  Defaults to `true`.
-   */
-  merge_requests?: boolean;
-  /**
-   * (Optional).  Automatically unpin the image after a period of inactivity.
-   */
-  autokill?: PinImageRequestItemAutokill;
-}
-
-export interface PinImageRequestItemAutokill {
-  /**
-   * Automatically unpin the image after this many milliseconds of
-   * inactivity.  `0` (the default) disables this.
-   */
-  time_ms: number;
-}
-
-/**
- * The response message for pinning one or more images.
- */
-
-export interface PinImagesResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the response.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * The response data for this request.
-   */
-  data?: PinImagesResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface PinImagesResponseData {
-  /**
-   * The result of pinning each requested image.
-   */
-  images?: PinImagesResponseImage[];
-}
-
-/**
- * The result of pinning a single image.  On success, `uuid` through `tags`
- * are set; on failure, only `message` and `error` are set (the image
- * being pulled is not otherwise identified in the response).
- */
-
-export interface PinImagesResponseImage {
-  /**
-   * Indicates whether this image was pulled and pinned successfully.
-   */
-  status: ResponseStatus;
-  /**
-   * The UUID of the image.  Only set on success.
-   */
-  uuid?: string;
-  /**
-   * The name of the image.  Only set on success.
-   */
-  name?: string;
-  /**
-   * The time the image was created.  Only set on success.
-   */
-  created_at?: string;
-  /**
-   * The current state of the image (e.g. `ready`).  Only set on success.
-   */
-  state?: string;
-  /**
-   * The image URL.  Only set on success.
-   */
-  url?: string;
-  /**
-   * Whether the image is pinned and exempt from cache eviction.  Only set
-   * on success, where it is always `true`.
-   */
-  persistent?: boolean;
-  /**
-   * The tags associated with the image.  Only set on success.
-   */
-  tags?: string[];
-  /**
-   * Set when the image could not be pulled; carries the agent's error, if
-   * any (e.g. a registry connectivity issue).
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the
-   * status.  This field is only set when the status is not `success`.
-   */
-  error?: number;
 }
 
 /**
@@ -4690,41 +3780,1774 @@ export interface PinImagesResponseImage {
 
 export type PullPolicy = "always" | "if_not_present" | "never";
 
+/**
+ * A schedule defines when an action should be performed on an instance.
+ *
+ * Each schedule specifies a name, a calendar expression following systemd
+ * calendar event syntax, and an action (start, stop, delete, or exec).
+ *
+ * Calendar expressions format:
+ *
+ * [weekday] [[year-]month-day] [hour:minute[:second]]
+ *
+ * Supported syntax:
+ *
+ * - `*` - Any value
+ * - `5` - Exact value
+ * - `1..5` - Range
+ * - `1..5/2` - Range with step
+ * - `1,2,5` - Comma-separated list
+ *
+ * Example: `*-*-* 09:00:00` - Every day at 09:00 UTC
+ * Example: `Sat,Sun *-*-* 20:00:00` - Every Saturday and Sunday at 20:00 UTC
+ */
+
+export interface Schedule {
+  /**
+   * The name of the schedule.
+   *
+   * Must be unique within an instance.
+   */
+  name: string;
+  /**
+   * The calendar expression specifying when the action should be performed.
+   *
+   * Uses systemd calendar event syntax.
+   * See https://www.man7.org/linux/man-pages/man7/systemd.time.7.html
+   */
+  when: string;
+  /**
+   * The action to perform at the scheduled time.
+   */
+  action: ScheduleAction;
+  /**
+   * The timestamp of when the next scheduled action will occur.
+   *
+   * This field is populated only in responses (not settable in requests).
+   * Omitted if no next execution is scheduled.
+   */
+  next_at?: string;
+  /**
+   * The command to execute when the action is `exec`.
+   *
+   * Required when `action` is `SCHEDULE_ACTION_EXEC`, ignored otherwise.
+   * Each element is a separate argument; the first element is the executable.
+   */
+  args?: string[];
+}
+
+/**
+ * The action to perform on a scheduled operation.
+ */
+
+export type ScheduleAction = "start" | "stop" | "delete" | "exec";
+
+/**
+ * The domain configuration for the service group. Domain names are completely
+ * specified with all labels in the hierarchy of the DNS, having no parts
+ * omitted. The domain can be associated with an existing certificate by
+ * specifying the certificate's name or UUID. If no certificate is specified
+ * and a FQDN is provided, Unikraft Cloud will automatically generate a new
+ * certificate for the domain based on Let's Encrypt and seek to accomplish a
+ * DNS-01 challenge.
+ */
+
+export interface ServiceGroupInstanceDomain {
+  /**
+   * Publicly accessible domain name.
+   *
+   * If this name ends in a period `.` it must be a valid Full Qualified
+   * Domain Name (FQDN), otherwise it will become a subdomain of the target
+   * metro.
+   */
+  fqdn: string;
+  /**
+   * The certificate associated with the domain.
+   *
+   * The certificate is used to secure the domain with TLS/SSL. If no
+   * certificate is specified, Unikraft Cloud will automatically generate a
+   * new certificate for the domain based on Let's Encrypt and seek to
+   * accomplish a DNS-01 challenge.
+   */
+  certificate?: NameOrUUID;
+}
+
+/**
+ * Parameters for starting the instance.
+ */
+
+export interface StartInstanceByUUIDRequestBody {
+  /**
+   * Deprecated: Use `timeout_s` instead. Timeout in milliseconds to
+   * wait for the instance to reach running state. If `timeout_s` is
+   * not set, this value is converted by rounding up to the next full
+   * second. No wait performed for a value of 0.
+   */
+  wait_timeout_ms?: number;
+  /**
+   * Timeout in seconds to wait for the instance to reach running
+   * state. If you start your instance, you can wait for it to
+   * finish starting with a blocking API call if you specify a wait
+   * timeout greater than zero. No wait performed for a value of 0.
+   */
+  timeout_s?: number;
+}
+
+/**
+ * A single request item to start an instance.
+ */
+
+export interface StartInstancesRequestItem {
+  /**
+   * The UUID of the resource.
+   */
+  uuid?: string;
+  /**
+   * The name of the resource.
+   */
+  name?: string;
+  /**
+   * Deprecated: Use `timeout_s` instead. Timeout in milliseconds to
+   * wait for the instance to reach running state. If `timeout_s` is
+   * not set, this value is converted by rounding up to the next full
+   * second. No wait performed for a value of 0.
+   */
+  wait_timeout_ms?: number;
+  /**
+   * Timeout in seconds to wait for the instance to reach running
+   * state. If you start your instance, you can wait for it to
+   * finish starting with a blocking API call if you specify a wait
+   * timeout greater than zero. No wait performed for a value of 0.
+   */
+  timeout_s?: number;
+}
+
+/**
+ * The response message for starting one or more instance(s) given their
+ * UUID(s) or name(s).
+ */
+
+export interface StartInstancesResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: StartInstancesResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface StartInstancesResponseData {
+  instances?: StartInstancesResponseStartedInstance[];
+}
+
+/**
+ * Per-item result for a start instances operation.
+ */
+
+export interface StartInstancesResponseStartedInstance {
+  /**
+   * Indicates whether the operation was successful for this item.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+  /**
+   * The current state of the instance after this request.
+   */
+  state: string;
+  /**
+   * The previous state of the instance before it was started.
+   */
+  previous_state: string;
+}
+
+/**
+ * Parameters for stopping the instance.
+ */
+
+export interface StopInstanceByUUIDRequestBody {
+  /**
+   * Whether to immediately force stop the instance.
+   */
+  force?: boolean;
+  /**
+   * Timeout for draining connections in milliseconds.
+   * No draining will occur if set to 0. The instance
+   * does not receive new connections in the draining
+   * phase. The instance is stopped when the last
+   * connection has been closed or the timeout expired.
+   * The maximum timeout may vary. Use -1 for the
+   * largest possible value. Ignored if force is set.
+   *
+   * Note: This endpoint does not block. Use the wait
+   * endpoint for the instance to reach the stopped
+   * state.
+   */
+  drain_timeout_ms?: number;
+  /**
+   * Whether to perform a quick shutdown. This flag is
+   * overridden by force.
+   */
+  quick?: boolean;
+  /**
+   * Only stop the instance if it is in this state.
+   */
+  ifstate?: string;
+  /**
+   * If set, forces the VMM to shutdown immediately and generate a coredump.
+   * Can only be used in conjunction with force.
+   */
+  dump?: boolean;
+}
+
+/**
+ * A single request item to stop an instance.
+ */
+
+export interface StopInstancesRequestItem {
+  /**
+   * The UUID of the resource.
+   */
+  uuid?: string;
+  /**
+   * The name of the resource.
+   */
+  name?: string;
+  /**
+   * Whether to immediately force stop the instance.
+   */
+  force?: boolean;
+  /**
+   * Timeout for draining connections in milliseconds.
+   * No draining will occur if set to 0. The instance
+   * does not receive new connections in the draining
+   * phase. The instance is stopped when the last
+   * connection has been closed or the timeout expired.
+   * The maximum timeout may vary. Use -1 for the
+   * largest possible value. Ignored if force is set.
+   *
+   * Note: This endpoint does not block. Use the wait
+   * endpoint for the instance to reach the stopped
+   * state.
+   */
+  drain_timeout_ms?: number;
+  /**
+   * Whether to perform a quick shutdown. This flag is
+   * overridden by force.
+   */
+  quick?: boolean;
+  /**
+   * Only stop the instance if it is in this state.
+   */
+  ifstate?: string;
+  /**
+   * If set, forces the VMM to shutdown immediately and generate a coredump.
+   * Can only be used in conjunction with force.
+   */
+  dump?: boolean;
+}
+
+/**
+ * The response message for stopping one or more instance(s) given their
+ * UUID(s) or name(s).
+ */
+
+export interface StopInstancesResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: StopInstancesResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface StopInstancesResponseData {
+  instances?: StopInstancesResponseStoppedInstance[];
+}
+
+/**
+ * Per-item result for a stop instances operation.
+ */
+
+export interface StopInstancesResponseStoppedInstance {
+  /**
+   * Indicates whether the operation was successful for this item.
+   */
+  status?: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+  /**
+   * The current state of the instance.
+   */
+  state: InstanceState;
+  /**
+   * The previous state of the instance before the stop operation was
+   * invoked.
+   */
+  previous_state: InstanceState;
+}
+
+/**
+ * Parameters for suspending the instance.
+ */
+
+export interface SuspendInstanceByUUIDRequestBody {
+  /**
+   * Timeout for draining connections in milliseconds. No draining
+   * will occur if set to 0. Use -1 for the largest possible value.
+   */
+  drain_timeout_ms?: number;
+}
+
+/**
+ * A single request item to suspend an instance.
+ */
+
+export interface SuspendInstancesRequestItem {
+  /**
+   * The UUID of the resource.
+   */
+  uuid?: string;
+  /**
+   * The name of the resource.
+   */
+  name?: string;
+  /**
+   * Timeout for draining connections in milliseconds. No draining
+   * will occur if set to 0. Use -1 for the largest possible value.
+   */
+  drain_timeout_ms?: number;
+}
+
+/**
+ * The response message for suspending one or more instance(s) given their
+ * UUID(s) or name(s).
+ */
+
+export interface SuspendInstancesResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: SuspendInstancesResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface SuspendInstancesResponseData {
+  instances?: SuspendInstancesResponseSuspendedInstance[];
+}
+
+/**
+ * Per-item result for a suspend instances operation.
+ */
+
+export interface SuspendInstancesResponseSuspendedInstance {
+  /**
+   * Indicates whether the operation was successful for this item.
+   */
+  status?: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+  /**
+   * The current state of the instance.
+   */
+  state: InstanceState;
+  /**
+   * The previous state of the instance before the suspend operation was
+   * invoked.
+   */
+  previous_state: InstanceState;
+}
+
+/**
+ * Automatic delete-on-idle configuration for the template instance. Only
+ * applies when `prepare` is set.
+ */
+
+export interface TemplateAutokill {
+  /**
+   * Time in milliseconds after the template was last used for cloning before
+   * it is deleted. A value of 0 disables template autokill.
+   */
+  time_ms?: number;
+}
+
+/**
+ * Request body for updating a single checkpoint instance by UUID.
+ */
+
+export interface UpdateCheckpointInstanceByUUIDRequestBody {
+  /**
+   * A client-provided identifier for tracking this operation in the response.
+   */
+  id?: string;
+  /**
+   * The property to modify.
+   */
+  prop: MutableCheckpointInstanceProperty;
+  /**
+   * The operation to perform on the property.
+   */
+  op: MutableCheckpointInstanceOperation;
+  /**
+   * The value for the update operation. The type depends on the property and
+   * operation:
+   * - For "tags": array of strings
+   * - For "delete_lock": boolean
+   * - For "autokill": object with time_ms field
+   */
+  value?: unknown;
+}
+
+/**
+ * A single update operation to be applied to a checkpoint instance.
+ */
+
+export interface UpdateCheckpointInstancesRequestItem {
+  /**
+   * The UUID of the resource.
+   */
+  uuid?: string;
+  /**
+   * The name of the resource.
+   */
+  name?: string;
+  /**
+   * A client-provided identifier for tracking this operation in the response.
+   */
+  id?: string;
+  /**
+   * The property to modify.
+   */
+  prop: MutableCheckpointInstanceProperty;
+  /**
+   * The operation to perform on the property.
+   */
+  op: MutableCheckpointInstanceOperation;
+  /**
+   * The value for the update operation. The type depends on the property and
+   * operation:
+   * - For "tags": array of strings
+   * - For "delete_lock": boolean
+   * - For "autokill": object with time_ms field
+   */
+  value?: unknown;
+}
+
+/**
+ * The response message for updating one or more checkpoint instance(s) given
+ * their UUID(s) or name(s).
+ */
+
+export interface UpdateCheckpointInstancesResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: UpdateCheckpointInstancesResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * Per-item result for an update checkpoint instances operation.
+ */
+
+export interface UpdateCheckpointInstancesResponseCheckpointInstance {
+  /**
+   * Indicates whether the operation was successful for this item.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+  /**
+   * The client-provided ID from the request.
+   */
+  id?: string;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface UpdateCheckpointInstancesResponseData {
+  /**
+   * List of checkpoint instances that were processed during the update
+   * operation.
+   */
+  instances?: UpdateCheckpointInstancesResponseCheckpointInstance[];
+}
+
+export interface UpdateInstanceByUUIDRequestBody {
+  /**
+   * A client-provided identifier for tracking this operation in the response.
+   */
+  id?: string;
+  /**
+   * The property to modify.
+   */
+  prop: MutableInstanceProperty;
+  /**
+   * The operation to perform on the property.
+   */
+  op: MutableInstanceOperation;
+  /**
+   * The value for the update operation. The type depends on the property and
+   * operation:
+   * - For "image": image reference string, or object with image url,
+   * credentials, headers and pull policy
+   * - For "args": string or array of strings
+   * - For "env": object (for SET/ADD) or string/array of strings (for DEL)
+   * - For "memory_mb": integer
+   * - For "vcpus": integer
+   * - For "scale_to_zero": object with cooldown_time_ms, policy, and stateful
+   * fields
+   * - For "tags": array of strings
+   * - For "delete_lock": boolean
+   * - For "schedules": array of schedule objects (with name, when, action, and
+   * optional args fields)
+   * for SET/ADD, or array of schedule names for DEL. Use action "exec" together
+   * with args to
+   * execute a command at the scheduled time.
+   * - For "autokill": object with time_ms and num_requests fields
+   * - For "hostname": string (valid DNS label)
+   * - For "roms": array of ROM objects (with name and image fields) for SET/ADD,
+   * or array of ROM names for DEL
+   * - For "plugins": array of plugin objects (with name, rom, and optional
+   * config fields) for SET/ADD
+   * - For "dependencies": array of instance identifiers (name or UUID)
+   * - For "sched_priority": SchedPriority enum value ("normal", "medium",
+   * "high", "admin")
+   * - For "annotations": object (for SET/ADD) or string/array of strings (for
+   * DEL)
+   */
+  value?: unknown;
+}
+
+/**
+ * A single update operation to be applied to an instance.
+ */
+
+export interface UpdateInstancesRequestItem {
+  /**
+   * The UUID of the resource.
+   */
+  uuid?: string;
+  /**
+   * The name of the resource.
+   */
+  name?: string;
+  /**
+   * A client-provided identifier for tracking this operation in the response.
+   */
+  id?: string;
+  /**
+   * The property to modify.
+   */
+  prop: MutableInstanceProperty;
+  /**
+   * The operation to perform on the property.
+   */
+  op: MutableInstanceOperation;
+  /**
+   * The value for the update operation. The type depends on the property and
+   * operation:
+   * - For "image": image reference string, or object with image url,
+   * credentials, headers and pull policy
+   * - For "args": string or array of strings
+   * - For "env": object (for SET/ADD) or string/array of strings (for DEL)
+   * - For "memory_mb": integer
+   * - For "vcpus": integer
+   * - For "scale_to_zero": object with cooldown_time_ms, policy, and stateful
+   * fields
+   * - For "tags": array of strings
+   * - For "delete_lock": boolean
+   * - For "schedules": array of schedule objects (with name, when, action, and
+   * optional args fields)
+   * for SET/ADD, or array of schedule names for DEL. Use action "exec" together
+   * with args to
+   * execute a command at the scheduled time.
+   * - For "autokill": object with time_ms and num_requests fields
+   * - For "hostname": string (valid DNS label)
+   * - For "roms": array of ROM objects (with name and image fields) for SET/ADD,
+   * or array of ROM names for DEL
+   * - For "plugins": array of plugin objects (with name, rom, and optional
+   * config fields) for SET/ADD
+   * - For "dependencies": array of instance identifiers (name or UUID)
+   * - For "sched_priority": SchedPriority enum value ("normal", "medium",
+   * "high", "admin")
+   * - For "annotations": object (for SET/ADD) or string/array of strings (for
+   * DEL)
+   */
+  value?: unknown;
+}
+
+/**
+ * The response message for updating one or more instance(s) given their
+ * UUID(s) or name(s).
+ */
+
+export interface UpdateInstancesResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: UpdateInstancesResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface UpdateInstancesResponseData {
+  instances?: UpdateInstancesResponseUpdatedInstance[];
+}
+
+/**
+ * Per-item result for an update instances operation.
+ */
+
+export interface UpdateInstancesResponseUpdatedInstance {
+  /**
+   * Indicates whether the operation was successful for this item.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+  /**
+   * The client-provided ID from the request.
+   */
+  id?: string;
+}
+
+export interface UpdateTemplateInstanceByUUIDRequestBody {
+  /**
+   * A client-provided identifier for tracking this operation in the response.
+   */
+  id?: string;
+  /**
+   * The property to modify.
+   */
+  prop: MutableTemplateInstanceProperty;
+  /**
+   * The operation to perform.
+   */
+  op: MutableTemplateInstanceOperation;
+  /**
+   * The value for the update operation. The type depends on the property and
+   * operation:
+   * - For "tags": array of strings
+   * - For "delete_lock": boolean
+   * - For "autokill": object with time_ms field
+   */
+  value?: unknown;
+}
+
+/**
+ * A single template instance update request item.
+ */
+
+export interface UpdateTemplateInstancesRequestItem {
+  /**
+   * The UUID of the resource.
+   */
+  uuid?: string;
+  /**
+   * The name of the resource.
+   */
+  name?: string;
+  /**
+   * A client-provided identifier for tracking this operation in the response.
+   */
+  id?: string;
+  /**
+   * The property to modify.
+   */
+  prop: MutableTemplateInstanceProperty;
+  /**
+   * The operation to perform.
+   */
+  op: MutableTemplateInstanceOperation;
+  /**
+   * The value for the update operation. The type depends on the property and
+   * operation:
+   * - For "tags": array of strings
+   * - For "delete_lock": boolean
+   * - For "autokill": object with time_ms field
+   */
+  value?: unknown;
+}
+
+/**
+ * The response message for updating one or more template instance(s) given
+ * their UUID(s) or name(s).
+ */
+
+export interface UpdateTemplateInstancesResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: UpdateTemplateInstancesResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface UpdateTemplateInstancesResponseData {
+  instances?: UpdateTemplateInstancesResponseTemplateInstance[];
+}
+
+/**
+ * Per-item result for an update template instances operation.
+ */
+
+export interface UpdateTemplateInstancesResponseTemplateInstance {
+  /**
+   * Indicates whether the operation was successful for this item.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+  /**
+   * Client-provided operation ID.
+   */
+  id?: string;
+}
+
+/**
+ * Wait parameters.
+ */
+
+export interface WaitInstanceByUUIDRequestBody {
+  /**
+   * The desired state to wait for. Default is `running`.
+   */
+  state: InstanceState;
+  /**
+   * Deprecated: Use `timeout_s` instead. Timeout in milliseconds to
+   * wait for the instance to reach the desired state. If `timeout_s` is
+   * not set, this value is converted by rounding up to the next full
+   * second. A value of -1 means to wait indefinitely.
+   */
+  timeout_ms?: number;
+  /**
+   * Timeout in seconds to wait for the instance to reach the desired
+   * state. If the timeout is reached, the request will fail with an
+   * error. A value of -1 means to wait indefinitely until the instance
+   * reaches the desired state. No wait performed for a value of 0.
+   */
+  timeout_s?: number;
+}
+
+/**
+ * A single request item to wait for an instance's state.
+ */
+
+export interface WaitInstancesRequestItem {
+  /**
+   * The UUID of the resource.
+   */
+  uuid?: string;
+  /**
+   * The name of the resource.
+   */
+  name?: string;
+  /**
+   * The desired state to wait for. Default is `running`.
+   */
+  state?: InstanceState;
+  /**
+   * Deprecated: Use `timeout_s` instead. Timeout in milliseconds to
+   * wait for the instance to reach the desired state. If `timeout_s` is
+   * not set, this value is converted by rounding up to the next full
+   * second. A value of -1 means to wait indefinitely.
+   */
+  timeout_ms?: number;
+  /**
+   * Timeout in seconds to wait for the instance to reach the desired
+   * state. If the timeout is reached, the request will fail with an
+   * error. A value of -1 means to wait indefinitely until the instance
+   * reaches the desired state. No wait performed for a value of 0.
+   */
+  timeout_s?: number;
+}
+
+/**
+ * The response message for waiting for one or more instance(s) to reach a
+ * certain state given their UUID(s) or name(s).
+ */
+
+export interface WaitInstancesResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: WaitInstancesResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface WaitInstancesResponseData {
+  instances?: WaitInstancesResponseWaitedInstance[];
+}
+
+/**
+ * Per-item result for a wait instances operation.
+ */
+
+export interface WaitInstancesResponseWaitedInstance {
+  /**
+   * Indicates whether the operation was successful for this item.
+   */
+  status?: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+  /**
+   * The current state of the instance.
+   */
+  state: InstanceState;
+}
+
+/**
+ * License information (admin only).
+ */
+
+export interface DataLicense {
+  /**
+   * The serial number of the license certificate, hex-encoded.
+   */
+  serial: string;
+  /**
+   * Whether the license is currently valid.
+   */
+  valid: boolean;
+  /**
+   * List of enabled features.
+   */
+  features?: string[];
+}
+
+/**
+ * The health state reported by a single health checker.
+ */
+
+export type HealthState = "unknown" | "healthy" | "degraded";
+
+/**
+ * Standard response envelope wrapping all API responses.
+ */
+
+export interface HealthzResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: HealthzResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * Additional data returned by the health check.
+ */
+
+export interface HealthzResponseData {
+  /**
+   * The health state of each registered checker, keyed by checker name.
+   * Valid keys are "images", "systemd", and "user-defined"; a checker's
+   * key is only present if it is enabled. Checkers report only their
+   * aggregate state; per-check detail (e.g. which default image is
+   * missing, or which user-defined script failed) is not exposed here.
+   */
+  checks?: Record<string, HealthState>;
+  versions?: Record<string, string>;
+  /**
+   * License information (admin only).
+   */
+  license?: DataLicense;
+}
+
+/**
+ * Connection handlers to use for the service.
+ *
+ * Handlers define how the service will handle incoming connections and
+ * forward traffic from the Internet to your application. For example, a
+ * service can be configured to terminate TLS connections, redirect HTTP
+ * traffic, or enable HTTP mode for load balancing. You configure the handlers
+ * for every published service port individually.
+ *
+ * There are currently 3 supported handlers:
+ *
+ * | Handler    | Description |
+ * |------------|-------------|
+ * | `tls`      | Terminate the TLS connection at the Unikraft Cloud gateway
+ * using our wildcard certificate issued for the kraft.cloud domain. The
+ * gateway forwards the unencrypted traffic to your application. |
+ * | `http`     | Enable HTTP mode on the load balancer to load balance on the
+ * level of individual HTTP requests. In this mode, only HTTP connections are
+ * accepted. If this option is not set the load balancer works in TCP mode and
+ * distributes TCP connections. |
+ * | `redirect` | Redirect traffic from the source port to the destination
+ * port. |
+ *
+ * Note that there is a set of constraints when publishing ports:
+ *
+ * - Port 80: MUST have "http" and MUST not have "tls" set;
+ * - Port 443: MUST have http and tls set;
+ * - The `redirect` handler can only be set on port 80 (HTTP) to redirect to
+ * port 443 (HTTPS);
+ * - All other ports MUST have tls and MUST not have http set.
+ */
+
+export type ConnectionHandler = "tls" | "http" | "redirect";
+
+/**
+ * The request message for creating a new service group.
+ */
+
+export interface CreateServiceGroupRequest {
+  /**
+   * Name of the service group. This is a human-readable name that can be used
+   * to identify the service group. The name must be unique within the context
+   * of your account. If no name is specified, a random name is generated for
+   * you. The name can also be used to identify the service group in API calls.
+   */
+  name?: string;
+  /**
+   * Services to expose. At least one service is required.
+   */
+  services: Service[];
+  /**
+   * Description of domains associated with the service group.
+   */
+  domains?: CreateServiceGroupRequestDomain[];
+  /**
+   * The soft limit is used by the Unikraft Cloud load balancer to decide when
+   * to wake up another standby instance.
+   *
+   * For example, if the soft limit is set to 5 and the service consists of 2
+   * standby instances, one of the instances receives up to 5 concurrent
+   * requests. The 6th parallel requests wakes up the second instance. If
+   * there are no more standby instances to wake up, the number of requests
+   * assigned to each instance will exceed the soft limit. The load balancer
+   * makes sure that when the number of in-flight requests goes down again,
+   * instances are put into standby as fast as possible.
+   */
+  soft_limit?: number;
+  /**
+   * The hard limit defines the maximum number of concurrent requests that an
+   * instance assigned to the this service can handle.
+   *
+   * The load balancer will never assign more requests to a single instance. In
+   * case there are no other instances available, excess requests fail (i.e.,
+   * they are blocked and not queued).
+   */
+  hard_limit?: number;
+  /**
+   * Automatic delete-on-idle configuration.
+   */
+  autokill?: CreateServiceGroupRequestAutokill;
+}
+
+/**
+ * Autokill configuration when creating a service group.
+ */
+
+export interface CreateServiceGroupRequestAutokill {
+  /**
+   * Time in milliseconds after the service group becomes empty before it is
+   * deleted. A value of 0 disables autokill.
+   */
+  time_ms?: number;
+}
+
+/**
+ * A domain to attach when creating a service group.
+ */
+
+export interface CreateServiceGroupRequestDomain {
+  /**
+   * Publicly accessible domain name. If this name ends in a period `.` it must
+   * be a valid Full Qualified Domain Name (FQDN), otherwise it will become a
+   * subdomain of the target metro.
+   */
+  name: string;
+  /**
+   * Use an existing certificate for the domain. If this field is
+   * specified, the domain must be associated with a valid certificate.
+   */
+  certificate?: NameOrUUID;
+}
+
+/**
+ * The response message for creating a new service group.
+ */
+
+export interface CreateServiceGroupResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: CreateServiceGroupResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface CreateServiceGroupResponseData {
+  service_groups?: ServiceGroup[];
+}
+
+/**
+ * The response message for deleting of one or more service group(s) given
+ * their UUID(s) or name(s).
+ */
+
+export interface DeleteServiceGroupsResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: DeleteServiceGroupsResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface DeleteServiceGroupsResponseData {
+  service_groups?: DeleteServiceGroupsResponseDeletedServiceGroup[];
+}
+
+/**
+ * Per-item result for a delete service groups operation.
+ */
+
+export interface DeleteServiceGroupsResponseDeletedServiceGroup {
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * An optional error code providing additional information about the status.
+   */
+  error?: number;
+}
+
+/**
+ * A domain name. Domain names are completely specified with all labels in the
+ * hierarchy of the DNS, having no parts omitted. The domain can be associated
+ * with an existing certificate by specifying the certificate's name or UUID.
+ * If no certificate is specified and a FQDN is provided, Unikraft Cloud will
+ * automatically generate a new certificate for the domain based on Let's
+ * Encrypt and seek to accomplish a DNS-01 challenge.
+ */
+
+export interface Domain {
+  /**
+   * Publicly accessible domain name. If this name ends in a period `.` it must
+   * be a valid Full Qualified Domain Name (FQDN), otherwise it will become a
+   * subdomain of the target metro.
+   */
+  fqdn: string;
+  /**
+   * Use an existing certificate for the domain. If this field is
+   * specified, the domain must be associated with a valid certificate.
+   */
+  certificate?: Certificate;
+}
+
+/**
+ * The response message for getting one or more service group(s) given their
+ * UUID(s) or name(s).
+ */
+
+export interface GetServiceGroupsResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: GetServiceGroupsResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface GetServiceGroupsResponseData {
+  service_groups?: ServiceGroup[];
+}
+
+/**
+ * The mutable operations available on a service group's properties.
+ */
+
+export type MutableServiceGroupOperation = "set" | "add" | "del";
+
+/**
+ * Mutable service group properties.
+ */
+
+export type MutableServiceGroupProperty =
+  | "services"
+  | "domains"
+  | "soft_limit"
+  | "hard_limit"
+  | "autokill";
+
+/**
+ * A service connects a public-facing port to an internal destination port on
+ * which an application instance listens on. Additional handlers can be
+ * defined for each published port in order to define how the service will
+ * handle incoming connections and forward traffic from the Internet to your
+ * application. For example, a service can be configured to terminate TLS
+ * connections, redirect HTTP traffic, or enable HTTP mode for load balancing.
+ */
+
+export interface Service {
+  /**
+   * This is the public-facing port that the service will be accessible from
+   * on the Internet.
+   */
+  port: number;
+  /**
+   * The port number that the instance is listening on. This is the internal
+   * port which Unikraft Cloud will forward traffic to.
+   */
+  destination_port?: number;
+  protocol?: ServiceProtocol;
+  ip?: string;
+  /**
+   * Connection handlers to use for the service. Handlers define how the
+   * service will handle incoming connections and forward traffic from the
+   * Internet to your application. For example, a service can be configured
+   * to terminate TLS connections, redirect HTTP traffic, or enable HTTP mode
+   * for load balancing. You configure the handlers for every published
+   * service port individually.
+   */
+  handlers?: ConnectionHandler[];
+}
+
+/**
+ * A service group on Unikraft Cloud is used to describe how your application
+ * exposes its functionality to the outside world. Once defined, assigning an
+ * instance to the service will make it accessible from the Internet.
+ *
+ * An application, running as an instance, may expose one or more ports, e.g.
+ * it listens on port 80 because your application exposes a HTTP web service.
+ * This, along with a set of additional metadata defines how the "service" is
+ * configured and accessed. For example, a service may be configured to use
+ * TLS, or be bound to a specific domain name.
+ *
+ * When an instance is assigned to a service group, it immediately becomes
+ * accessible over the Internet on the exposed public port, using the set DNS
+ * name, and is routed to the set destination port.
+ *
+ * Note: If you do not specify a DNS name when you create a service and you
+ * indicate that the application exposes some ports, Unikraft Cloud will
+ * generates a random DNS name for you. Unikraft Cloud also supports custom
+ * domains like www.example.com and wildcard domains like *.example.com.
+ */
+
+export interface ServiceGroup {
+  /**
+   * Indicates whether the operation was successful for this item.
+   */
+  status?: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+  /**
+   * The time the service was created.
+   */
+  created_at: string;
+  /**
+   * Indicates if the service will stay remain even after the last instance
+   * detached. If this is set to false, the service will be deleted when the
+   * last instance detached from it. If this is set to true, the service will
+   * remain and can be reused by other instances. This is useful if you want to
+   * keep the service configuration, e.g., the published ports, handlers, and
+   * domains, even if there are no instances assigned to it.
+   */
+  persistent: boolean;
+  /**
+   * Indicates if the service has autoscale enabled. See the associated
+   * autoscale documentation for more information about how to set this up.
+   * Autoscale policies can be set up after the service has been created.
+   */
+  autoscale: boolean;
+  /**
+   * The soft limit is used by the Unikraft Cloud load balancer to decide when
+   * to wake up another standby instance. For example, if the soft limit is set
+   * to 5 and the service consists of 2 standby instances, one of the instances
+   * receives up to 5 concurrent requests. The 6th parallel requests wakes up
+   * the second instance. If there are no more standby instances to wake up,
+   * the number of requests assigned to each instance will exceed the soft
+   * limit. The load balancer makes sure that when the number of in-flight
+   * requests goes down again, instances are put into standby as fast as
+   * possible.
+   */
+  soft_limit: number;
+  /**
+   * The hard limit defines the maximum number of concurrent requests that an
+   * instance assigned to the this service can handle. The load balancer will
+   * never assign more requests to a single instance. In case there are no
+   * other instances available, excess requests fail (i.e., they are blocked and
+   * not queued).
+   */
+  hard_limit: number;
+  /**
+   * List of published network ports for this service and the destination port
+   * to which Unikraft Cloud will forward traffic to. Additional handlers can
+   * be defined for each published port in order to define how the service will
+   * handle incoming connections and forward traffic from the Internet to your
+   * application. For example, a service can be configured to terminate TLS
+   * connections, redirect HTTP traffic, or enable HTTP mode for load balancing.
+   */
+  services?: Service[];
+  /**
+   * List of domains associated with the service. Domains are used to access
+   * the service over the Internet.
+   */
+  domains?: Domain[];
+  /**
+   * List of instances assigned to the service.
+   */
+  instances?: ServiceGroupInstance[];
+  /**
+   * Automatic delete-on-idle configuration.
+   */
+  autokill?: ServiceGroupAutokill;
+}
+
+/**
+ * Autokill configuration for a service group.
+ */
+
+export interface ServiceGroupAutokill {
+  /**
+   * Time in milliseconds after the service group becomes empty before it is
+   * deleted. A value of 0 disables autokill.
+   */
+  time_ms?: number;
+}
+
+/**
+ * An instance belonging to a service group.
+ */
+
+export interface ServiceGroupInstance {
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+}
+
+/**
+ * Protocol for a service.
+ */
+
+export type ServiceProtocol = "tcp" | "udp";
+
+export interface UpdateServiceGroupByUUIDRequestBody {
+  /**
+   * A client-provided identifier for tracking this operation in the response.
+   */
+  id?: string;
+  /**
+   * The property to modify.
+   */
+  prop: MutableServiceGroupProperty;
+  /**
+   * The operation to perform.
+   */
+  op: MutableServiceGroupOperation;
+  /**
+   * The value for the update operation. The type depends on the property and
+   * operation:
+   * - For "image": string
+   * - For "args": string or array of strings
+   * - For "env": object (for SET/ADD) or string/array of strings (for DEL)
+   * - For "memory_mb": integer
+   * - For "vcpus": integer
+   * - For "scale_to_zero": object with cooldown_time_ms, policy, and stateful
+   * fields
+   * - For "tags": array of strings
+   * - For "delete_lock": boolean
+   * - For "schedules": array of schedule objects (with name, when, action, and
+   * optional args fields).
+   * Use action "exec" together with args to execute a command at the scheduled
+   * time.
+   * - For "autokill": object with time_ms and num_requests fields
+   * - For "hostname": string (valid DNS label)
+   * - For "roms": array of ROM objects (with name and image fields) for SET/ADD,
+   * or array of ROM names for DEL
+   * - For "dependencies": array of instance identifiers (name or UUID)
+   * - For "sched_priority": SchedPriority enum value ("normal", "medium",
+   * "high", "admin")
+   */
+  value?: unknown;
+}
+
+/**
+ * A single update operation to be applied to a service group.
+ */
+
+export interface UpdateServiceGroupsRequestItem {
+  /**
+   * The UUID of the resource.
+   */
+  uuid?: string;
+  /**
+   * The name of the resource.
+   */
+  name?: string;
+  /**
+   * A client-provided identifier for tracking this operation in the response.
+   */
+  id?: string;
+  /**
+   * The property to modify.
+   */
+  prop: MutableServiceGroupProperty;
+  /**
+   * The operation to perform.
+   */
+  op: MutableServiceGroupOperation;
+  /**
+   * The value for the update operation. The type depends on the property and
+   * operation:
+   * - For "image": string
+   * - For "args": string or array of strings
+   * - For "env": object (for SET/ADD) or string/array of strings (for DEL)
+   * - For "memory_mb": integer
+   * - For "vcpus": integer
+   * - For "scale_to_zero": object with cooldown_time_ms, policy, and stateful
+   * fields
+   * - For "tags": array of strings
+   * - For "delete_lock": boolean
+   * - For "schedules": array of schedule objects (with name, when, action, and
+   * optional args fields).
+   * Use action "exec" together with args to execute a command at the scheduled
+   * time.
+   * - For "autokill": object with time_ms and num_requests fields
+   * - For "hostname": string (valid DNS label)
+   * - For "roms": array of ROM objects (with name and image fields) for SET/ADD,
+   * or array of ROM names for DEL
+   * - For "dependencies": array of instance identifiers (name or UUID)
+   * - For "sched_priority": SchedPriority enum value ("normal", "medium",
+   * "high", "admin")
+   */
+  value?: unknown;
+}
+
+/**
+ * The response message for updating one or more service group(s) given their
+ * UUID(s) or name(s).
+ */
+
+export interface UpdateServiceGroupsResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: UpdateServiceGroupsResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface UpdateServiceGroupsResponseData {
+  service_groups?: UpdateServiceGroupsResponseUpdatedServiceGroup[];
+}
+
+/**
+ * Per-item result for an update service groups operation.
+ */
+
+export interface UpdateServiceGroupsResponseUpdatedServiceGroup {
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+  /**
+   * The client-provided ID from the request.
+   */
+  id?: string;
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * An optional error code providing additional information about the status.
+   */
+  error?: number;
+}
+
+/**
+ * Quotas with per-item response envelope fields merged in.
+ */
+
 export interface Quotas {
+  /**
+   * Indicates whether the operation was successful for this item.
+   */
+  status?: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
   /**
    * The UUID of the quota.
    */
   uuid: string;
   /**
-   * Used quota
+   * Used quota.
    */
   used: QuotasStats;
   /**
-   * Configured quota limits
+   * Configured quota limits.
    */
   hard: QuotasStats;
   /**
-   * Additional limits
+   * Additional limits.
    */
   limits: QuotasLimits;
-  /**
-   * An optional field representing the status of the request.  This field is
-   * only set when this message object is used as a response message.
-   */
-  status?: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is only set when this message object is used as a response
-   * message, and is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is only set when this message object is used as a response
-   * message, and is useful when the status is not `success`.
-   */
-  error?: number;
 }
+
+/**
+ * Additional resource limits.
+ */
 
 export interface QuotasLimits {
   /**
@@ -4772,1496 +5595,769 @@ export interface QuotasResponse {
   status: ResponseStatus;
   /**
    * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
    */
   message?: string;
   /**
    * The response data for this request.
    */
-  data: QuotasResponseData;
+  data?: QuotasResponseData;
   /**
    * A list of errors which may have occurred during the request.
    */
   errors?: ResponseError[];
   /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
+   * The operation time in microseconds.
    */
   op_time_us: number;
 }
 
+/**
+ * The response data for this request.
+ */
+
 export interface QuotasResponseData {
-  /**
-   * The quota(s) which were retrieved by the request.
-   */
   quotas?: Quotas[];
 }
 
+/**
+ * Quota statistics for resource usage.
+ */
+
 export interface QuotasStats {
   /**
-   * Number of instances
+   * Number of instances.
    */
   instances: number;
   /**
-   * Number of instances that are not in the `stopped` state
+   * Number of instances that are not in the stopped state.
    */
   live_instances: number;
   /**
-   * Number of vCPUs
+   * Number of vCPUs.
    */
   live_vcpus: number;
   /**
-   * Amount of memory assigned to instances that are not in the `stopped`
-   * state in megabytes
+   * Amount of memory assigned to instances that are not in the `stopped` state
+   * in megabytes.
    */
   live_memory_mb: number;
   /**
-   * Number of services
+   * Number of service groups.
    */
   service_groups: number;
   /**
-   * Number of published network ports over all existing services
+   * Number of published network ports over all existing services.
    */
   services: number;
   /**
-   * Number of volumes
+   * Number of volumes.
    */
   volumes: number;
   /**
-   * Total size of all volumes in megabytes
+   * Total size of all volumes in megabytes.
    */
   total_volume_mb: number;
 }
 
-/**
- * The error response message for an API request.
- */
-
-export interface ResponseError {
+export interface AttachVolumeByUUIDRequestBody {
   /**
-   * The HTTP status code of the error.
+   * UUID or name of the instance to attach the volume to.
    */
-  status: number;
-}
-
-/**
- * The response status of an API request.
- */
-
-export type ResponseStatus = "success" | "error" | "partial_success";
-
-/**
- * SchedPriority defines the scheduling priority for an instance.
- * User requires the `override_vm_priority` permission to change it.
- *
- * The list of available scheduling priorities:
- *
- * | Priority | Description |
- * |----------|-------------|
- * | `normal` | Default scheduling priority. |
- * | `medium` | Medium scheduling priority. |
- * | `high`   | High scheduling priority. |
- * | `admin`  | Admin scheduling priority. |
- */
-
-export type SchedPriority = "normal" | "medium" | "high" | "admin";
-
-/**
- * A schedule defines when an action should be performed on an instance.
- *
- * Each schedule specifies a name, a calendar expression following systemd
- * calendar event syntax, and an action (start, stop, delete, or exec).
- *
- * Calendar expressions format: [weekday] [[year-]month-day]
- * [hour:minute[:second]]
- *
- * Supported syntax:
- * - `*` - Any value
- * - `5` - Exact value
- * - `1..5` - Range
- * - `1..5/2` - Range with step
- * - `1,2,5` - Comma-separated list
- *
- * Example: `*-*-* 09:00:00` - Every day at 09:00 UTC
- * Example: `Sat,Sun *-*-* 20:00:00` - Every Saturday and Sunday at 20:00 UTC
- */
-
-export interface Schedule {
+  attach_to: NameOrUUID;
   /**
-   * The name of the schedule.
+   * Path of the mountpoint.
    *
-   * Must be unique within an instance.
+   * The path must be absolute, not contain `.` and `..` components, and not
+   * contain colons (`:`). The path must point to an empty directory. If the
+   * directory does not exist, it is created.
    */
-  name: string;
+  at: string;
   /**
-   * The calendar expression specifying when the action should be performed.
-   *
-   * Uses systemd calendar event syntax.
-   * See https://www.man7.org/linux/man-pages/man7/systemd.time.7.html
+   * Whether the volume should be mounted read-only.
    */
-  when: string;
-  /**
-   * The action to perform at the scheduled time.
-   */
-  action: ScheduleAction;
-  /**
-   * The timestamp of when the next scheduled action will occur.
-   *
-   * This field is populated only in responses (not settable in requests).
-   * Unix timestamp in seconds.  Omitted if no next execution is scheduled.
-   */
-  next_at?: string;
-  /**
-   * The command to execute when the action is `exec`.
-   *
-   * Required when `action` is `SCHEDULE_ACTION_EXEC`, ignored otherwise.
-   * Each element is a separate argument; the first element is the executable.
-   */
-  args?: string[];
+  readonly?: boolean;
 }
 
 /**
- * The action to perform on a scheduled operation.
+ * A single request item to attach a volume to an instance.
  */
 
-export type ScheduleAction = "start" | "stop" | "delete" | "exec";
-
-/**
- * A service connects a public-facing port to an internal destination port on
- * which an application instance listens on.  Additional handlers can be
- * defined
- * for each published port in order to define how the service will handle
- * incoming connections and forward traffic from the Internet to your
- * application.  For example, a service can be configured to terminate TLS
- * connections, redirect HTTP traffic, or enable HTTP mode for load balancing.
- */
-
-export interface Service {
+export interface AttachVolumesRequestItem {
   /**
-   * This is the public-facing port that the service will be accessible from
-   * on the Internet.
-   */
-  port: number;
-  /**
-   * The port number that the instance is listening on.  This is the internal
-   * port which Unikraft Cloud will forward traffic to.
-   */
-  destination_port?: number;
-  /**
-   * Connection handlers to use for the service.  Handlers define how the
-   * service will handle incoming connections and forward traffic from the
-   * Internet to your application.  For example, a service can be configured
-   * to terminate TLS connections, redirect HTTP traffic, or enable HTTP mode
-   * for load balancing.  You configure the handlers for every published
-   * service port individually.
-   */
-  handlers?: ConnectionHandler[];
-}
-
-/**
- * A service group on Unikraft Cloud is used to describe how your application
- * exposes its functionality to the outside world.  Once defined, assigning an
- * instance to the service will make it accessible from the Internet.
- *
- * An application, running as an instance, may expose one or more ports, e.g.
- * it
- * listens on port 80 because your application exposes a HTTP web service.
- * This,
- * along with a set of additional metadata defines how the "service" is
- * configured and accessed.  For example, a service may be configured to use
- * TLS, or be bound to a specific domain name.
- *
- * When an instance is assigned to a service group, it immediately becomes
- * accessible over the Internet on the exposed public port, using the set DNS
- * name, and is routed to the set destination port.
- *
- * Note: If you do not specify a DNS name when you create a service and you
- * indicate that the application exposes some ports, Unikraft Cloud will
- * generates a random DNS name for you.  Unikraft Cloud also supports custom
- * domains like www.example.com and wildcard domains like *.example.com.
- */
-
-export interface ServiceGroup {
-  /**
-   * The UUID of the service group.
-   *
-   * This is a unique identifier for the service group that is generated when
-   * the service group is created.  The UUID is used to reference the service in
-   * API calls and can be used to identify the service group in all API calls
-   * that require an identifier.
-   */
-  uuid: string;
-  /**
-   * The name of the service group.
-   *
-   * This is a human-readable name that can be used to identify the service
-   * group. The name must be unique within the context of your account.  The
-   * name can also be used to identify the service in API calls.
-   */
-  name: string;
-  /**
-   * The time the service was created.
-   */
-  created_at: string;
-  /**
-   * Indicates if the service will stay remain even after the last instance
-   * detached.  If this is set to false, the service will be deleted when the
-   * last instance detached from it.  If this is set to true, the service will
-   * remain and can be reused by other instances.  This is useful if you want to
-   * keep the service configuration, e.g., the published ports, handlers, and
-   * domains, even if there are no instances assigned to it.
-   */
-  persistent: boolean;
-  /**
-   * Indicates if the service has autoscale enabled.  See the associated
-   * autoscale documentation for more information about how to set this up.
-   * Autoscale policies can be set up after the service has been created.
-   */
-  autoscale: boolean;
-  /**
-   * The soft limit is used by the Unikraft Cloud load balancer to decide when
-   * to wake up another standby instance.  For example, if the soft limit is set
-   * to 5 and the service consists of 2 standby instances, one of the instances
-   * receives up to 5 concurrent requests.  The 6th parallel requests wakes up
-   * the second instance.  If there are no more standby instances to wake up,
-   * the number of requests assigned to each instance will exceed the soft
-   * limit.  The load balancer makes sure that when the number of in-flight
-   * requests goes down again, instances are put into standby as fast as
-   * possible.
-   */
-  soft_limit: number;
-  /**
-   * The hard limit defines the maximum number of concurrent requests that an
-   * instance assigned to the this service can handle.  The load balancer will
-   * never assign more requests to a single instance.  In case there are no
-   * other instances available, excess requests fail (i.e., they are blocked and
-   * not queued).
-   */
-  hard_limit: number;
-  /**
-   * List of published network ports for this service and the destination port
-   * to which Unikraft Cloud will forward traffic to.  Additional handlers can
-   * be defined for each published port in order to define how the service will
-   * handle incoming connections and forward traffic from the Internet to your
-   * application.  For example, a service can be configured to terminate TLS
-   * connections, redirect HTTP traffic, or enable HTTP mode for load balancing.
-   */
-  services?: Service[];
-  /**
-   * List of domains associated with the service.  Domains are used to access
-   * the service over the Internet.
-   */
-  domains?: Domain[];
-  /**
-   * List of instances assigned to the service.
-   */
-  instances?: ServiceGroupInstance[];
-  /**
-   * An optional field representing the status of the request.  This field is
-   * only set when this message object is used as a response message.
-   */
-  status?: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is only set when this message object is used as a response
-   * message, and is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is only set when this message object is used as a response
-   * message, and is useful when the status is not `success`.
-   */
-  error?: number;
-  /**
-   * Automatic delete-on-idle configuration.
-   */
-  autokill?: ServiceGroupAutokill;
-}
-
-/**
- * Automatic delete-on-idle configuration for service groups.
- */
-
-export interface ServiceGroupAutokill {
-  /**
-   * Time in milliseconds after the service group becomes empty before it is
-   * deleted. A value of 0 disables autokill.
-   */
-  time_ms?: number;
-}
-
-export interface ServiceGroupInstance {
-  /**
-   * The UUID of the instance.  This is a unique identifier for the instance
-   * that is generated when the instance is created.  The UUID is used to
-   * reference the instance in API calls and can be used to identify the
-   * instance in all API calls that require an instance identifier.
-   */
-  uuid: string;
-  /**
-   * The name of the instance.  This is a human-readable name that can be used
-   * to identify the instance.  The name must be unique within the context of
-   * your account.  If no name is specified, a random name is generated for
-   * you.  The name can also be used to identify the instance in API calls.
-   */
-  name: string;
-}
-
-/**
- * The domain configuration for the service group.
- *
- * Domain names are completely specified with all labels in the hierarchy of
- * the DNS, having no parts omitted.  The domain can be associated with an
- * existing certificate by specifying the certificate's name or UUID.  If no
- * certificate is specified and a FQDN is provided, Unikraft Cloud will
- * automatically generate a new certificate for the domain based on Let's
- * Encrypt and seek to accomplish a DNS-01 challenge.
- */
-
-export interface ServiceGroupInstanceDomain {
-  /**
-   * Publicly accessible domain name.
-   *
-   * If this name ends in a period `.` it must be a valid Full Qualified
-   * Domain Name (FQDN), otherwise it will become a subdomain of the target
-   * metro.
-   */
-  fqdn: string;
-  /**
-   * The certificate associated with the domain.
-   *
-   * The certificate is used to secure the domain with TLS/SSL.  If no
-   * certificate is specified, Unikraft Cloud will automatically generate a
-   * new certificate for the domain based on Let's Encrypt and seek to
-   * accomplish a DNS-01 challenge.
-   */
-  certificate?: NameOrUUID;
-}
-
-export interface ServiceGroupTemplate {
-  /**
-   * The name of the template used for the autoscale configuration.
-   */
-  name: string;
-  /**
-   * The UUID of the template used for the autoscale configuration.
-   */
-  uuid: string;
-}
-
-/**
- * Parameters for starting the instance.
- */
-
-export interface StartInstanceByUUIDRequestBody {
-  /**
-   * Deprecated: Use `timeout_s` instead.  Timeout in milliseconds to
-   * wait for the instance to reach running state.  If `timeout_s` is
-   * not set, this value is converted by rounding up to the next full
-   * second.  No wait performed for a value of 0.
-   */
-  wait_timeout_ms?: number;
-  /**
-   * Timeout in seconds to wait for the instance to reach running
-   * state.  If you start your instance, you can wait for it to
-   * finish starting with a blocking API call if you specify a wait
-   * timeout greater than zero.  No wait performed for a value of 0.
-   */
-  timeout_s?: number;
-}
-
-/**
- * A single request item to start an instance.
- */
-
-export interface StartInstancesRequestItem {
-  /**
-   * Deprecated: Use `timeout_s` instead.  Timeout in milliseconds to
-   * wait for the instance to reach running state.  If `timeout_s` is
-   * not set, this value is converted by rounding up to the next full
-   * second.  No wait performed for a value of 0.
-   */
-  wait_timeout_ms?: number;
-  /**
-   * Timeout in seconds to wait for the instance to reach running
-   * state.  If you start your instance, you can wait for it to
-   * finish starting with a blocking API call if you specify a wait
-   * timeout greater than zero.  No wait performed for a value of 0.
-   */
-  timeout_s?: number;
-  /**
-   * The UUID of the instance to start.  Mutually exclusive with name.
+   * The UUID of the resource.
    */
   uuid?: string;
   /**
-   * The name of the instance to start.  Mutually exclusive with UUID.
+   * The name of the resource.
    */
   name?: string;
+  /**
+   * UUID or name of the instance to attach the volume to.
+   */
+  attach_to: NameOrUUID;
+  /**
+   * Path of the mountpoint.
+   *
+   * The path must be absolute, not contain `.` and `..` components, and not
+   * contain colons (`:`). The path must point to an empty directory. If the
+   * directory does not exist, it is created.
+   */
+  at: string;
+  /**
+   * Whether the volume should be mounted read-only.
+   */
+  readonly?: boolean;
 }
 
 /**
- * The response message for starting one or more instance(s) given their
- * UUID(s)
+ * The response message for attaching one or more volume(s) given their
+ * UUID(s) or name(s).
+ */
+
+export interface AttachVolumesResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: AttachVolumesResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * Per-item result for an attach volumes operation.
+ */
+
+export interface AttachVolumesResponseAttachedVolume {
+  /**
+   * Indicates whether the operation was successful for this item.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface AttachVolumesResponseData {
+  volumes?: AttachVolumesResponseAttachedVolume[];
+}
+
+export interface CloneVolumeByUUIDRequestBody {
+  /**
+   * The name of the new cloned volume. If not provided, a random name
+   * of the form `vol-X` is generated for you, where `X` is a 5 character
+   * long random alphanumeric suffix.
+   */
+  vol_name?: string;
+  /**
+   * The quota policy for the new cloned volume. If not provided, the quota
+   * policy of the source volume is used.
+   */
+  quota_policy?: VolumeQuotaPolicy;
+  /**
+   * A list of tags to assign to the new cloned volume.
+   */
+  tags?: string[];
+  access_mode?: VolumeAccessMode;
+}
+
+/**
+ * A single request item to clone a volume.
+ */
+
+export interface CloneVolumesRequestItem {
+  /**
+   * The UUID of the resource.
+   */
+  uuid?: string;
+  /**
+   * The name of the resource.
+   */
+  name?: string;
+  /**
+   * The name of the new cloned volume. If not provided, a random name
+   * of the form `vol-X` is generated for you, where `X` is a 5 character
+   * long random alphanumeric suffix.
+   */
+  vol_name?: string;
+  /**
+   * The quota policy for the new cloned volume. If not provided, the quota
+   * policy of the source volume is used.
+   */
+  quota_policy?: VolumeQuotaPolicy;
+  /**
+   * A list of tags to assign to the new cloned volume.
+   */
+  tags?: string[];
+  access_mode?: VolumeAccessMode;
+}
+
+/**
+ * The response message for cloning one or more volume(s) given their UUID(s)
  * or name(s).
  */
 
-export interface StartInstancesResponse {
+export interface CloneVolumesResponse {
   /**
    * The status of the response.
    */
   status: ResponseStatus;
   /**
    * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
    */
   message?: string;
   /**
    * The response data for this request.
    */
-  data?: StartInstancesResponseData;
+  data?: CloneVolumesResponseData;
   /**
    * A list of errors which may have occurred during the request.
    */
   errors?: ResponseError[];
   /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
+   * The operation time in microseconds.
    */
   op_time_us: number;
 }
 
-export interface StartInstancesResponseData {
-  /**
-   * The instance(s) which were started by the request.
-   */
-  instances?: StartInstancesResponseStartedInstance[];
+/**
+ * The response data for this request.
+ */
+
+export interface CloneVolumesResponseData {
+  volumes?: CloneVolumesResponseVolume[];
 }
 
-export interface StartInstancesResponseStartedInstance {
+/**
+ * Per-item result for a clone volumes operation.
+ */
+
+export interface CloneVolumesResponseVolume {
   /**
-   * Indicates whether the start operation was successful or not for this
-   * instance.
+   * Indicates whether the operation was successful for this item.
    */
   status: ResponseStatus;
   /**
-   * The UUID of the instance which was deleted.
-   */
-  uuid: string;
-  /**
-   * The name of the instance which was deleted.
-   */
-  name: string;
-  /**
-   * The current state of the instance after this request.
-   */
-  state: string;
-  /**
-   * The previous state of the instance before it was deleted.
-   */
-  previous_state: string;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
+   * An optional message providing additional information.
    */
   message?: string;
   /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
+   * An optional error code.
    */
   error?: number;
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+  /**
+   * The state of the volume.
+   */
+  state: VolumeState;
 }
 
 /**
- * The step policy is a type of autoscaling policy that scales the number of
- * instances in a service by a fixed number of instances at each step.
- * It uses a metric to determine when to scale up or down.
+ * The response message for converting one or more volume(s) to templates.
  */
 
-export type StepPolicyMetric = "cpu";
-
-/**
- * Parameters for stopping the instance.
- */
-
-export interface StopInstanceByUUIDRequestBody {
+export interface CreateTemplateVolumesResponse {
   /**
-   * Whether to immediately force stop the instance.
+   * The status of the response.
    */
-  force?: boolean;
+  status: ResponseStatus;
   /**
-   * Timeout for draining connections in milliseconds.
-   * No draining will occur if set to 0.  The instance
-   * does not receive new connections in the draining
-   * phase.  The instance is stopped when the last
-   * connection has been closed or the timeout expired.
-   * The maximum timeout may vary.  Use -1 for the
-   * largest possible value.  Ignored if force is set.
-   *
-   * Note: This endpoint does not block.  Use the wait
-   * endpoint for the instance to reach the stopped
-   * state.
+   * An optional message providing additional information about the status.
    */
-  drain_timeout_ms?: number;
+  message?: string;
   /**
-   * Whether to perform a quick shutdown.  This flag is
-   * overridden by force.
+   * The response data for this request.
    */
-  quick?: boolean;
+  data?: CreateTemplateVolumesResponseData;
   /**
-   * Only stop the instance if it is in this state.
+   * A list of errors which may have occurred during the request.
    */
-  ifstate?: string;
+  errors?: ResponseError[];
   /**
-   * If set, forces the VMM to shutdown immediately and generate a coredump.
-   * Can only be used in conjunction with force.
+   * The operation time in microseconds.
    */
-  dump?: boolean;
+  op_time_us: number;
 }
 
 /**
- * A single request item to stop an instance.
+ * The response data for this request.
  */
 
-export interface StopInstancesRequestItem {
+export interface CreateTemplateVolumesResponseData {
   /**
-   * Whether to immediately force stop the instance.
+   * The volume(s) which were attached by the request.
    */
-  force?: boolean;
+  volumes?: CreateTemplateVolumesResponseTemplateVolume[];
+}
+
+/**
+ * Per-item result for a create template volume operation.
+ */
+
+export interface CreateTemplateVolumesResponseTemplateVolume {
   /**
-   * Timeout for draining connections in milliseconds.  The instance does not
-   * receive new connections in the draining phase.  The instance is stopped
-   * when the last connection has been closed or the timeout expired.  The
-   * maximum timeout may vary.  Use -1 for the largest possible value.
-   *
-   * Note: This endpoint does not block.  Use the wait endpoint for the
-   * instance to reach the stopped state.
+   * Indicates whether the operation was successful for this item.
    */
-  drain_timeout_ms?: number;
+  status: ResponseStatus;
   /**
-   * Whether to perform a quick shutdown.  This flag is
-   * overridden by force.
+   * An optional message providing additional information.
    */
-  quick?: boolean;
+  message?: string;
   /**
-   * Only stop the instance if it is in this state.
+   * An optional error code.
    */
-  ifstate?: string;
+  error?: number;
   /**
-   * If set, forces the VMM to shutdown immediately and generate a coredump.
-   * Can only be used in conjunction with force.
+   * The UUID of the resource.
    */
-  dump?: boolean;
+  uuid: string;
   /**
-   * The UUID of the instance to stop.  Mutually exclusive with name.
+   * The human-readable name of the resource.
+   */
+  name: string;
+  /**
+   * The state of the volume.
+   */
+  state: VolumeState;
+}
+
+/**
+ * The request message for creating a volume.
+ */
+
+export interface CreateVolumeRequest {
+  name?: string;
+  size_mb?: number;
+  host_path?: string;
+  template?: NameOrUUID;
+  quota_policy?: VolumeQuotaPolicy;
+  filesystem?: string;
+  tags?: string[];
+  uid?: number;
+  gid?: number;
+  access_mode?: VolumeAccessMode;
+  args?: Record<string, string>;
+}
+
+/**
+ * The response message for creating a volume.
+ */
+
+export interface CreateVolumeResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: CreateVolumeResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface CreateVolumeResponseData {
+  volumes?: CreateVolumeResponseVolume[];
+}
+
+/**
+ * Per-item result for a create volume operation.
+ */
+
+export interface CreateVolumeResponseVolume {
+  /**
+   * Indicates whether the operation was successful for this item.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+  /**
+   * The state of the volume.
+   */
+  state: VolumeState;
+}
+
+/**
+ * The response message for deleting one or more template volume(s) given
+ * their UUID(s) or name(s).
+ */
+
+export interface DeleteTemplateVolumesResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: DeleteTemplateVolumesResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface DeleteTemplateVolumesResponseData {
+  volumes?: DeleteTemplateVolumesResponseTemplateVolume[];
+}
+
+/**
+ * Per-item result for a delete template volumes operation.
+ */
+
+export interface DeleteTemplateVolumesResponseTemplateVolume {
+  /**
+   * Indicates whether the operation was successful for this item.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+}
+
+/**
+ * The response message for deleting one or more volume(s) given their
+ * UUID(s) or name(s).
+ */
+
+export interface DeleteVolumesResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: DeleteVolumesResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface DeleteVolumesResponseData {
+  volumes?: DeleteVolumesResponseDeletedVolume[];
+}
+
+/**
+ * Per-item result for a delete volumes operation.
+ */
+
+export interface DeleteVolumesResponseDeletedVolume {
+  /**
+   * Indicates whether the operation was successful for this item.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+}
+
+export interface DetachVolumeByUUIDRequestBody {
+  /**
+   * UUID or name of the instance to detach the volume from. If not specified,
+   * the volume is detached from all instances.
+   */
+  from?: NameOrUUID;
+}
+
+/**
+ * A single request item to detach a volume from an instance.
+ */
+
+export interface DetachVolumesRequestItem {
+  /**
+   * The UUID of the resource.
    */
   uuid?: string;
   /**
-   * The name of the instance to stop.  Mutually exclusive with UUID.
+   * The name of the resource.
    */
   name?: string;
+  /**
+   * UUID or name of the instance to detach the volume from. If not specified,
+   * the volume is detached from all instances.
+   */
+  from?: NameOrUUID;
 }
 
 /**
- * The response message for stopping one or more instance(s) given their
- * UUID(s)
+ * The response message for detaching one or more volume(s) given their
+ * UUID(s) or name(s).
+ */
+
+export interface DetachVolumesResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: DetachVolumesResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface DetachVolumesResponseData {
+  volumes?: DetachVolumesResponseDetachedVolume[];
+}
+
+/**
+ * Per-item result for a detach volumes operation.
+ */
+
+export interface DetachVolumesResponseDetachedVolume {
+  /**
+   * Indicates whether the operation was successful for this item.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+}
+
+/**
+ * The response message for getting one or more template volume(s) given their
+ * UUID(s) or name(s).
+ */
+
+export interface GetTemplateVolumesResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: GetTemplateVolumesResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface GetTemplateVolumesResponseData {
+  volumes?: Volume[];
+}
+
+/**
+ * The response message for getting one or more volume(s) given their UUID(s)
  * or name(s).
  */
 
-export interface StopInstancesResponse {
+export interface GetVolumesResponse {
   /**
    * The status of the response.
    */
   status: ResponseStatus;
   /**
    * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
    */
   message?: string;
   /**
    * The response data for this request.
    */
-  data?: StopInstancesResponseData;
+  data?: GetVolumesResponseData;
   /**
    * A list of errors which may have occurred during the request.
    */
   errors?: ResponseError[];
   /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
+   * The operation time in microseconds.
    */
   op_time_us: number;
 }
 
-export interface StopInstancesResponseData {
-  /**
-   * The instance(s) which were stopped by the request.
-   */
-  instances?: StopInstancesResponseStoppedInstance[];
-}
+/**
+ * The response data for this request.
+ */
 
-export interface StopInstancesResponseStoppedInstance {
-  /**
-   * The UUID of the instance.
-   */
-  uuid: string;
-  /**
-   * The name of the instance.
-   */
-  name: string;
-  /**
-   * The current state of the instance.
-   */
-  state: InstanceState;
-  /**
-   * The previous state of the instance before the stop operation was invoked.
-   */
-  previous_state: InstanceState;
-  /**
-   * The status of the response.
-   */
-  status?: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  error?: number;
+export interface GetVolumesResponseData {
+  volumes?: Volume[];
 }
 
 /**
- * Parameters for suspending the instance.
+ * Mutable template volume operations.
  */
 
-export interface SuspendInstanceByUUIDRequestBody {
-  /**
-   * Timeout for draining connections in milliseconds.  No draining
-   * will occur if set to 0.  Use -1 for the largest possible value.
-   */
-  drain_timeout_ms?: number;
-}
+export type MutableTemplateVolumeOperation = "set" | "add" | "del";
 
 /**
- * A single request item to suspend an instance.
+ * Mutable template volume properties.
  */
 
-export interface SuspendInstancesRequestItem {
-  /**
-   * Timeout for draining connections in milliseconds.  No draining
-   * will occur if set to 0.  Use -1 for the largest possible value.
-   */
-  drain_timeout_ms?: number;
-  /**
-   * The UUID of the instance to suspend.  Mutually exclusive with name.
-   */
-  uuid?: string;
-  /**
-   * The name of the instance to suspend.  Mutually exclusive with UUID.
-   */
-  name?: string;
-}
+export type MutableTemplateVolumeProperty = "tags" | "delete_lock";
 
 /**
- * The response message for suspending one or more instance(s) given their
- * UUID(s)
- * or name(s).
+ * Mutable volume operations.
  */
 
-export interface SuspendInstancesResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * The response data for this request.
-   */
-  data?: SuspendInstancesResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface SuspendInstancesResponseData {
-  /**
-   * The instance(s) which were suspended by the request.
-   */
-  instances?: SuspendInstancesResponseSuspendedInstance[];
-}
-
-export interface SuspendInstancesResponseSuspendedInstance {
-  /**
-   * The UUID of the instance.
-   */
-  uuid: string;
-  /**
-   * The name of the instance.
-   */
-  name: string;
-  /**
-   * The current state of the instance.
-   */
-  state: InstanceState;
-  /**
-   * The previous state of the instance before the suspend operation was invoked.
-   */
-  previous_state: InstanceState;
-  /**
-   * The status of the response.
-   */
-  status?: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  error?: number;
-}
+export type MutableVolumeOperation = "set" | "add" | "del";
 
 /**
- * (Optional). Automatic delete-on-idle configuration for the template
- * instance. Only applies when `prepare` is set.
+ * Mutable volume properties.
  */
 
-export interface TemplateAutokill {
-  /**
-   * Time in milliseconds after the template was last used for cloning
-   * before it is deleted. A value of 0 disables template autokill.
-   */
-  time_ms?: number;
-}
-
-/**
- * The request item for unpinning a single image.
- */
-
-export interface UnpinImageRequestItem {
-  /**
-   * The UUID of the image to unpin.  Only UUID is supported; name, URL,
-   * tag, and digest are not.
-   */
-  uuid: string;
-}
-
-/**
- * The response message for unpinning one or more images.
- */
-
-export interface UnpinImagesResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the response.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * The response data for this request.
-   */
-  data?: UnpinImagesResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface UnpinImagesResponseData {
-  /**
-   * The result of unpinning each requested image.
-   */
-  images?: UnpinImagesResponseImage[];
-}
-
-/**
- * The result of unpinning a single image.
- */
-
-export interface UnpinImagesResponseImage {
-  /**
-   * Indicates whether this image was unpinned successfully.
-   */
-  status: ResponseStatus;
-  /**
-   * The UUID of the image.
-   */
-  uuid: string;
-  /**
-   * The name of the image.  Only set on success, and only if the image
-   * has a name.
-   */
-  name?: string;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the
-   * status.  This field is only set when the status is not `success`.
-   */
-  error?: number;
-}
-
-export interface UpdateCertificateByUUIDRequestBody {
-  /**
-   * The new certificate chain.
-   *
-   * This is the public chain of the certificate in PEM format. The chain
-   * should include the certificate and any intermediate certificates.
-   */
-  chain: string;
-  /**
-   * The new private key.
-   *
-   * This is the private key of the certificate in PEM format. The private
-   * key must match the public key in the certificate chain.
-   */
-  pkey: string;
-}
-
-/**
- * A single update operation to be applied to a certificate.
- */
-
-export interface UpdateCertificatesRequestItem {
-  /**
-   * The new certificate chain.
-   *
-   * This is the public chain of the certificate in PEM format. The chain
-   * should include the certificate and any intermediate certificates.
-   */
-  chain: string;
-  /**
-   * The new private key.
-   *
-   * This is the private key of the certificate in PEM format. The private
-   * key must match the public key in the certificate chain.
-   */
-  pkey: string;
-  /**
-   * The UUID of the certificate to update. Mutually exclusive with name.
-   */
-  uuid?: string;
-  /**
-   * The name of the certificate to update. Mutually exclusive with UUID.
-   */
-  name?: string;
-}
-
-/**
- * The response message for updating one or more certificate(s).
- */
-
-export interface UpdateCertificatesResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * The response data for this request.
-   */
-  data?: UpdateCertificatesResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface UpdateCertificatesResponseData {
-  /**
-   * The certificate(s) which were updated by the request.
-   */
-  certificates?: Certificate[];
-}
-
-export interface UpdateCheckpointInstanceByUUIDRequestBody {
-  /**
-   * (Optional).  A client-provided identifier for tracking this operation in
-   * the response.
-   */
-  id?: string;
-  /**
-   * The property to modify.
-   */
-  prop: MutableCheckpointInstanceProperty;
-  /**
-   * The operation to perform on the property.
-   */
-  op: MutableCheckpointInstanceOperation;
-  /**
-   * The value for the update operation. The type depends on the property and
-   * operation:
-   * - For "tags": array of strings
-   * - For "delete_lock": boolean
-   * - For "autokill": object with time_ms field
-   */
-  value?: unknown;
-}
-
-/**
- * A single update operation to be applied to a checkpoint instance.
- */
-
-export interface UpdateCheckpointInstancesRequestItem {
-  /**
-   * (Optional).  A client-provided identifier for tracking this operation in
-   * the response.
-   */
-  id?: string;
-  /**
-   * The property to modify.
-   */
-  prop: MutableCheckpointInstanceProperty;
-  /**
-   * The operation to perform on the property.
-   */
-  op: MutableCheckpointInstanceOperation;
-  /**
-   * The value for the update operation. The type depends on the property and
-   * operation:
-   * - For "tags": array of strings
-   * - For "delete_lock": boolean
-   * - For "autokill": object with time_ms field
-   */
-  value?: unknown;
-  /**
-   * The UUID of the checkpoint instance to update. Mutually exclusive with name.
-   */
-  uuid?: string;
-  /**
-   * The name of the checkpoint instance to update. Mutually exclusive with UUID.
-   */
-  name?: string;
-}
-
-/**
- * The response message for updating a checkpoint instance by its UUID.
- */
-
-export interface UpdateCheckpointInstancesResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * The response data for this request.
-   */
-  data?: UpdateCheckpointInstancesResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface UpdateCheckpointInstancesResponseCheckpointInstance {
-  /**
-   * The UUID of the checkpoint instance that was updated.
-   */
-  uuid: string;
-  /**
-   * The name of the checkpoint instance that was updated.
-   */
-  name: string;
-  /**
-   * The status of this particular checkpoint instance update operation.
-   */
-  status: ResponseStatus;
-  /**
-   * (Optional).  The client-provided ID from the request.
-   */
-  id?: string;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  error?: number;
-}
-
-export interface UpdateCheckpointInstancesResponseData {
-  /**
-   * List of checkpoint instances that were processed during the update
-   * operation.
-   */
-  instances?: UpdateCheckpointInstancesResponseCheckpointInstance[];
-}
-
-export interface UpdateInstanceByUUIDRequestBody {
-  /**
-   * (Optional).  A client-provided identifier for tracking this operation in
-   * the response.
-   */
-  id?: string;
-  /**
-   * The property to modify.
-   */
-  prop: MutableInstanceProperty;
-  /**
-   * The operation to perform on the property.
-   */
-  op: MutableInstanceOperation;
-  /**
-   * The value for the update operation. The type depends on the property and
-   * operation:
-   * - For "image": image reference string, or object with image url,
-   *   credentials, headers and pull policy
-   * - For "args": string or array of strings
-   * - For "env": object (for SET/ADD) or string/array of strings (for DEL)
-   * - For "memory_mb": integer
-   * - For "vcpus": integer
-   * - For "scale_to_zero": object with cooldown_time_ms, policy, and stateful
-   * fields
-   * - For "tags": array of strings
-   * - For "delete_lock": boolean
-   * - For "schedules": array of schedule objects (with name, when, action, and
-   * optional args fields) for SET/ADD, or array of schedule names for DEL.
-   *   Use action "exec" together with args to execute a command at the scheduled
-   * time.
-   * - For "autokill": object with time_ms and num_requests fields
-   * - For "hostname": string (valid DNS label)
-   * - For "roms": array of ROM objects (with name and image fields) for SET/ADD,
-   * or array of ROM names for DEL
-   * - For "plugins": array of plugin objects (with name, rom, and optional
-   * config fields) for SET/ADD
-   * - For "dependencies": array of instance identifiers (name or UUID)
-   * - For "sched_priority": SchedPriority enum value ("normal", "medium",
-   * "high", "admin")
-   * - For "annotations": object (for SET/ADD) or string/array of strings (for
-   * DEL)
-   */
-  value?: unknown;
-}
-
-/**
- * A single update operation to be applied to an instance.
- */
-
-export interface UpdateInstancesRequestItem {
-  /**
-   * (Optional).  A client-provided identifier for tracking this operation in
-   * the response.
-   */
-  id?: string;
-  /**
-   * The property to modify.
-   */
-  prop: MutableInstanceProperty;
-  /**
-   * The operation to perform on the property.
-   */
-  op: MutableInstanceOperation;
-  /**
-   * The value for the update operation. The type depends on the property and
-   * operation:
-   * - For "image": image reference string, or object with image url,
-   *   credentials, headers and pull policy
-   * - For "args": string or array of strings
-   * - For "env": object (for SET/ADD) or string/array of strings (for DEL)
-   * - For "memory_mb": integer
-   * - For "vcpus": integer
-   * - For "scale_to_zero": object with cooldown_time_ms, policy, and stateful
-   * fields
-   * - For "tags": array of strings
-   * - For "delete_lock": boolean
-   * - For "schedules": array of schedule objects (with name, when, action, and
-   * optional args fields) for SET/ADD, or array of schedule names for DEL.
-   *   Use action "exec" together with args to execute a command at the scheduled
-   * time.
-   * - For "autokill": object with time_ms and num_requests fields
-   * - For "hostname": string (valid DNS label)
-   * - For "roms": array of ROM objects (with name and image fields) for SET/ADD,
-   * or array of ROM names for DEL
-   * - For "plugins": array of plugin objects (with name, rom, and optional
-   * config fields) for SET/ADD
-   * - For "dependencies": array of instance identifiers (name or UUID)
-   * - For "sched_priority": SchedPriority enum value ("normal", "medium",
-   * "high", "admin")
-   * - For "annotations": object (for SET/ADD) or string/array of strings (for
-   * DEL)
-   */
-  value?: unknown;
-  /**
-   * The UUID of the instance to update. Mutually exclusive with name.
-   */
-  uuid?: string;
-  /**
-   * The name of the instance to update. Mutually exclusive with UUID.
-   */
-  name?: string;
-}
-
-/**
- * The response message for updating one or more instances.
- */
-
-export interface UpdateInstancesResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * The response data for this request.
-   */
-  data?: UpdateInstancesResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface UpdateInstancesResponseData {
-  /**
-   * List of instances that were processed during the update operation.
-   */
-  instances?: UpdateInstancesResponseUpdatedInstance[];
-}
-
-export interface UpdateInstancesResponseUpdatedInstance {
-  /**
-   * The UUID of the instance that was updated.
-   */
-  uuid: string;
-  /**
-   * The name of the instance that was updated.
-   */
-  name: string;
-  /**
-   * The status of this particular instance update operation.
-   */
-  status: ResponseStatus;
-  /**
-   * (Optional).  The client-provided ID from the request.
-   */
-  id?: string;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  error?: number;
-}
-
-export interface UpdateServiceGroupByUUIDRequestBody {
-  /**
-   * (Optional).  A client-provided identifier for tracking this operation in the
-   * response.
-   */
-  id?: string;
-  /**
-   * The property to modify.
-   */
-  prop: MutableServiceGroupProperty;
-  /**
-   * The operation to perform.
-   */
-  op: MutableServiceGroupOperation;
-  /**
-   * The value for the update operation:
-   * - For "services": array of Service objects (same as for creation)
-   * - For "domains": array of Domain objects (same as for creation)
-   * - For "soft_limit": integer (1–65535), must be <= "hard_limit"
-   * - For "hard_limit": integer (1–65535), must be >= "soft_limit"
-   * - For "autokill": object with time_ms field
-   */
-  value?: unknown;
-}
-
-/**
- * A single update operation to be applied to a service group
- */
-
-export interface UpdateServiceGroupsRequestItem {
-  /**
-   * (Optional).  A client-provided identifier for tracking this operation in the
-   * response.
-   */
-  id?: string;
-  /**
-   * The property to modify.
-   */
-  prop: MutableServiceGroupProperty;
-  /**
-   * The operation to perform.
-   */
-  op: MutableServiceGroupOperation;
-  /**
-   * The value for the update operation:
-   * - For "services": array of Service objects (same as for creation)
-   * - For "domains": array of Domain objects (same as for creation)
-   * - For "soft_limit": integer (1–65535), must be <= "hard_limit"
-   * - For "hard_limit": integer (1–65535), must be >= "soft_limit"
-   * - For "autokill": object with time_ms field
-   */
-  value?: unknown;
-  /**
-   * The UUID of the service group to update.  Mutually exclusive with name.
-   */
-  uuid?: string;
-  /**
-   * The name of the service group to update.  Mutually exclusive with UUID.
-   */
-  name?: string;
-}
-
-/**
- * The response message for updating one or more service groups.
- */
-
-export interface UpdateServiceGroupsResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * The response data for this request.
-   */
-  data?: UpdateServiceGroupsResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface UpdateServiceGroupsResponseData {
-  /**
-   * List of service groups that were processed during the update operation.
-   */
-  service_groups?: UpdateServiceGroupsResponseUpdatedServiceGroup[];
-}
-
-export interface UpdateServiceGroupsResponseUpdatedServiceGroup {
-  /**
-   * The UUID of the service group that was updated.
-   */
-  uuid: string;
-  /**
-   * The name of the service group that was updated.
-   */
-  name: string;
-  /**
-   * The status of this particular service group update operation.
-   */
-  status: ResponseStatus;
-  /**
-   * (Optional).  The client-provided ID from the request.
-   */
-  id?: string;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is only set when this message object is used as a response
-   * message, and is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is only set when this message object is used as a response
-   * message, and is useful when the status is not `success`.
-   */
-  error?: number;
-}
-
-export interface UpdateTemplateInstanceByUUIDRequestBody {
-  /**
-   * (Optional).  A client-provided identifier for tracking this operation in
-   * the response.
-   */
-  id?: string;
-  /**
-   * The property to modify.
-   */
-  prop: MutableTemplateInstanceProperty;
-  /**
-   * The operation to perform on the property.
-   */
-  op: MutableTemplateInstanceOperation;
-  /**
-   * The value for the update operation. The type depends on the property and
-   * operation:
-   * - For "tags": array of strings
-   * - For "delete_lock": boolean
-   * - For "autokill": object with time_ms field
-   */
-  value?: unknown;
-}
-
-/**
- * A single update operation to be applied to a template instance.
- */
-
-export interface UpdateTemplateInstancesRequestItem {
-  /**
-   * (Optional).  A client-provided identifier for tracking this operation in
-   * the response.
-   */
-  id?: string;
-  /**
-   * The property to modify.
-   */
-  prop: MutableTemplateInstanceProperty;
-  /**
-   * The operation to perform on the property.
-   */
-  op: MutableTemplateInstanceOperation;
-  /**
-   * The value for the update operation. The type depends on the property and
-   * operation:
-   * - For "tags": array of strings
-   * - For "delete_lock": boolean
-   * - For "autokill": object with time_ms field
-   */
-  value?: unknown;
-  /**
-   * The UUID of the template instance to update. Mutually exclusive with name.
-   */
-  uuid?: string;
-  /**
-   * The name of the template instance to update. Mutually exclusive with UUID.
-   */
-  name?: string;
-}
-
-/**
- * The response message for updating a template instance by its UUID.
- */
-
-export interface UpdateTemplateInstancesResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * The response data for this request.
-   */
-  data?: UpdateTemplateInstancesResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface UpdateTemplateInstancesResponseData {
-  /**
-   * List of template instances that were processed during the update operation.
-   */
-  instances?: UpdateTemplateInstancesResponseTemplateInstance[];
-}
-
-export interface UpdateTemplateInstancesResponseTemplateInstance {
-  /**
-   * The UUID of the template instance that was updated.
-   */
-  uuid: string;
-  /**
-   * The name of the template instance that was updated.
-   */
-  name: string;
-  /**
-   * The status of this particular template instance update operation.
-   */
-  status: ResponseStatus;
-  /**
-   * (Optional).  The client-provided ID from the request.
-   */
-  id?: string;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  error?: number;
-}
+export type MutableVolumeProperty = "size_mb" | "tags" | "quota_policy" | "delete_lock";
 
 export interface UpdateTemplateVolumeByUUIDRequestBody {
   /**
-   * (Optional).  A client-provided identifier for tracking this operation in
-   * the response.
+   * A client-provided identifier for tracking this operation in the response.
    */
   id?: string;
   /**
@@ -6275,8 +6371,26 @@ export interface UpdateTemplateVolumeByUUIDRequestBody {
   /**
    * The value for the update operation. The type depends on the property and
    * operation:
-   * - For "tags": array of Strings
+   * - For "image": string
+   * - For "args": string or array of strings
+   * - For "env": object (for SET/ADD) or string/array of strings (for DEL)
+   * - For "memory_mb": integer
+   * - For "vcpus": integer
+   * - For "scale_to_zero": object with cooldown_time_ms, policy, and stateful
+   * fields
+   * - For "tags": array of strings
    * - For "delete_lock": boolean
+   * - For "schedules": array of schedule objects (with name, when, action, and
+   * optional args fields).
+   * Use action "exec" together with args to execute a command at the scheduled
+   * time.
+   * - For "autokill": object with time_ms and num_requests fields
+   * - For "hostname": string (valid DNS label)
+   * - For "roms": array of ROM objects (with name and image fields) for SET/ADD,
+   * or array of ROM names for DEL
+   * - For "dependencies": array of instance identifiers (name or UUID)
+   * - For "sched_priority": SchedPriority enum value ("normal", "medium",
+   * "high", "admin")
    */
   value?: unknown;
 }
@@ -6287,8 +6401,15 @@ export interface UpdateTemplateVolumeByUUIDRequestBody {
 
 export interface UpdateTemplateVolumesRequestItem {
   /**
-   * (Optional).  A client-provided identifier for tracking this operation in
-   * the response.
+   * The UUID of the resource.
+   */
+  uuid?: string;
+  /**
+   * The name of the resource.
+   */
+  name?: string;
+  /**
+   * A client-provided identifier for tracking this operation in the response.
    */
   id?: string;
   /**
@@ -6302,24 +6423,33 @@ export interface UpdateTemplateVolumesRequestItem {
   /**
    * The value for the update operation. The type depends on the property and
    * operation:
-   * - For "tags": array of Strings
+   * - For "image": string
+   * - For "args": string or array of strings
+   * - For "env": object (for SET/ADD) or string/array of strings (for DEL)
+   * - For "memory_mb": integer
+   * - For "vcpus": integer
+   * - For "scale_to_zero": object with cooldown_time_ms, policy, and stateful
+   * fields
+   * - For "tags": array of strings
    * - For "delete_lock": boolean
+   * - For "schedules": array of schedule objects (with name, when, action, and
+   * optional args fields).
+   * Use action "exec" together with args to execute a command at the scheduled
+   * time.
+   * - For "autokill": object with time_ms and num_requests fields
+   * - For "hostname": string (valid DNS label)
+   * - For "roms": array of ROM objects (with name and image fields) for SET/ADD,
+   * or array of ROM names for DEL
+   * - For "dependencies": array of instance identifiers (name or UUID)
+   * - For "sched_priority": SchedPriority enum value ("normal", "medium",
+   * "high", "admin")
    */
   value?: unknown;
-  /**
-   * The UUID of the template volume to update.  Mutually exclusive with
-   * name.
-   */
-  uuid?: string;
-  /**
-   * The name of the template volume to update.  Mutually exclusive with
-   * UUID.
-   */
-  name?: string;
 }
 
 /**
- * The response message for updating one or more template volumes.
+ * The response message for updating one or more template volume(s) given
+ * their UUID(s) or name(s).
  */
 
 export interface UpdateTemplateVolumesResponse {
@@ -6329,64 +6459,64 @@ export interface UpdateTemplateVolumesResponse {
   status: ResponseStatus;
   /**
    * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
    */
   message?: string;
   /**
    * The response data for this request.
    */
-  data: UpdateTemplateVolumesResponseData;
+  data?: UpdateTemplateVolumesResponseData;
   /**
    * A list of errors which may have occurred during the request.
    */
   errors?: ResponseError[];
   /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
+   * The operation time in microseconds.
    */
   op_time_us: number;
 }
 
+/**
+ * The response data for this request.
+ */
+
 export interface UpdateTemplateVolumesResponseData {
-  /**
-   * The template volume(s) which were updated by the request.
-   */
   volumes?: UpdateTemplateVolumesResponseTemplateVolume[];
 }
 
+/**
+ * Per-item result for an update template volumes operation.
+ */
+
 export interface UpdateTemplateVolumesResponseTemplateVolume {
   /**
-   * The UUID of the template volume that was updated.
-   */
-  uuid: string;
-  /**
-   * The name of the template volume that was updated.
-   */
-  name: string;
-  /**
-   * The status of this particular volume update operation.
+   * Indicates whether the operation was successful for this item.
    */
   status: ResponseStatus;
   /**
-   * (Optional).  The client-provided ID from the request.
-   */
-  id?: string;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
+   * An optional message providing additional information.
    */
   message?: string;
   /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
+   * An optional error code.
    */
   error?: number;
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+  /**
+   * The client-provided ID from the request.
+   */
+  id?: string;
 }
 
 export interface UpdateVolumeByUUIDRequestBody {
   /**
-   * (Optional).  A client-provided identifier for tracking this operation in the
-   * response.
+   * A client-provided identifier for tracking this operation in the response.
    */
   id?: string;
   /**
@@ -6400,22 +6530,45 @@ export interface UpdateVolumeByUUIDRequestBody {
   /**
    * The value for the update operation. The type depends on the property and
    * operation:
-   * - For "size_mb": unsigned integer
-   * - For "quota_policy": "static" or "dynamic"
-   * - For "tags": array of Strings
+   * - For "image": string
+   * - For "args": string or array of strings
+   * - For "env": object (for SET/ADD) or string/array of strings (for DEL)
+   * - For "memory_mb": integer
+   * - For "vcpus": integer
+   * - For "scale_to_zero": object with cooldown_time_ms, policy, and stateful
+   * fields
+   * - For "tags": array of strings
    * - For "delete_lock": boolean
+   * - For "schedules": array of schedule objects (with name, when, action, and
+   * optional args fields).
+   * Use action "exec" together with args to execute a command at the scheduled
+   * time.
+   * - For "autokill": object with time_ms and num_requests fields
+   * - For "hostname": string (valid DNS label)
+   * - For "roms": array of ROM objects (with name and image fields) for SET/ADD,
+   * or array of ROM names for DEL
+   * - For "dependencies": array of instance identifiers (name or UUID)
+   * - For "sched_priority": SchedPriority enum value ("normal", "medium",
+   * "high", "admin")
    */
   value?: unknown;
 }
 
 /**
- * A single request item for updating a volume.
+ * A single update operation to be applied to a volume.
  */
 
 export interface UpdateVolumesRequestItem {
   /**
-   * (Optional).  A client-provided identifier for tracking this operation in the
-   * response.
+   * The UUID of the resource.
+   */
+  uuid?: string;
+  /**
+   * The name of the resource.
+   */
+  name?: string;
+  /**
+   * A client-provided identifier for tracking this operation in the response.
    */
   id?: string;
   /**
@@ -6429,24 +6582,33 @@ export interface UpdateVolumesRequestItem {
   /**
    * The value for the update operation. The type depends on the property and
    * operation:
-   * - For "size_mb": unsigned integer
-   * - For "quota_policy": "static" or "dynamic"
-   * - For "tags": array of Strings
+   * - For "image": string
+   * - For "args": string or array of strings
+   * - For "env": object (for SET/ADD) or string/array of strings (for DEL)
+   * - For "memory_mb": integer
+   * - For "vcpus": integer
+   * - For "scale_to_zero": object with cooldown_time_ms, policy, and stateful
+   * fields
+   * - For "tags": array of strings
    * - For "delete_lock": boolean
+   * - For "schedules": array of schedule objects (with name, when, action, and
+   * optional args fields).
+   * Use action "exec" together with args to execute a command at the scheduled
+   * time.
+   * - For "autokill": object with time_ms and num_requests fields
+   * - For "hostname": string (valid DNS label)
+   * - For "roms": array of ROM objects (with name and image fields) for SET/ADD,
+   * or array of ROM names for DEL
+   * - For "dependencies": array of instance identifiers (name or UUID)
+   * - For "sched_priority": SchedPriority enum value ("normal", "medium",
+   * "high", "admin")
    */
   value?: unknown;
-  /**
-   * The UUID of the volume to update.  Mutually exclusive with name.
-   */
-  uuid?: string;
-  /**
-   * The name of the volume to update.  Mutually exclusive with UUID.
-   */
-  name?: string;
 }
 
 /**
- * The response message for updating one or more volume(s).
+ * The response message for updating one or more volume(s) given their
+ * UUID(s) or name(s).
  */
 
 export interface UpdateVolumesResponse {
@@ -6456,7 +6618,6 @@ export interface UpdateVolumesResponse {
   status: ResponseStatus;
   /**
    * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
    */
   message?: string;
   /**
@@ -6468,46 +6629,48 @@ export interface UpdateVolumesResponse {
    */
   errors?: ResponseError[];
   /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
+   * The operation time in microseconds.
    */
   op_time_us: number;
 }
 
+/**
+ * The response data for this request.
+ */
+
 export interface UpdateVolumesResponseData {
-  /**
-   * List of volumes that were processed during the update operation.
-   */
   volumes?: UpdateVolumesResponseUpdatedVolume[];
 }
 
+/**
+ * Per-item result for an update volumes operation.
+ */
+
 export interface UpdateVolumesResponseUpdatedVolume {
   /**
-   * The UUID of the volume that was updated.
-   */
-  uuid: string;
-  /**
-   * The name of the volume that was updated.
-   */
-  name: string;
-  /**
-   * The status of this particular volume update operation.
+   * Indicates whether the operation was successful for this item.
    */
   status: ResponseStatus;
   /**
-   * (Optional).  The client-provided ID from the request.
-   */
-  id?: string;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
+   * An optional message providing additional information.
    */
   message?: string;
   /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
+   * An optional error code.
    */
   error?: number;
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+  /**
+   * The client-provided ID from the request.
+   */
+  id?: string;
 }
 
 /**
@@ -6516,20 +6679,23 @@ export interface UpdateVolumesResponseUpdatedVolume {
 
 export interface Volume {
   /**
-   * The UUID of the volume.
-   *
-   * This is a unique identifier for the volume that is generated when the
-   * volume is created.  The UUID is used to reference the volume in
-   * API calls and can be used to identify the volume in all API calls that
-   * require an identifier.
+   * Indicates whether the operation was successful for this item.
+   */
+  status?: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
    */
   uuid: string;
   /**
-   * The name of the volume.
-   *
-   * This is a human-readable name that can be used to identify the volume.
-   * The name must be unique within the context of your account.  The name can
-   * also be used to identify the volume in API calls.
+   * The human-readable name of the resource.
    */
   name: string;
   /**
@@ -6565,23 +6731,6 @@ export interface Volume {
    */
   tags?: string[];
   /**
-   * An optional field representing the status of the request.  This field is
-   * only set when this message object is used as a response message.
-   */
-  status?: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is only set when this message object is used as a response
-   * message, and is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is only set when this message object is used as a response
-   * message, and is useful when the status is not `success`.
-   */
-  error?: number;
-  /**
    * Either static or dynamic reservation.
    */
   quota_policy: VolumeQuotaPolicy;
@@ -6605,15 +6754,23 @@ export interface Volume {
    */
   host_path?: string;
   /**
-   * Optional script arguments that were applied to the custom volume filesystem
-   * initialization scripts.
-   */
-  args?: Record<string, string>;
-  /**
    * The access mode of the volume, controlling volume sharing behavior.
    * Defaults to `rwo` if not specified.
    */
   access_mode?: VolumeAccessMode;
+  /**
+   * Guest UID for managed volumes (host_path mode only).
+   */
+  uid?: number;
+  /**
+   * Guest GID for managed volumes (host_path mode only).
+   */
+  gid?: number;
+  /**
+   * Optional script arguments that were applied to the custom volume filesystem
+   * initialization scripts.
+   */
+  args?: Record<string, string>;
 }
 
 /**
@@ -6624,19 +6781,29 @@ export interface Volume {
 export type VolumeAccessMode = "rwo" | "rox" | "rwx";
 
 /**
- * Reference to the instance to attach the volume to.
+ * An instance a volume is attached to.
  */
 
 export interface VolumeInstanceID {
   /**
-   * The UUID of the instance that the volume is attached to.
+   * The UUID of the instance. This is a unique identifier for the instance
+   * that is generated when the instance is created. The UUID is used to
+   * reference the instance in API calls and can be used to identify the
+   * instance in all API calls that require an instance identifier.
    */
   uuid: string;
   /**
-   * The name of the instance that the volume is attached to.
+   * The name of the instance. This is a human-readable name that can be used
+   * to identify the instance. The name must be unique within the context of
+   * your account. If no name is specified, a random name is generated for
+   * you. The name can also be used to identify the instance in API calls.
    */
   name?: string;
 }
+
+/**
+ * An instance mount of a volume.
+ */
 
 export interface VolumeInstanceMount {
   /**
@@ -6654,7 +6821,7 @@ export interface VolumeInstanceMount {
 }
 
 /**
- * VolumeQuotaPolicy defines the quota policy of a volume.
+ * Quota policy for a volume.
  */
 
 export type VolumeQuotaPolicy = "static" | "dynamic";
@@ -6672,127 +6839,3 @@ export type VolumeState =
   | "busy"
   | "error"
   | "template";
-
-/**
- * Wait parameters.
- */
-
-export interface WaitInstanceByUUIDRequestBody {
-  /**
-   * The desired state to wait for.  Default is `running`.
-   */
-  state: InstanceState;
-  /**
-   * Deprecated: Use `timeout_s` instead. Timeout in milliseconds to
-   * wait for the instance to reach the desired state.  If `timeout_s` is
-   * not set, this value is converted by rounding up to the next full
-   * second. A value of -1 means to wait indefinitely.
-   */
-  timeout_ms?: number;
-  /**
-   * Timeout in seconds to wait for the instance to reach the desired
-   * state. If the timeout is reached, the request will fail with an
-   * error. A value of -1 means to wait indefinitely until the instance
-   * reaches the desired state.  No wait performed for a value of 0.
-   */
-  timeout_s?: number;
-}
-
-/**
- * A single wait operation to be applied to an instance.
- */
-
-export interface WaitInstancesRequestItem {
-  /**
-   * The desired state to wait for.  Default is `running`.
-   */
-  state?: InstanceState;
-  /**
-   * Deprecated: Use `timeout_s` instead. Timeout in milliseconds to
-   * wait for the instance to reach the desired state. If `timeout_s` is
-   * not set, this value is converted by rounding up to the next full
-   * second. A value of -1 means to wait indefinitely.
-   */
-  timeout_ms?: number;
-  /**
-   * Timeout in seconds to wait for the instance to reach the desired
-   * state. If the timeout is reached, the request will fail with an
-   * error. A value of -1 means to wait indefinitely until the instance
-   * reaches the desired state. No wait performed for a value of 0.
-   */
-  timeout_s?: number;
-  /**
-   * The UUID of the instance to wait for.  Mutually exclusive with name.
-   */
-  uuid?: string;
-  /**
-   * The name of the instance to wait for.  Mutually exclusive with UUID.
-   */
-  name?: string;
-}
-
-/**
- * The response message for waiting for one or more instance(s) to reach a
- * certain state given their UUID(s) or name(s).
- */
-
-export interface WaitInstancesResponse {
-  /**
-   * The status of the response.
-   */
-  status: ResponseStatus;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * The response data for this request.
-   */
-  data?: WaitInstancesResponseData;
-  /**
-   * A list of errors which may have occurred during the request.
-   */
-  errors?: ResponseError[];
-  /**
-   * The operation time in microseconds.  This is the time it took to process
-   * the request and generate the response.
-   */
-  op_time_us: number;
-}
-
-export interface WaitInstancesResponseData {
-  /**
-   * The instance(s) which this requested waited on.
-   */
-  instances?: WaitInstancesResponseWaitedInstance[];
-}
-
-export interface WaitInstancesResponseWaitedInstance {
-  /**
-   * The UUID of the instance.
-   */
-  uuid: string;
-  /**
-   * The name of the instance.
-   */
-  name: string;
-  /**
-   * The current state of the instance.
-   */
-  state: InstanceState;
-  /**
-   * An optional message providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  message?: string;
-  /**
-   * An optional error code providing additional information about the status.
-   * This field is useful when the status is not `success`.
-   */
-  error?: number;
-  /**
-   * The status of the response.
-   */
-  status?: ResponseStatus;
-}
