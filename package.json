@@ -1,6 +1,6 @@
 {
   "name": "@unikraft/cloud",
-  "version": "0.1.0",
+  "version": "0.1.1-next.0",
   "description": "Official JavaScript/TypeScript SDK for the Unikraft Cloud Platform API",
   "license": "BSD-3-Clause",
   "author": "Unikraft GmbH",
@@ -12,7 +12,15 @@
   "bugs": {
     "url": "https://github.com/unikraft-cloud/js-sdk/issues"
   },
-  "keywords": ["unikraft", "unikraft-cloud", "kraftcloud", "sdk", "unikernel", "cloud", "api"],
+  "keywords": [
+    "unikraft",
+    "unikraft-cloud",
+    "kraftcloud",
+    "sdk",
+    "unikernel",
+    "cloud",
+    "api"
+  ],
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -74,7 +82,11 @@
     },
     "./package.json": "./package.json"
   },
-  "files": ["dist", "README.md", "LICENSE.md"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE.md"
+  ],
   "scripts": {
     "build": "npm run build:esm && npm run build:cjs && node scripts/fixup.mjs",
     "build:esm": "tsc -p tsconfig.esm.json",
