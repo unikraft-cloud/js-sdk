@@ -15,6 +15,7 @@ import {
 import { Session } from "./core/session.js";
 import { Certificates } from "./resources/certificates.js";
 import { Instances } from "./resources/instances.js";
+import { Sandboxes } from "./resources/sandboxes/index.js";
 import { ServiceGroups } from "./resources/service-groups.js";
 import { Users } from "./resources/users.js";
 import { Volumes } from "./resources/volumes.js";
@@ -106,11 +107,17 @@ export class MetroClient extends Scope {
   readonly endpoint: MetroEndpoint;
   /** The raw API surfaces, with the platform API pinned to this metro. */
   readonly api: Api;
+  /**
+   * Sandboxes (instances carrying the sandbox plugin). Here rather than on
+   * {@link Scope}, because a sandbox lives in exactly one metro.
+   */
+  readonly sandboxes: Sandboxes;
 
-  constructor(session: Session, endpoint: MetroEndpoint) {
+  constructor(session: Session, endpoint: MetroEndpoint, client: UnikraftCloud) {
     super(session, endpoint.metro);
     this.endpoint = endpoint;
     this.api = new Api({ ...session.platform, baseUrl: endpoint.baseUrl }, session.controlPlane);
+    this.sandboxes = new Sandboxes(client, endpoint.metro);
   }
 }
 
@@ -209,7 +216,7 @@ export class UnikraftCloud extends Scope {
     const endpoint = this.session.pinned ?? { metro, baseUrl: metroBaseUrl(metro) };
     const cached = this.#metros.get(endpoint.baseUrl);
     if (cached) return cached;
-    const client = new MetroClient(this.session, endpoint);
+    const client = new MetroClient(this.session, endpoint, this);
     this.#metros.set(endpoint.baseUrl, client);
     return client;
   }
@@ -302,6 +309,15 @@ export {
   toPatchItems,
 } from "./core/patch.js";
 
+// Readiness: the poll policy shared by anything that has to wait.
+export {
+  READY_DEFAULTS,
+  isRetryableReadyError,
+  waitUntilReady,
+  type ReadyPolicy,
+  type ReadyReport,
+} from "./core/ready.js";
+
 // Pagination + response helpers.
 export { collect, paginate } from "./core/pagination.js";
 export {
@@ -375,9 +391,36 @@ export {
   type CertificateRef,
   type CertificateUpdate,
 } from "./resources/certificates.js";
+export {
+  Command,
+  Sandbox,
+  Sandboxes,
+  DEFAULT_AUTOKILL_MS,
+  DEFAULT_BOOT_TIMEOUT_S,
+  DEFAULT_PLUGIN_NAME,
+  DEFAULT_PLUGIN_ROM,
+  type CommandLogs,
+  type ConnectSandboxOptions,
+  type CreateSandboxOptions,
+  type ExecOptions,
+  type ExecResult,
+  type GetSandboxOptions,
+  type ListSandboxesOptions,
+  type LogsRawOptions,
+  type ParentsOptions,
+  type SandboxCallOptions,
+  type SandboxRef,
+  type SandboxRequestOptions,
+  type SandboxSpec,
+  type StartCommandOptions,
+  type StdinOptions,
+  type WaitCommandOptions,
+  type WriteFileOptions,
+} from "./resources/sandboxes/index.js";
 export { pluginBaseUrl } from "./core/plugin.js";
 export { Users, type Quota } from "./resources/users.js";
 
 // Wire types, namespaced per API surface.
 export type * as platform from "./api/platform/models.gen.js";
 export type * as controlplane from "./api/controlplane/models.gen.js";
+export type * as sandbox from "./api/plugins/sandbox/models.gen.js";
