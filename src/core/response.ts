@@ -15,26 +15,90 @@ export interface Envelope<T> {
 }
 
 /**
+ * The part of a `data` list entry that reports the entry's own outcome. Every
+ * bulk response repeats this shape once per resource, whatever the resource is.
+ */
+interface ResultEntry {
+  status: string;
+  message?: string;
+  error?: number;
+}
+
+/**
+ * The platform's per-entry `error` codes, mapped to the HTTP status that says
+ * the same thing. Only the codes the SDK acts on are listed, and an unlisted
+ * code leaves the status undefined.
+ *
+ * Code 8 is "no such resource". The platform answers it with HTTP 200 for a
+ * uuid or a name it does not hold, on instances and volumes alike, so the 404
+ * is the SDK's reading of the code rather than anything the response carries.
+ * {@link orAbsent} depends on that reading: without it, a lookup in a metro
+ * that does not hold the resource fails the whole search.
+ *
+ * The spec publishes no code list. It types `error` as a bare `int32` and gives
+ * `8` only as an example, so this map records observed behaviour rather than a
+ * documented contract. If the single-resource endpoints ever answer 404,
+ * `http.ts` throws before {@link unwrap} runs, and this entry stops being
+ * reachable for them.
+ */
+const ENTRY_ERROR_STATUS: ReadonlyMap<number, number> = new Map([[8, 404]]);
+
+function isFailure(value: unknown): value is ResultEntry {
+  return typeof value === "object" && value !== null && (value as ResultEntry).status === "error";
+}
+
+/**
+ * The `data` payload keys its lists by resource name (`instances`, `volumes`,
+ * and so on), and {@link unwrap} is not told which key to read. So this
+ * searches every list in the payload.
+ */
+function firstFailure(data: unknown): ResultEntry | undefined {
+  if (typeof data !== "object" || data === null) return undefined;
+  for (const value of Object.values(data)) {
+    if (!Array.isArray(value)) continue;
+    for (const entry of value) {
+      if (isFailure(entry)) return entry;
+    }
+  }
+  return undefined;
+}
+
+/**
  * Assert that a 2xx response envelope did not report a logical error and return
  * its `data` payload. The plumbing layer already throws on HTTP-level failures;
  * this catches API-level failures reported in an otherwise-200 envelope.
  *
  * @remarks
- * A bulk operation that only partly succeeded (`status: "partial_success"`)
- * carries entries in `errors` and so throws too. The whole envelope — including
- * the `data` for the parts that did succeed — is available on the thrown
- * error's `body`.
+ * The platform reports a failure in one of two places. A whole-request failure
+ * fills the top-level `errors` array. A per-resource failure instead marks the
+ * entry inside `data`, so a read of a deleted instance answers HTTP 200 with
+ * `status: "error"` and `data.instances[0].error`. Both shapes throw here. The
+ * entry supplies the message and the status when the array is absent, because
+ * the envelope's own message is only the summary `Failed to perform all
+ * operations`.
+ *
+ * A bulk operation that only partly succeeded reports `status:
+ * "partial_success"` and marks its failed entries the same way. That does not
+ * throw while the failures stay inside `data`: the caller asked for several
+ * resources, and the ones that succeeded are in the same list.
+ *
+ * The whole envelope stays available on the thrown error's `body`.
  */
 export function unwrap<T>(res: Envelope<T>): T {
-  if (res.status === "error" || (res.errors && res.errors.length > 0)) {
-    throw new UnikraftCloudError(res.message ?? "Unikraft Cloud API reported an error", {
+  const reported = res.errors?.[0];
+  if (res.status !== "error" && reported === undefined) return res.data as T;
+
+  const entry = reported === undefined ? firstFailure(res.data) : undefined;
+  const code = entry?.error;
+  throw new UnikraftCloudError(
+    entry?.message ?? res.message ?? "Unikraft Cloud API reported an error",
+    {
       kind: "http",
-      status: res.errors?.[0]?.status,
+      status: reported?.status ?? (code === undefined ? undefined : ENTRY_ERROR_STATUS.get(code)),
       errors: res.errors,
       body: res,
-    });
-  }
-  return res.data as T;
+    },
+  );
 }
 
 /**
