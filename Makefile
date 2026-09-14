@@ -6,7 +6,6 @@ CHANNEL           ?= prod-staging
 SPEC_BASE         ?= https://raw.githubusercontent.com/unikraft-cloud/openapi/refs/heads/$(CHANNEL)
 PLATFORM_SPEC     ?= $(SPEC_BASE)/platform.json
 CONTROLPLANE_SPEC ?= $(SPEC_BASE)/controlplane.json
-SANDBOX_SPEC      ?= $(SPEC_BASE)/plugins/sandbox.json
 
 # The openapi-gen code generator. While the TypeScript template functions are
 # unreleased, build it from a local checkout and point OPENAPI_GEN at the
@@ -29,7 +28,11 @@ all: generate build
 # TypeScript identifier; --namespace-flatten=strip restores the bare names the
 # hand-written layers refer to.
 .PHONY: generate
-generate: ## Regenerate every plumbing client from the OpenAPI specs.
+# A plugin's client is NOT generated here. It is generated and published from
+# the plugin-sdk repository (the sandbox plugin's is
+# `@unikraft/cloud-plugin-sandbox-api`), against the `api.tsp` that the plugins
+# repository owns. This target covers the platform and control-plane specs only.
+generate: ## Regenerate the platform and control-plane plumbing clients.
 	rm -f $(OUTPUT)/platform/*.gen.ts
 	$(OPENAPI_GEN) \
 		-i $(PLATFORM_SPEC) \
@@ -42,12 +45,6 @@ generate: ## Regenerate every plumbing client from the OpenAPI specs.
 		-o $(OUTPUT)/controlplane \
 		-t $(TEMPLATES) \
 		-v package=api
-	$(OPENAPI_GEN) \
-		-i $(SANDBOX_SPEC) \
-		-o $(OUTPUT)/plugins/sandbox \
-		-t $(TEMPLATES) \
-		-v package=api \
-		-v clientImport=../../../core/http.js
 	$(MAKE) fmt
 
 .PHONY: fmt
