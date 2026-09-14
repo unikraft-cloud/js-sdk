@@ -1,6 +1,6 @@
 {
   "name": "@unikraft/cloud",
-  "version": "0.1.0",
+  "version": "0.1.1-next.0",
   "description": "Official JavaScript/TypeScript SDK for the Unikraft Cloud Platform API",
   "license": "BSD-3-Clause",
   "author": "Unikraft GmbH",
@@ -62,14 +62,14 @@
         "default": "./dist/cjs/api/controlplane/index.js"
       }
     },
-    "./api/plugins/sandbox": {
+    "./core/http": {
       "import": {
-        "types": "./dist/esm/api/plugins/sandbox/index.d.ts",
-        "default": "./dist/esm/api/plugins/sandbox/index.js"
+        "types": "./dist/esm/core/http.d.ts",
+        "default": "./dist/esm/core/http.js"
       },
       "require": {
-        "types": "./dist/cjs/api/plugins/sandbox/index.d.ts",
-        "default": "./dist/cjs/api/plugins/sandbox/index.js"
+        "types": "./dist/cjs/core/http.d.ts",
+        "default": "./dist/cjs/core/http.js"
       }
     },
     "./package.json": "./package.json"
