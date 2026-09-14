@@ -4,7 +4,6 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "noEmit": true,
-    "types": ["node"],
     "paths": {
       "@unikraft/cloud": ["./src/index.ts"],
       "@unikraft/cloud/api": ["./src/api/index.ts"],
