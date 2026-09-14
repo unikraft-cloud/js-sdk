@@ -6,12 +6,10 @@
 // their `operationId`, and responses come back as the untouched envelope.
 //
 // The platform and control-plane APIs share one set of credentials and are
-// grouped under {@link Api}. Plugin APIs are not: a plugin answers on a single
-// instance's route, so its client is constructed per sandbox rather than per
-// account.
+// grouped under {@link Api}.
 //
 // The idiomatic ("porcelain") layer lives at the package root and is built on
-// top of this.
+// top of both.
 
 import type { ApiClientConfig } from "../core/http.js";
 import { ControlPlaneApi } from "./controlplane/index.js";
@@ -39,10 +37,8 @@ export class Api {
 
 export { ControlPlaneApi } from "./controlplane/index.js";
 export { PlatformApi } from "./platform/index.js";
-export { SandboxPluginApi } from "./plugins/sandbox/index.js";
 
 // Namespaced so the specifications' identically-named types (`models`,
 // `ImagesApi`, `ResponseStatus`, ...) do not collide.
 export * as platform from "./platform/index.js";
 export * as controlplane from "./controlplane/index.js";
-export * as sandbox from "./plugins/sandbox/index.js";
