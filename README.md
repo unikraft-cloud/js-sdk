@@ -439,8 +439,11 @@ const ukc = new UnikraftCloud({
 
 ## Runtime support
 
-`fetch` is used from the global scope. On Node.js 18+ it is built in. For older
-runtimes, or to customise transport, pass your own:
+The SDK needs Node.js 22.12 or later, and ships only ESM. From that version
+Node.js can `require()` an ESM package, so CommonJS code can load it too.
+
+`fetch` is used from the global scope, where Node.js supplies it. To use a
+different runtime, or to customise the transport, pass your own:
 
 ```ts
 import { UnikraftCloud } from "@unikraft/cloud";

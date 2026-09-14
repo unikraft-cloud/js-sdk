@@ -60,7 +60,7 @@ API rejects it inside a body.
 
 ## Prerequisites
 
-- Node.js 18+
+- Node.js 22.12+
 - Go 1.23+ (only needed to regenerate `src/api`)
 
 ```sh
@@ -70,11 +70,12 @@ npm install
 ## Common tasks
 
 ```sh
-make generate   # regenerate src/api from the OpenAPI spec (default channel: prod-staging)
-make build      # build the ESM distribution
-make typecheck  # tsc --noEmit over the whole project
-make lint       # biome check
-make test       # vitest
+make generate      # regenerate src/api from the OpenAPI spec (default channel: prod-staging)
+make build         # build the ESM distribution
+make check-package # load the built entry points from an ESM and a CommonJS consumer
+make typecheck     # tsc --noEmit over the whole project
+make lint          # biome check
+make test          # vitest
 ```
 
 ## Regenerating the client
