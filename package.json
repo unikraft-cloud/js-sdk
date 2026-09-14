@@ -1,6 +1,6 @@
 {
   "name": "@unikraft/cloud",
-  "version": "0.1.1-next.0",
+  "version": "0.1.1-next.1",
   "description": "Official JavaScript/TypeScript SDK for the Unikraft Cloud Platform API",
   "license": "BSD-3-Clause",
   "author": "Unikraft GmbH",
