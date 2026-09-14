@@ -64,7 +64,7 @@ jobs:
     - name: Type-check
       run: npm run typecheck
 
-  # The test suite and the dual ESM + CJS build cover every supported runtime.
+  # The test suite and the build cover every supported runtime.
   test:
     runs-on: ubuntu-latest
     strategy:

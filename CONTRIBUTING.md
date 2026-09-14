@@ -71,7 +71,7 @@ npm install
 
 ```sh
 make generate   # regenerate src/api from the OpenAPI spec (default channel: prod-staging)
-make build      # build the dual ESM + CJS distribution
+make build      # build the ESM distribution
 make typecheck  # tsc --noEmit over the whole project
 make lint       # biome check
 make test       # vitest

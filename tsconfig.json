@@ -13,5 +13,5 @@
       "@unikraft/cloud/core/http": ["./src/core/http.ts"]
     }
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "examples/**/*.ts", "scripts/**/*.mjs"]
+  "include": ["src/**/*.ts", "test/**/*.ts", "examples/**/*.ts"]
 }
