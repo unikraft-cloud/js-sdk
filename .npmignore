@@ -4,6 +4,7 @@ templates/
 templates-tests/
 test/
 examples/
+scripts/
 .github/
 .tmp/
 coverage/

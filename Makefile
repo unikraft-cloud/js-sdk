@@ -51,6 +51,10 @@ fmt: ## Format the generated (and all) sources.
 build: ## Build the ESM distribution.
 	$(NPM) run build
 
+.PHONY: check-package
+check-package: ## Load the built entry points from an ESM and a CommonJS consumer.
+	$(NPM) run check:package
+
 .PHONY: typecheck
 typecheck: ## Type-check the whole project without emitting.
 	$(NPM) run typecheck

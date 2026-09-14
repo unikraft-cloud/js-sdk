@@ -45,6 +45,7 @@
   "files": ["dist", "README.md", "LICENSE.md"],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "check:package": "node scripts/check-package.mjs",
     "clean": "rm -rf dist",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "biome check .",
