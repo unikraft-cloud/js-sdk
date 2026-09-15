@@ -80,7 +80,13 @@ jobs:
           echo "::error::prod-stable must publish a stable version, got $version"
           exit 1
           ;;
-        next:*-next.*) ;;
+        next:*-next.*)
+          base=${version%%-*}
+          if npm view "$name@$base" version >/dev/null 2>&1; then
+            echo "::error::$name@$base is already published, so prod-staging must publish a prerelease of a later version, got $version. Run: npm version prepatch --preid next"
+            exit 1
+          fi
+          ;;
         next:*)
           echo "::error::prod-staging must publish a -next.N prerelease, got $version"
           exit 1

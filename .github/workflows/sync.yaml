@@ -58,6 +58,7 @@ jobs:
     #
     #   prod-staging  0.1.0        -> 0.1.1-next.0   (prepatch)
     #                 0.1.1-next.0 -> 0.1.1-next.1   (prerelease)
+    #                 0.1.1-next.1 -> 0.1.2-next.0   (prepatch, once 0.1.1 is on npm)
     #   prod-stable   0.1.1-next.1 -> 0.1.1          (patch, promotes)
     #                 0.1.1        -> 0.1.2          (patch)
     - name: Bump version
@@ -69,6 +70,7 @@ jobs:
           exit 0
         fi
 
+        name=$(node -p 'require("./package.json").name')
         current=$(node -p 'require("./package.json").version')
         if [ "${{ inputs.channel }}" = "prod-stable" ]; then
           # `npm version patch` drops an existing prerelease suffix rather than
@@ -76,8 +78,14 @@ jobs:
           npm version patch --no-git-tag-version
         else
           case "$current" in
-          *-*) npm version prerelease --preid next --no-git-tag-version ;;
-          *)   npm version prepatch --preid next --no-git-tag-version ;;
+          *-*)
+            if npm view "$name@${current%%-*}" version >/dev/null 2>&1; then
+              npm version prepatch --preid next --no-git-tag-version
+            else
+              npm version prerelease --preid next --no-git-tag-version
+            fi
+            ;;
+          *) npm version prepatch --preid next --no-git-tag-version ;;
           esac
         fi
 

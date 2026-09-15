@@ -150,15 +150,45 @@ channels bump differently to avoid collisions:
 
 - `prod-staging` bumps the prerelease — `0.1.0` → `0.1.1-next.0` →
   `0.1.1-next.1` → …
+  After `prod-stable` publishes `0.1.1`, the next bump starts the next patch:
+  `0.1.1-next.1` → `0.1.2-next.0`. npm sorts `0.1.1-next.2` below `0.1.1`, so
+  `next` would point at an older SDK than `latest`.
 - `prod-stable` bumps the patch, which promotes a prerelease by dropping its
   suffix — `0.1.1-next.1` → `0.1.1`, then `0.1.1` → `0.1.2`.
 
 To cut a release outside a sync, bump `package.json` by hand, keeping the shape
 required by the channel (`npm version prerelease --preid next` on
-`prod-staging`, `npm version patch` on `prod-stable`). The release workflow
+`prod-staging`, `npm version patch` on `prod-stable`). If `prod-stable` already
+published the base version, use `npm version prepatch --preid next` on
+`prod-staging`. The release workflow
 skips pushes whose version is already published, and fails if the version shape
 does not match the channel — this is what keeps `latest` from ever pointing at a
-prerelease.
+prerelease. It also fails if `prod-staging` tries to publish a prerelease of a
+version that is already on npm.
+
+`npm version` writes every array in `package.json` on its own line, and
+`npm run lint` rejects that. Run `npx biome format --write package.json` after
+each bump.
+
+### Promote `prod-staging` to `prod-stable`
+
+`prod-stable` receives code only through a promotion pull request. Cut the
+branch from `prod-stable`, not from `prod-staging`:
+
+```sh
+git switch -c release/<version> origin/prod-stable
+git merge --no-ff -X theirs origin/prod-staging
+npm version patch --no-git-tag-version
+git commit -s -am "chore: Bump the version to <version>"
+```
+
+A branch cut from `prod-staging` conflicts on `package.json` from the second
+promotion on. The cause is the version commit on `prod-stable`, which never
+reaches `prod-staging`. The merge with `-X theirs` resolves that conflict to
+the `prod-staging` side, and the bump then sets the stable version.
+
+`-X theirs` also discards a change that exists only on `prod-stable` where it
+conflicts with `prod-staging`. Land every fix on `prod-staging` first.
 
 ## Code style
 
