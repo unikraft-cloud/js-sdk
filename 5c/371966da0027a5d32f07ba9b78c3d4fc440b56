@@ -1,0 +1,43 @@
+package-lock.json
+  h_3a8cdd8dbdd7a3 3,9
+  h_3a8cdd8dbdd7a3 12,31-33,47-54,58-60,75-77,92-94,99-101,112-114,119-121,132-134,139-141,152-154,159-161,172-174,189-191
+.github/workflows/release.yaml
+  h_3a8cdd8dbdd7a3 3-5,7-16,35,38-40,46-50,63-72,75,77-88,90-93,96-109,112,115,119-120,125-129,133,136,140,144,147-170,177-193
+  h_3a8cdd8dbdd7a3 175-176
+.github/workflows/sync.yaml
+  h_3a8cdd8dbdd7a3 52-56,60,62,66,71-72,77
+CONTRIBUTING.md
+  h_3a8cdd8dbdd7a3 130-131,133-134,145,147-149,151-178,196
+package.json
+  h_3a8cdd8dbdd7a3 3
+  h_3a8cdd8dbdd7a3 15-23,53-57,70
+biome.json
+  h_3a8cdd8dbdd7a3 2,9-16,24,28,46,49,52
+src/core/resource.ts
+  h_3a8cdd8dbdd7a3 9,18,22
+src/index.ts
+  h_3a8cdd8dbdd7a3 243,246-247,249-265,274,282-284,287,290-291,298,301-303,306,308,314,317-326,329,332,334,336-338,343,346,349,351,354-356,359,361-375
+src/resources/certificates.ts
+  h_3a8cdd8dbdd7a3 8,14,16,23
+src/resources/instances.ts
+  h_3a8cdd8dbdd7a3 8,15,17,27
+src/resources/service-groups.ts
+  h_3a8cdd8dbdd7a3 8,15,17,24
+src/resources/users.ts
+  h_3a8cdd8dbdd7a3 6,8
+src/resources/volumes.ts
+  h_3a8cdd8dbdd7a3 8,15,17,24
+test/client.test.ts
+  h_3a8cdd8dbdd7a3 7,13-14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5c371966da0027a5d32f07ba9b78c3d4fc440b56",
+  "prompts": {},
+  "humans": {
+    "h_3a8cdd8dbdd7a3": {
+      "author": "aabedraba <abdallah@unikraft.com>"
+    }
+  }
+}
