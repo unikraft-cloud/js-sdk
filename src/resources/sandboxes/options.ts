@@ -119,6 +119,19 @@ export function started(instance: Instance): boolean {
  */
 export function rangeHeader(offset?: number, limit?: number): string | undefined {
   if (offset === undefined && limit === undefined) return undefined;
+  // The header's grammar only holds integers: a `NaN`, an infinity, or a
+  // fraction would reach the wire as `bytes=NaN-` and the like.
+  for (const [name, value] of [
+    ["offset", offset],
+    ["limit", limit],
+  ] as const) {
+    if (value !== undefined && !Number.isSafeInteger(value)) {
+      throw new UnikraftCloudError(
+        `\`${name}\` must be a whole number of bytes. Received ${value}.`,
+        { kind: "config" },
+      );
+    }
+  }
   if (limit !== undefined && limit <= 0) {
     throw new UnikraftCloudError(
       `A \`limit\` of ${limit} asks for no bytes at all; omit it to read to the end of the stream.`,
@@ -240,6 +253,33 @@ export function assertNoClientConfig(opts: object, door: string): void {
     `${door} runs through a client that already exists, so ${keys} ${verb} be ignored. To fix it, ${prose(remedies, "or")}.`,
     { kind: "config" },
   );
+}
+
+/**
+ * Refuse the create fields `SandboxSpec` excludes. The type already omits
+ * them, so this catches the callers a type cannot: JavaScript, and an object
+ * widened along the way.
+ */
+export function assertSandboxSpec(spec: object): void {
+  const record = spec as Record<string, unknown>;
+  if (record.replicas !== undefined) {
+    throw new UnikraftCloudError(
+      "A sandbox addresses exactly one instance, so `replicas` would create instances that no sandbox wraps. Create one sandbox per call, or create replicated instances through `instances.create()`.",
+      { kind: "config" },
+    );
+  }
+  const managed = ["autostart", "timeout_s", "wait_timeout_ms"].filter(
+    (key) => record[key] !== undefined,
+  );
+  if (managed.length > 0) {
+    throw new UnikraftCloudError(
+      `\`sandboxes.create()\` sets ${prose(
+        managed.map((key) => `\`${key}\``),
+        "and",
+      )} itself, because a plugin cannot answer in a stopped instance. Control the boot wait with \`bootTimeoutSeconds\` instead.`,
+      { kind: "config" },
+    );
+  }
 }
 
 /** Drop the keys {@link assertNoClientConfig} rejects, once they are spent. */

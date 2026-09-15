@@ -59,18 +59,22 @@ export type SandboxRequestOptions = Omit<CallOptions, "baseUrl">;
 export interface CreateSandboxOptions extends SandboxRequestOptions {
   /**
    * How long the create call waits for the virtual machine to reach `running`,
-   * in seconds. Defaults to {@link DEFAULT_BOOT_TIMEOUT_S}. Raise it for an
-   * image that is large or not yet cached in the metro.
+   * in seconds. Defaults to {@link DEFAULT_BOOT_TIMEOUT_S}, or to no wait at
+   * all with `ready: false`. Raise it for an image that is large or not yet
+   * cached in the metro.
    */
   bootTimeoutSeconds?: number;
   /**
    * How to wait for the plugin to answer, or `false` to return as soon as the
-   * instance exists. See {@link ReadyPolicy}.
+   * instance exists, without a boot wait. See {@link ReadyPolicy}.
    *
-   * `create` waits by default, having just booted the instance. `connect` and
-   * `sandboxes.get()` do not, since the sandbox was already there. Pass
-   * `ready: {}` there to probe anyway, after a start or a resume from
-   * `standby`, where the plugin reloads.
+   * `create` waits by default, because it just booted the instance, and it
+   * deletes the instance it made when the wait fails, so a broken sandbox does
+   * not linger. Pass `ready: false` to keep a failed sandbox for inspection.
+   *
+   * `connect` and `sandboxes.get()` do not wait, since the sandbox was already
+   * there, and they never delete it. Pass `ready: {}` there to probe anyway,
+   * after a start or a resume from `standby`, where the plugin reloads.
    */
   ready?: ReadyPolicy | false;
 }
@@ -127,7 +131,7 @@ export interface ListSandboxesOptions extends CallOptions {
  * Options for {@link Sandbox.start}. `cwd` and `env` go into the run request as
  * they are, so they are the plugin's own fields rather than copies of them.
  */
-export type StartCommandOptions = CallOptions &
+export type StartCommandOptions = SandboxRequestOptions &
   Pick<sandboxModels.RunCommandRequest, "cwd" | "env">;
 
 /** Options for {@link Sandbox.exec}. */
@@ -169,7 +173,7 @@ export interface CommandLogs
 }
 
 /** Options for {@link Command.wait}. */
-export interface WaitCommandOptions extends CallOptions {
+export interface WaitCommandOptions extends SandboxRequestOptions {
   /**
    * Give up after this many seconds and return; decimals are accepted. Without
    * it the call blocks until the command exits.
@@ -178,7 +182,7 @@ export interface WaitCommandOptions extends CallOptions {
 }
 
 /** Options for {@link Command.logsRaw}. */
-export interface LogsRawOptions extends CallOptions {
+export interface LogsRawOptions extends SandboxRequestOptions {
   /**
    * First byte to read. A negative value reads that many bytes from the end of
    * the stream, and cannot be combined with `limit`.
@@ -189,19 +193,19 @@ export interface LogsRawOptions extends CallOptions {
 }
 
 /** Options for {@link Command.stdin}. */
-export interface StdinOptions extends CallOptions {
+export interface StdinOptions extends SandboxRequestOptions {
   /** Close standard input after writing this data. */
   eof?: boolean;
 }
 
 /** Options for {@link Sandbox.writeFile}. */
-export interface WriteFileOptions extends CallOptions {
+export interface WriteFileOptions extends SandboxRequestOptions {
   /** Append to the file instead of truncating it. Defaults to `false`. */
   append?: boolean;
 }
 
 /** Options for {@link Sandbox.mkdir} and {@link Sandbox.upload}. */
-export interface ParentsOptions extends CallOptions {
+export interface ParentsOptions extends SandboxRequestOptions {
   /** Create missing parent directories. Defaults to `true`. */
   parents?: boolean;
 }

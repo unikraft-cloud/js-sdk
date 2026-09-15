@@ -5,7 +5,7 @@
 // with:
 //   UKC_TOKEN=... npx tsx examples/sandbox.ts
 
-import { Sandbox, UnikraftCloud, UnikraftCloudError } from "@unikraft/cloud";
+import { isUnikraftCloudError, Sandbox, UnikraftCloud } from "@unikraft/cloud";
 
 async function hotPath() {
   // Nothing is named, so the token comes from `UKC_TOKEN`, the image from
@@ -97,7 +97,9 @@ async function main() {
 }
 
 main().catch((err) => {
-  if (err instanceof UnikraftCloudError) {
+  // The brand-aware guard, not `instanceof`: a plugin package can carry its
+  // own copy of the SDK, whose errors are branded but not the same class.
+  if (isUnikraftCloudError(err)) {
     console.error(`API error (${err.status ?? "?"}): ${err.message}`);
     process.exit(1);
   }

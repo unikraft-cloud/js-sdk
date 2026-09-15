@@ -13,7 +13,7 @@
 
 import { SandboxPluginApi } from "@unikraft/cloud-plugin-sandbox-api";
 import { readEnv } from "../../core/env.js";
-import { type CallOptions, UnikraftCloudError } from "../../core/http.js";
+import { type CallOptions, isUnikraftCloudError, UnikraftCloudError } from "../../core/http.js";
 import type { Metro, MetroEndpoint, MetroScope } from "../../core/metro.js";
 import { pluginBaseUrl } from "../../core/plugin.js";
 import { type ReadyPolicy, waitUntilReady } from "../../core/ready.js";
@@ -25,6 +25,7 @@ import { type Instance, type InstanceHandle, Instances } from "../instances.js";
 import { Command } from "./command.js";
 import {
   assertNoClientConfig,
+  assertSandboxSpec,
   callOptions,
   DEFAULT_AUTOKILL_MS,
   DEFAULT_BOOT_TIMEOUT_S,
@@ -47,6 +48,7 @@ import type {
   ParentsOptions,
   SandboxCallOptions,
   SandboxRef,
+  SandboxRequestOptions,
   SandboxSpec,
   StartCommandOptions,
   WriteFileOptions,
@@ -170,7 +172,9 @@ export class Sandbox implements AsyncDisposable {
    * @example
    * const sandbox = await Sandbox.connect({ uuid, metro: "fra" });
    */
-  static connect(ref: SandboxRef, opts: ConnectSandboxOptions = {}): Promise<Sandbox> {
+  // `async` so a synchronous failure, a missing token mostly, rejects the
+  // returned promise as `create` does, instead of throwing before it exists.
+  static async connect(ref: SandboxRef, opts: ConnectSandboxOptions = {}): Promise<Sandbox> {
     const client = resolveClient(opts);
     const scope = opts.metros ?? opts.metro ?? client.scope;
     return new Sandboxes(client, scope).get(ref, withoutClientConfig(opts));
@@ -200,15 +204,15 @@ export class Sandbox implements AsyncDisposable {
    * @example
    * await sandbox.ready({ timeoutMs: 10_000 });
    */
-  async ready(policy: ReadyPolicy = {}, opts: CallOptions = {}): Promise<void> {
-    const call = {
-      ...callOptions(opts),
-      ...(policy.signal === undefined ? {} : { signal: policy.signal }),
-    };
+  async ready(policy: ReadyPolicy = {}, opts: SandboxRequestOptions = {}): Promise<void> {
+    const call = callOptions(opts);
     // `ListCommands` is the probe the specification nominates
     // (`x-unikraft-plugin-readiness`), and asking it absorbs the boot: a
     // still-booting instance answers 404 or 502, which the loop retries.
-    await waitUntilReady(() => this.api.commands.listCommands(call), policy, {
+    //
+    // The waiter's signal carries both the policy's signal and the deadline,
+    // so a probe in flight stops when either fires.
+    await waitUntilReady((signal) => this.api.commands.listCommands({ ...call, signal }), policy, {
       what: `sandbox ${this.uuid}`,
       diagnose: () => this.#diagnose(),
     });
@@ -344,7 +348,7 @@ export class Sandbox implements AsyncDisposable {
   }
 
   /** Every command the sandbox knows about, in the order they were started. */
-  async commands(opts: CallOptions = {}): Promise<Command[]> {
+  async commands(opts: SandboxRequestOptions = {}): Promise<Command[]> {
     const res = await this.api.commands.listCommands(callOptions(opts));
     return unwrapList(res, "commands").map((uuid) => new Command(this, uuid));
   }
@@ -364,7 +368,7 @@ export class Sandbox implements AsyncDisposable {
    * const bytes = await sandbox.readFile("/tmp/a.txt");
    * console.log(new TextDecoder().decode(bytes));
    */
-  readFile(path: string, opts: CallOptions = {}): Promise<Uint8Array> {
+  readFile(path: string, opts: SandboxRequestOptions = {}): Promise<Uint8Array> {
     // The raw read, not the base64 one, which costs 33 % more bytes.
     return this.api.fs.readRawFile({ body: { path }, ...callOptions(opts) });
   }
@@ -486,35 +490,65 @@ export class Sandboxes {
    */
   async create(spec: SandboxSpec = {}, opts: CreateSandboxOptions = {}): Promise<Sandbox> {
     assertNoClientConfig(opts, "`sandboxes.create()`");
-    const { rom, pluginName: named, ...instanceSpec } = spec;
+    assertSandboxSpec(spec);
+    const { rom, pluginName: named, image: namedImage, ...instanceSpec } = spec;
     const pluginName = named ?? DEFAULT_PLUGIN_NAME;
+    // `template`, `branch_from` and `checkpoint` are creation sources of their
+    // own, mutually exclusive with `image`, so the default image applies only
+    // when the spec names no source at all.
+    const otherSource =
+      instanceSpec.template !== undefined ||
+      instanceSpec.branch_from !== undefined ||
+      instanceSpec.checkpoint !== undefined;
     // `||`, not `??`: an empty image is as unusable as an absent one, so it
     // falls through to the next source rather than reaching the platform.
-    const image = instanceSpec.image || readEnv("UKC_SANDBOX_IMAGE") || DEFAULT_IMAGE;
+    const image =
+      namedImage || (otherSource ? undefined : readEnv("UKC_SANDBOX_IMAGE") || DEFAULT_IMAGE);
 
     const call = callOptions(opts);
     const instance = await this.#instances.create(
       {
         ...instanceSpec,
-        image,
+        ...(image === undefined ? {} : { image }),
         memory_mb: instanceSpec.memory_mb ?? DEFAULT_MEMORY_MB,
         autokill: instanceSpec.autokill ?? { time_ms: DEFAULT_AUTOKILL_MS },
         plugins: withSandboxPlugin(instanceSpec.plugins, pluginName, rom),
         autostart: true,
-        timeout_s: opts.bootTimeoutSeconds ?? DEFAULT_BOOT_TIMEOUT_S,
+        // A nonzero `timeout_s` makes the platform wait for `running`, which
+        // `ready: false` promises not to do; zero sends no wait at all.
+        timeout_s: opts.bootTimeoutSeconds ?? (opts.ready === false ? 0 : DEFAULT_BOOT_TIMEOUT_S),
       },
       call,
     );
 
     const sandbox = this.#attach(instance, pluginName);
     if (opts.ready !== false) {
-      await sandbox.ready(
-        {
-          ...(call.signal === undefined ? {} : { signal: call.signal }),
-          ...opts.ready,
-        },
-        call,
-      );
+      try {
+        await sandbox.ready(
+          {
+            ...(call.signal === undefined ? {} : { signal: call.signal }),
+            ...opts.ready,
+          },
+          call,
+        );
+      } catch (err) {
+        // This call created the machine, so a failure here would leak it:
+        // `autokill` counts stopped time only, and a running instance with a
+        // silent plugin never stops on its own. The readiness error stays the
+        // one thrown, because it carries the diagnosis. The delete must not
+        // reuse the caller's signal, which is aborted when the caller gave up.
+        const deleted = await sandbox
+          .delete({ ...(call.headers && { headers: call.headers }) })
+          .then(
+            () => true,
+            () => false,
+          );
+        if (deleted && isUnikraftCloudError(err)) {
+          err.message +=
+            " The sandbox was deleted. To inspect a sandbox that fails like this, create it with `{ ready: false }`, which skips this wait and keeps the sandbox for you to probe and delete yourself.";
+        }
+        throw err;
+      }
     }
     return sandbox;
   }

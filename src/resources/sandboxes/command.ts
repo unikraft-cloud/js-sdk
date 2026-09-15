@@ -5,12 +5,17 @@
 
 import type * as sandboxModels from "@unikraft/cloud-plugin-sandbox-api/models";
 import { decodeText, toBase64 } from "../../core/base64.js";
-import type { CallOptions } from "../../core/http.js";
 import { unwrap } from "../../core/response.js";
 import { callOptions, rangeHeader } from "./options.js";
 // Type-only, and so erased: a `Command` belongs to a `Sandbox`, which builds it.
 import type { Sandbox } from "./sandbox.js";
-import type { CommandLogs, LogsRawOptions, StdinOptions, WaitCommandOptions } from "./types.js";
+import type {
+  CommandLogs,
+  LogsRawOptions,
+  SandboxRequestOptions,
+  StdinOptions,
+  WaitCommandOptions,
+} from "./types.js";
 
 /**
  * A command inside a sandbox. Each method is exactly one request, so a caller
@@ -36,7 +41,7 @@ export class Command {
    * Read the command's command line, working directory and `exitcode`, which is
    * `null` while it runs. The only operation that reports the exit code.
    */
-  async inspect(opts: CallOptions = {}): Promise<sandboxModels.GetCommandData> {
+  async inspect(opts: SandboxRequestOptions = {}): Promise<sandboxModels.GetCommandData> {
     const res = await this.sandbox.api.commands.getCommandByUuid(this.uuid, callOptions(opts));
     return unwrap(res);
   }
@@ -64,7 +69,7 @@ export class Command {
   }
 
   /** Both output streams, decoded. */
-  async logs(opts: CallOptions = {}): Promise<CommandLogs> {
+  async logs(opts: SandboxRequestOptions = {}): Promise<CommandLogs> {
     const res = await this.sandbox.api.commands.getCommandLogs(this.uuid, callOptions(opts));
     const data = unwrap(res);
     return {
@@ -124,7 +129,7 @@ export class Command {
    * @example
    * await command.signal("TERM");   // or 15, or "SIGTERM"
    */
-  async signal(signal: number | string, opts: CallOptions = {}): Promise<void> {
+  async signal(signal: number | string, opts: SandboxRequestOptions = {}): Promise<void> {
     unwrap(
       await this.sandbox.api.commands.signalCommand(this.uuid, {
         body: { signal },
@@ -134,12 +139,12 @@ export class Command {
   }
 
   /** Delete the command record and its logs. */
-  async delete(opts: CallOptions = {}): Promise<void> {
+  async delete(opts: SandboxRequestOptions = {}): Promise<void> {
     unwrap(await this.sandbox.api.commands.deleteCommandByUuid(this.uuid, callOptions(opts)));
   }
 
   /** Delete the command's logs, keeping the command record. */
-  async deleteLogs(opts: CallOptions = {}): Promise<void> {
+  async deleteLogs(opts: SandboxRequestOptions = {}): Promise<void> {
     unwrap(await this.sandbox.api.commands.deleteCommandLogsByUuid(this.uuid, callOptions(opts)));
   }
 }

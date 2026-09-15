@@ -5,8 +5,8 @@
 //
 // `npm test` does not collect this file. Run it yourself:
 //
-//   nub run test:e2e          # once
-//   nub run test:e2e:watch    # again on every save
+//   npm run test:e2e          # once
+//   npm run test:e2e:watch    # again on every save
 //
 // with `UKC_TOKEN` in `.env`.
 

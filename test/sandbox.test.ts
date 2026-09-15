@@ -7,7 +7,11 @@
 
 import { expect, onTestFinished, test, vi } from "vitest";
 import { Sandbox, UnikraftCloud, UnikraftCloudError } from "../src/index.js";
-import { DEFAULT_IMAGE, DEFAULT_PLUGIN_ROM } from "../src/resources/sandboxes/options.js";
+import {
+  DEFAULT_BOOT_TIMEOUT_S,
+  DEFAULT_IMAGE,
+  DEFAULT_PLUGIN_ROM,
+} from "../src/resources/sandboxes/options.js";
 
 function json(data: unknown) {
   return new Response(JSON.stringify({ status: "success", data, op_time_us: 1 }), {
@@ -157,6 +161,57 @@ test("3c. the static doors still spend and then drop the client options", async 
   expect(sb2.metro).toBe("dal");
 });
 
+test("4. a missing token rejects the promise instead of throwing synchronously", async () => {
+  vi.stubEnv("UKC_TOKEN", "");
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+  // A synchronous throw would fail this test on the call itself, before the
+  // `expect` runs, which is exactly the regression this guards against.
+  const pending = Sandbox.connect({ uuid: "u1", metro: "fra" });
+  await expect(pending).rejects.toMatchObject({ kind: "config" });
+});
+
+test("9. the create fields the spec excludes are refused, not forwarded", async () => {
+  const { calls, fetchImpl } = mock();
+  const ukc = new UnikraftCloud({ token: "t", metro: "fra", fetch: fetchImpl });
+  // The spec type excludes these keys, so a TypeScript caller never gets here;
+  // the cast stands in for the JavaScript caller who does.
+  const sneak = (spec: unknown) => spec as never;
+
+  await expect(
+    ukc.metro("fra").sandboxes.create(sneak({ image: "img", replicas: 2 })),
+  ).rejects.toMatchObject({ kind: "config" });
+  for (const field of [{ autostart: false }, { timeout_s: 5 }, { wait_timeout_ms: 5000 }]) {
+    await expect(
+      ukc.metro("fra").sandboxes.create(sneak({ image: "img", ...field })),
+    ).rejects.toThrow(/bootTimeoutSeconds/);
+  }
+  expect(calls.filter((c) => c.method === "POST")).toHaveLength(0);
+});
+
+test("11. the readiness deadline aborts the probe in flight", async () => {
+  const probeSignals: Array<AbortSignal | undefined> = [];
+  const { fetchImpl } = mock();
+  // The plugin endpoint never answers, so only the waiter's signal can stop
+  // the request underneath.
+  const hanging = vi.fn(async (input: unknown, init: { signal?: AbortSignal } = {}) => {
+    if (String(input).includes("/plugins/")) {
+      probeSignals.push(init.signal);
+      return new Promise<Response>(() => {});
+    }
+    return fetchImpl(input, init);
+  });
+  const ukc = new UnikraftCloud({ token: "t", metro: "fra", fetch: hanging as never });
+  const err = await ukc
+    .metro("fra")
+    .sandboxes.create({ image: "img" }, { ready: { timeoutMs: 20, initialDelayMs: 1 } })
+    .catch((e) => e as UnikraftCloudError);
+  expect(err).toBeInstanceOf(UnikraftCloudError);
+  expect((err as UnikraftCloudError).kind).toBe("timeout");
+  expect(probeSignals[0]?.aborted).toBe(true);
+});
+
 test("5a. a pinned staging cluster serves the plugin endpoint", async () => {
   const { calls, fetchImpl } = mock();
   const ukc = new UnikraftCloud({
@@ -179,11 +234,20 @@ test("5a. a pinned staging cluster serves the plugin endpoint", async () => {
 });
 
 test("5b. a discovered metro's own endpoint is used, not one built from the code", async () => {
-  const { fetchImpl } = mock();
+  const { calls, fetchImpl } = mock();
   const ukc = new UnikraftCloud({ token: "t", fetch: fetchImpl });
   const sb = await Sandbox.connect({ uuid: "u1" }, { client: ukc });
   expect(sb.metro).toBe("fra");
   expect(sb.baseUrl).toBe("https://api.fra-2.internal.example/v1/instances/u1/plugins/sandbox");
+
+  // The instance underneath is addressed through the same discovered endpoint,
+  // not through one rebuilt from the metro code.
+  calls.length = 0;
+  await sb.delete();
+  expect(calls.length).toBeGreaterThan(0);
+  for (const call of calls) {
+    expect(new URL(call.url).origin).toBe("https://api.fra-2.internal.example");
+  }
 });
 
 test("6. a timed-out command is not deleted", async () => {
@@ -236,32 +300,81 @@ test("8. a sandbox takes the defaults the spec leaves out", async () => {
   vi.stubEnv("UKC_SANDBOX_IMAGE", "");
   await ukc.metro("fra").sandboxes.create({ image: "" });
   expect(calls[0]?.body.image).toBe(DEFAULT_IMAGE);
+
+  // `template`, `branch_from` and `checkpoint` are creation sources of their
+  // own, mutually exclusive with `image`, so no default image rides along.
+  vi.stubEnv("UKC_SANDBOX_IMAGE", "from-env");
+  for (const source of [
+    { template: { uuid: "t1" } },
+    { branch_from: { name: "other" } },
+    { checkpoint: { name: "cp1" } },
+  ]) {
+    calls.length = 0;
+    await ukc.metro("fra").sandboxes.create(source);
+    expect(calls[0]?.body.image).toBeUndefined();
+  }
+
+  // `ready: false` returns as soon as the instance exists, so the boot wait
+  // defaults to zero there. An explicit wait still wins.
+  calls.length = 0;
+  await ukc.metro("fra").sandboxes.create({ image: "img" });
+  expect(calls[0]?.body.timeout_s).toBe(DEFAULT_BOOT_TIMEOUT_S);
+  calls.length = 0;
+  await ukc.metro("fra").sandboxes.create({ image: "img" }, { ready: false });
+  expect(calls[0]?.body.timeout_s).toBe(0);
+  calls.length = 0;
+  await ukc
+    .metro("fra")
+    .sandboxes.create({ image: "img" }, { ready: false, bootTimeoutSeconds: 10 });
+  expect(calls[0]?.body.timeout_s).toBe(10);
 });
 
-test("12. a zero limit is refused", async () => {
-  const { fetchImpl } = mock();
+test.each([
+  { what: "a zero limit", opts: { limit: 0 } },
+  { what: "a fractional limit", opts: { limit: 2.5 } },
+  { what: "a NaN offset", opts: { offset: Number.NaN } },
+  { what: "an infinite offset", opts: { offset: Number.NEGATIVE_INFINITY } },
+])("12. $what is refused before it reaches the wire", async ({ opts }) => {
+  const { calls, fetchImpl } = mock();
   const ukc = new UnikraftCloud({ token: "t", metro: "fra", fetch: fetchImpl });
   const sb = await ukc.metro("fra").sandboxes.create({ image: "img" });
-  await expect(sb.command("c1").logsRaw("stdout", { limit: 0 })).rejects.toMatchObject({
+  calls.length = 0;
+  await expect(sb.command("c1").logsRaw("stdout", opts)).rejects.toMatchObject({
     kind: "config",
   });
+  expect(calls).toHaveLength(0);
 });
 
 test("10. a readiness timeout carries no status", async () => {
-  const { fetchImpl } = mock((url) =>
+  const { calls, fetchImpl } = mock((url) =>
     url.includes("/plugins/")
       ? new Response("{}", { status: 404, headers: { "content-type": "application/json" } })
       : undefined,
   );
   const ukc = new UnikraftCloud({ token: "t", metro: "fra", fetch: fetchImpl });
+  const wait = { ready: { timeoutMs: 30, initialDelayMs: 1 } };
   const err = await ukc
     .metro("fra")
-    .sandboxes.create({ image: "img" }, { ready: { timeoutMs: 30, initialDelayMs: 1 } })
+    .sandboxes.create({ image: "img" }, wait)
     .catch((e) => e as UnikraftCloudError);
   expect(err).toBeInstanceOf(UnikraftCloudError);
   expect((err as UnikraftCloudError).kind).toBe("timeout");
   expect((err as UnikraftCloudError).status).toBeUndefined();
   expect((err as UnikraftCloudError).message).toMatch(/the instance is running/);
+
+  // `create` made the machine, so it deletes it on the way out and says so.
+  expect(calls.some((c) => c.method === "DELETE")).toBe(true);
+  expect((err as UnikraftCloudError).message).toMatch(/The sandbox was deleted/);
+
+  // `get` did not make the machine, so a failed probe leaves it alone.
+  calls.length = 0;
+  const err2 = await ukc
+    .metro("fra")
+    .sandboxes.get({ uuid: "u1" }, wait)
+    .catch((e) => e as UnikraftCloudError);
+  expect((err2 as UnikraftCloudError).kind).toBe("timeout");
+  expect((err2 as UnikraftCloudError).message).not.toMatch(/deleted/);
+  expect(calls.some((c) => c.method === "DELETE")).toBe(false);
 });
 
 test("10b. an instance that never ran is diagnosed as a pull, not a crash", async () => {
