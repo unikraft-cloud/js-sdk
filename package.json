@@ -1,6 +1,6 @@
 {
   "name": "@unikraft/cloud",
-  "version": "0.1.1-next.0",
+  "version": "0.1.1-next.1",
   "description": "Official JavaScript/TypeScript SDK for the Unikraft Cloud Platform API",
   "license": "BSD-3-Clause",
   "author": "Unikraft GmbH",
@@ -15,70 +15,37 @@
   "keywords": ["unikraft", "unikraft-cloud", "kraftcloud", "sdk", "unikernel", "cloud", "api"],
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12"
   },
   "sideEffects": false,
-  "main": "./dist/cjs/index.js",
-  "module": "./dist/esm/index.js",
   "types": "./dist/esm/index.d.ts",
   "exports": {
     ".": {
-      "import": {
-        "types": "./dist/esm/index.d.ts",
-        "default": "./dist/esm/index.js"
-      },
-      "require": {
-        "types": "./dist/cjs/index.d.ts",
-        "default": "./dist/cjs/index.js"
-      }
+      "types": "./dist/esm/index.d.ts",
+      "default": "./dist/esm/index.js"
     },
     "./api": {
-      "import": {
-        "types": "./dist/esm/api/index.d.ts",
-        "default": "./dist/esm/api/index.js"
-      },
-      "require": {
-        "types": "./dist/cjs/api/index.d.ts",
-        "default": "./dist/cjs/api/index.js"
-      }
+      "types": "./dist/esm/api/index.d.ts",
+      "default": "./dist/esm/api/index.js"
     },
     "./api/platform": {
-      "import": {
-        "types": "./dist/esm/api/platform/index.d.ts",
-        "default": "./dist/esm/api/platform/index.js"
-      },
-      "require": {
-        "types": "./dist/cjs/api/platform/index.d.ts",
-        "default": "./dist/cjs/api/platform/index.js"
-      }
+      "types": "./dist/esm/api/platform/index.d.ts",
+      "default": "./dist/esm/api/platform/index.js"
     },
     "./api/controlplane": {
-      "import": {
-        "types": "./dist/esm/api/controlplane/index.d.ts",
-        "default": "./dist/esm/api/controlplane/index.js"
-      },
-      "require": {
-        "types": "./dist/cjs/api/controlplane/index.d.ts",
-        "default": "./dist/cjs/api/controlplane/index.js"
-      }
+      "types": "./dist/esm/api/controlplane/index.d.ts",
+      "default": "./dist/esm/api/controlplane/index.js"
     },
     "./core/http": {
-      "import": {
-        "types": "./dist/esm/core/http.d.ts",
-        "default": "./dist/esm/core/http.js"
-      },
-      "require": {
-        "types": "./dist/cjs/core/http.d.ts",
-        "default": "./dist/cjs/core/http.js"
-      }
+      "types": "./dist/esm/core/http.d.ts",
+      "default": "./dist/esm/core/http.js"
     },
     "./package.json": "./package.json"
   },
   "files": ["dist", "README.md", "LICENSE.md"],
   "scripts": {
-    "build": "npm run build:esm && npm run build:cjs && node scripts/fixup.mjs",
-    "build:esm": "tsc -p tsconfig.esm.json",
-    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build": "tsc -p tsconfig.build.json",
+    "check:package": "node scripts/check-package.mjs",
     "clean": "rm -rf dist",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "biome check .",
@@ -90,7 +57,7 @@
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
     "@types/node": "^22.19.1",
-    "typescript": "^5.6.3",
+    "typescript": "^7.0.2",
     "undici": "^8.10.1",
     "vitest": "^5.0.0"
   },
