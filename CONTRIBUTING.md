@@ -127,11 +127,11 @@ There are two channels, mirroring the OpenAPI spec branches:
 
 | Channel        | OpenAPI branch | npm dist-tag | Version shape  |
 | -------------- | -------------- | ------------ | -------------- |
-| `prod-stable`  | `prod-stable`  | `latest`     | `0.1.1`        |
-| `prod-staging` | `prod-staging` | `next`       | `0.1.1-next.0` |
+| `prod-stable`  | `prod-stable`  | `latest`     | `0.2.0`        |
+| `prod-staging` | `prod-staging` | `next`       | `0.2.1-next.3` |
 
-Pushing to a channel branch publishes the current `package.json` version under
-the corresponding dist-tag (see `.github/workflows/release.yaml`).
+Pushing to a channel branch publishes under the corresponding dist-tag (see
+`.github/workflows/release.yaml`).
 
 Publishing uses [npm trusted publishing][npm-tp]: the workflow exchanges its
 GitHub Actions OIDC token for a short-lived npm credential, so there is no
@@ -142,23 +142,40 @@ breaks publishing until the npm-side configuration is updated to match.
 
 [npm-tp]: https://docs.npmjs.com/trusted-publishers
 
-The version is bumped automatically: the `sync` workflow
-(`.github/workflows/sync.yaml`) regenerates `src/api` from the spec and, if the
-generated output actually changed, bumps `package.json` in the pull request it
-opens. npm versions form one global sequence shared by both dist-tags, so the
-channels bump differently to avoid collisions:
+### Versioning
 
-- `prod-staging` bumps the prerelease — `0.1.0` → `0.1.1-next.0` →
-  `0.1.1-next.1` → …
-- `prod-stable` bumps the patch, which promotes a prerelease by dropping its
-  suffix — `0.1.1-next.1` → `0.1.1`, then `0.1.1` → `0.1.2`.
+`package.json` holds the placeholder `0.0.0` on every branch. Leave it there.
+The release workflow computes the real number with [svu][svu] and writes it in
+the runner, seconds before publishing.
 
-To cut a release outside a sync, bump `package.json` by hand, keeping the shape
-required by the channel (`npm version prerelease --preid next` on
-`prod-staging`, `npm version patch` on `prod-stable`). The release workflow
-skips pushes whose version is already published, and fails if the version shape
-does not match the channel — this is what keeps `latest` from ever pointing at a
-prerelease.
+That makes the commit message the input to the version: a `fix:` gives a patch,
+a `feat:` a minor, and a `!` a minor for as long as the major is 0. The largest
+bump in the range wins, so two fixes and a feature give one minor bump. A range
+of only `chore:` commits publishes nothing from `prod-stable`.
+
+Git tags are the record of what shipped. Only `prod-stable` pushes them, after
+the tests pass. The `v0.1.0` tag marks the last release made before this scheme.
+
+### Promote `prod-staging` to `prod-stable`
+
+`prod-stable` receives code only through a promotion pull request, which
+carries no commit of its own:
+
+```sh
+git fetch origin
+git switch -c promote/<date> origin/prod-stable
+git merge origin/prod-staging
+git push -u origin promote/<date>
+gh pr create --base prod-stable --fill
+```
+
+Cut the branch from `prod-stable`. A branch cut from `prod-staging` makes the
+pull request show every commit that stable has not seen, which is unreviewable.
+
+Two outcomes look like failures and are not. A promotion carrying nothing
+bumpable publishes nothing. And between a release and the next push to
+`prod-staging`, `next` resolves one notch below `latest`, because both point at
+the same code.
 
 ## Code style
 
@@ -176,3 +193,4 @@ This repository uses [Conventional Commits][cc]; pull requests targeting
 [openapi]: https://github.com/unikraft-cloud/openapi
 [openapi-gen]: https://github.com/unikraft-cloud/x/tree/prod-staging/tools/openapi-gen
 [cc]: https://www.conventionalcommits.org
+[svu]: https://github.com/caarlos0/svu
