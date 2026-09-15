@@ -5,7 +5,7 @@
 // together. The platform API is metro-scoped, so an account-wide view means
 // asking every metro and merging what comes back.
 
-import { UnikraftCloudError } from "./http.js";
+import { isUnikraftCloudError, UnikraftCloudError } from "./http.js";
 import type { Metro, MetroEndpoint, WithMetro } from "./metro.js";
 
 /** One metro's failure within a multi-metro operation. */
@@ -30,7 +30,7 @@ export class MetroFanoutError extends UnikraftCloudError {
     // A single underlying failure is worth surfacing as the status, so callers
     // can keep matching on `err.status === 403`.
     const statuses = new Set(
-      failures.map((f) => (f.error instanceof UnikraftCloudError ? f.error.status : undefined)),
+      failures.map((f) => (isUnikraftCloudError(f.error) ? f.error.status : undefined)),
     );
     super(message, {
       kind: "fanout",
@@ -68,7 +68,7 @@ export class AmbiguousRefError<T = unknown> extends UnikraftCloudError {
 
 /** Describe a failure compactly, e.g. `sin (503)`. */
 function describeFailure(failure: MetroFailure): string {
-  const status = failure.error instanceof UnikraftCloudError ? failure.error.status : undefined;
+  const status = isUnikraftCloudError(failure.error) ? failure.error.status : undefined;
   return status === undefined ? failure.metro : `${failure.metro} (${status})`;
 }
 
