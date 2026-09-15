@@ -240,144 +240,136 @@ export class UnikraftCloud extends Scope {
 
 export default UnikraftCloud;
 
+export type * as controlplane from "./api/controlplane/models.gen.js";
 // Raw ("plumbing") API layer.
 export { Api, ControlPlaneApi, PlatformApi } from "./api/index.js";
+// Wire types, namespaced per API surface.
+export type * as platform from "./api/platform/models.gen.js";
 
+// Multi-metro fan-out.
+export {
+  AmbiguousRefError,
+  fanout,
+  fanoutSettled,
+  type MetroFailure,
+  MetroFanoutError,
+  type MetroOutcome,
+} from "./core/fanout.js";
+export {
+  type HandleSteps,
+  type Located,
+  type MetroTarget,
+  ResourceHandle,
+} from "./core/handle.js";
+// Chainable resource handles.
+export { HandleSet } from "./core/handle-set.js";
 // Error type and transport primitives.
 export {
   ApiClient,
-  UnikraftCloudError,
   type ApiClientConfig,
   type ApiResponse,
   type CallOptions,
   type FetchLike,
   type ResponseError,
+  UnikraftCloudError,
   type UnikraftCloudErrorKind,
 } from "./core/http.js";
-
 // Metros and scopes.
 export {
-  type Metro,
-  type MetroEndpoint,
-  type MetroScope,
-  type WithMetro,
   CONTROLPLANE_BASE_URL,
   DEFAULT_METRO,
   KNOWN_METROS,
+  type Metro,
+  type MetroEndpoint,
+  type MetroScope,
   metroBaseUrl,
   metroEndpoint,
+  type WithMetro,
   withMetro,
 } from "./core/metro.js";
-
-// Multi-metro fan-out.
-export {
-  AmbiguousRefError,
-  MetroFanoutError,
-  type MetroFailure,
-  type MetroOutcome,
-  fanout,
-  fanoutSettled,
-} from "./core/fanout.js";
-
-// Chainable resource handles.
-export { HandleSet } from "./core/handle-set.js";
-export {
-  ResourceHandle,
-  type HandleSteps,
-  type Located,
-  type MetroTarget,
-} from "./core/handle.js";
-
-// Resource plumbing shared by the idiomatic clients.
-export { Resource, type MetroGroup, type ScopeOptions } from "./core/resource.js";
-export { Session, type SessionConfig } from "./core/session.js";
-
+// Pagination + response helpers.
+export { collect, paginate } from "./core/pagination.js";
 // Updating resources: patch objects and the staged editor.
 export {
-  ResourceEditor,
   type DeletePatch,
   type Patch,
   type PatchItem,
   type PatchOp,
+  ResourceEditor,
   toPatchItems,
 } from "./core/patch.js";
-
-// Pagination + response helpers.
-export { collect, paginate } from "./core/pagination.js";
+export { pluginBaseUrl } from "./core/plugin.js";
+// Resource plumbing shared by the idiomatic clients.
+export { type MetroGroup, Resource, type ScopeOptions } from "./core/resource.js";
 export {
-  type Envelope,
-  type Ref,
-  type WireRef,
   describeRef,
+  type Envelope,
   orAbsent,
+  type Ref,
   toQuery,
   toRefs,
   unwrap,
   unwrapFirst,
   unwrapList,
+  type WireRef,
   wireRef,
 } from "./core/response.js";
-
+export { Session, type SessionConfig } from "./core/session.js";
+export {
+  type Certificate,
+  CertificateHandle,
+  type CertificateRef,
+  CertificateSet,
+  Certificates,
+  type CertificateUpdate,
+  type ListCertificatesOptions,
+} from "./resources/certificates.js";
 // Idiomatic resource clients (also reachable via the `UnikraftCloud` instance).
 export {
-  Instances,
-  InstanceHandle,
-  InstanceSet,
+  type CreateInstanceInput,
   type Instance,
   type InstanceEditor,
+  InstanceHandle,
   type InstanceMembers,
+  type InstancePatch,
   type InstanceProperties,
+  type InstanceRef,
+  InstanceSet,
+  Instances,
   type InstanceUpdate,
   type ListInstancesOptions,
   type LogsOptions,
-  type WaitOptions,
-  type InstanceRef,
-  type InstancePatch,
-  type CreateInstanceInput,
   type UpdatedInstance,
+  type WaitOptions,
 } from "./resources/instances.js";
 export {
-  Volumes,
-  VolumeHandle,
-  VolumeSet,
-  type Volume,
-  type VolumeEditor,
-  type VolumeMembers,
-  type VolumeProperties,
-  type VolumeUpdate,
-  type ListVolumesOptions,
-  type VolumeRef,
-  type VolumeAttach,
-  type VolumeDetach,
-  type VolumePatch,
-  type UpdatedVolume,
-} from "./resources/volumes.js";
-export {
-  ServiceGroups,
-  ServiceGroupHandle,
-  ServiceGroupSet,
+  type ListServiceGroupsOptions,
   type ServiceGroup,
   type ServiceGroupEditor,
+  ServiceGroupHandle,
   type ServiceGroupMembers,
-  type ServiceGroupProperties,
-  type ServiceGroupUpdate,
-  type ListServiceGroupsOptions,
-  type ServiceGroupRef,
   type ServiceGroupPatch,
+  type ServiceGroupProperties,
+  type ServiceGroupRef,
+  ServiceGroupSet,
+  ServiceGroups,
+  type ServiceGroupUpdate,
   type UpdatedServiceGroup,
 } from "./resources/service-groups.js";
+export { type Quota, Users } from "./resources/users.js";
 export {
-  Certificates,
-  CertificateHandle,
-  CertificateSet,
-  type Certificate,
-  type ListCertificatesOptions,
-  type CertificateRef,
-  type CertificateUpdate,
-} from "./resources/certificates.js";
-export { pluginBaseUrl } from "./core/plugin.js";
-export { Users, type Quota } from "./resources/users.js";
-
-// Wire types, namespaced per API surface.
-export type * as platform from "./api/platform/models.gen.js";
-export type * as controlplane from "./api/controlplane/models.gen.js";
+  type ListVolumesOptions,
+  type UpdatedVolume,
+  type Volume,
+  type VolumeAttach,
+  type VolumeDetach,
+  type VolumeEditor,
+  VolumeHandle,
+  type VolumeMembers,
+  type VolumePatch,
+  type VolumeProperties,
+  type VolumeRef,
+  VolumeSet,
+  Volumes,
+  type VolumeUpdate,
+} from "./resources/volumes.js";

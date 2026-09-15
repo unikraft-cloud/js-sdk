@@ -3,15 +3,9 @@
 
 import type * as models from "../api/platform/models.gen.js";
 import { UsersApi } from "../api/platform/users.gen.js";
-import { type MetroFailure, fanoutError, fanoutSettled } from "../core/fanout.js";
+import { fanoutError, fanoutSettled, type MetroFailure } from "../core/fanout.js";
 import type { MetroEndpoint, MetroScope } from "../core/metro.js";
-import {
-  Resource,
-  type ScopeOptions,
-  type WithMetro,
-  listTagged,
-  withMetro,
-} from "../core/resource.js";
+import { listTagged, Resource, type ScopeOptions, type WithMetro } from "../core/resource.js";
 import type { Session } from "../core/session.js";
 
 /** A quota, tagged with the metro it applies to. */
