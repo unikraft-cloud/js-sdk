@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026, Unikraft GmbH.
 
-import { type ResponseError, UnikraftCloudError } from "./http.js";
+import { isUnikraftCloudError, type ResponseError, UnikraftCloudError } from "./http.js";
 import type { Metro } from "./metro.js";
 
 /** The subset of the response envelope the idiomatic layer inspects. */
@@ -142,7 +142,7 @@ export async function orAbsent<T>(work: Promise<T>): Promise<T | undefined> {
   try {
     return await work;
   } catch (err) {
-    if (err instanceof UnikraftCloudError && err.status === 404) return undefined;
+    if (isUnikraftCloudError(err) && err.status === 404) return undefined;
     throw err;
   }
 }

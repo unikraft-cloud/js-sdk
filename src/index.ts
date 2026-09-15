@@ -15,6 +15,7 @@ import {
 import { Session } from "./core/session.js";
 import { Certificates } from "./resources/certificates.js";
 import { Instances } from "./resources/instances.js";
+import { Sandboxes } from "./resources/sandboxes/index.js";
 import { ServiceGroups } from "./resources/service-groups.js";
 import { Users } from "./resources/users.js";
 import { Volumes } from "./resources/volumes.js";
@@ -106,11 +107,17 @@ export class MetroClient extends Scope {
   readonly endpoint: MetroEndpoint;
   /** The raw API surfaces, with the platform API pinned to this metro. */
   readonly api: Api;
+  /**
+   * Sandboxes (instances carrying the sandbox plugin). Here rather than on
+   * {@link Scope}, because a sandbox lives in exactly one metro.
+   */
+  readonly sandboxes: Sandboxes;
 
-  constructor(session: Session, endpoint: MetroEndpoint) {
+  constructor(session: Session, endpoint: MetroEndpoint, client: UnikraftCloud) {
     super(session, endpoint.metro);
     this.endpoint = endpoint;
     this.api = new Api({ ...session.platform, baseUrl: endpoint.baseUrl }, session.controlPlane);
+    this.sandboxes = new Sandboxes(client, endpoint.metro);
   }
 }
 
@@ -209,7 +216,7 @@ export class UnikraftCloud extends Scope {
     const endpoint = this.session.pinned ?? { metro, baseUrl: metroBaseUrl(metro) };
     const cached = this.#metros.get(endpoint.baseUrl);
     if (cached) return cached;
-    const client = new MetroClient(this.session, endpoint);
+    const client = new MetroClient(this.session, endpoint, this);
     this.#metros.set(endpoint.baseUrl, client);
     return client;
   }
@@ -270,6 +277,7 @@ export {
   type ApiResponse,
   type CallOptions,
   type FetchLike,
+  isUnikraftCloudError,
   type ResponseError,
   UnikraftCloudError,
   type UnikraftCloudErrorKind,
@@ -298,9 +306,11 @@ export {
   ResourceEditor,
   toPatchItems,
 } from "./core/patch.js";
+
 export { pluginBaseUrl } from "./core/plugin.js";
 // Resource plumbing shared by the idiomatic clients.
 export { type MetroGroup, Resource, type ScopeOptions } from "./core/resource.js";
+
 export {
   describeRef,
   type Envelope,
@@ -342,6 +352,33 @@ export {
   type UpdatedInstance,
   type WaitOptions,
 } from "./resources/instances.js";
+// The sandbox surface: the porcelain client plus the options it accepts.
+export {
+  Command,
+  type CommandLogs,
+  type ConnectSandboxOptions,
+  type CreateSandboxOptions,
+  DEFAULT_AUTOKILL_MS,
+  DEFAULT_BOOT_TIMEOUT_S,
+  DEFAULT_PLUGIN_NAME,
+  DEFAULT_PLUGIN_ROM,
+  type ExecOptions,
+  type ExecResult,
+  type GetSandboxOptions,
+  type ListSandboxesOptions,
+  type LogsRawOptions,
+  type ParentsOptions,
+  Sandbox,
+  type SandboxCallOptions,
+  Sandboxes,
+  type SandboxRef,
+  type SandboxRequestOptions,
+  type SandboxSpec,
+  type StartCommandOptions,
+  type StdinOptions,
+  type WaitCommandOptions,
+  type WriteFileOptions,
+} from "./resources/sandboxes/index.js";
 export {
   type ListServiceGroupsOptions,
   type ServiceGroup,

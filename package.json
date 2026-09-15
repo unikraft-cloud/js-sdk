@@ -63,14 +63,20 @@
     "lint": "biome check .",
     "format": "biome format --write .",
     "test": "vitest run",
+    "test:e2e": "vitest run --config vitest.config.e2e.ts",
+    "test:e2e:watch": "vitest --config vitest.config.e2e.ts",
     "test:watch": "vitest",
     "prepublishOnly": "npm run clean && npm run build"
+  },
+  "dependencies": {
+    "@unikraft/cloud-plugin-sandbox-api": "^1.0.1-next.1"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.13",
     "@types/node": "^22.19.1",
     "typescript": "^7.0.2",
     "undici": "^8.10.1",
+    "vite": "^8.3.0",
     "vitest": "^5.0.0"
   },
   "peerDependencies": {

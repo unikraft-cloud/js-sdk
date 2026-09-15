@@ -11,7 +11,15 @@
 // dropping the CJS output does not drop CJS consumers.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -47,17 +55,25 @@ for (const specifier of specifiers) {
 const work = mkdtempSync(join(tmpdir(), "ukc-package-check-"));
 
 try {
-  const [{ filename }] = JSON.parse(
+  const packed = JSON.parse(
     execFileSync("npm", ["pack", "--json", "--pack-destination", work], {
       cwd: root,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "inherit"],
     }),
   );
+  const [{ filename }] = Array.isArray(packed) ? packed : Object.values(packed);
 
   const installed = join(work, "node_modules", pkg.name);
   mkdirSync(installed, { recursive: true });
   execFileSync("tar", ["-xzf", join(work, filename), "-C", installed, "--strip-components=1"]);
+
+  for (const name of Object.keys(pkg.dependencies ?? {})) {
+    cpSync(join(root, "node_modules", name), join(work, "node_modules", name), {
+      recursive: true,
+      dereference: true,
+    });
+  }
 
   // No "type" field: the extensions alone decide how Node.js loads each caller.
   writeFileSync(join(work, "package.json"), '{ "name": "ukc-package-check", "private": true }\n');

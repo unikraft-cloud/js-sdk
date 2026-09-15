@@ -14,7 +14,6 @@ import {
   type Metro,
   type MetroEndpoint,
   type MetroScope,
-  metroEndpoint,
   type WithMetro,
   withMetro,
 } from "./metro.js";
@@ -137,8 +136,10 @@ export abstract class Resource<A extends ApiClient> {
    */
   protected async endpointsFor(ref: Ref, opts: ScopeOptions = {}): Promise<MetroEndpoint[]> {
     if (ref.metro !== undefined && opts.baseUrl === undefined) {
-      // An explicitly configured endpoint still wins: there is only one to talk to.
-      return [this.session.pinned ?? metroEndpoint(ref.metro)];
+      // The session's knowledge wins over a URL built from the code: a pinned
+      // client has one endpoint, and a discovered metro can report an endpoint
+      // that its code does not build.
+      return [this.session.endpointFor(ref.metro)];
     }
     return this.endpoints(opts);
   }

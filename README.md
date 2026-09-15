@@ -393,6 +393,7 @@ try {
 | `"network"` | The request never got an answer: a refused connection, a reset, a DNS miss, an unreachable proxy.                     |
 | `"parse"`   | The server answered, but the body is not the JSON the operation expects.                                             |
 | `"fanout"`  | A multi-metro operation that partly failed, or an unusable scope — see `MetroFanoutError` above.                      |
+| `"config"`  | The call could never be sent as configured: a missing token, or two options that contradict each other.               |
 | `"timeout"` | A wait ran out of time. It carries no `status`, because no single request failed; the last failure is in `err.cause`. |
 
 ### Waiting

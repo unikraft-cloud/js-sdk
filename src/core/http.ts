@@ -89,10 +89,25 @@ export interface ApiClientConfig {
  * The kind of failure represented by an {@link UnikraftCloudError}. `"fanout"`
  * covers failures that are not a single request's fault: a multi-metro
  * operation where some metros failed, or an ambiguous or unusable metro scope.
- * `"timeout"` covers a wait that ran out of time; it carries no `status`,
- * because no single request failed.
+ * `"config"` covers a call that could never be sent as configured — a missing
+ * token, or two options that contradict each other. `"timeout"` covers a wait
+ * that ran out of time; it carries no `status`, because no single request
+ * failed.
  */
-export type UnikraftCloudErrorKind = "http" | "network" | "parse" | "fanout" | "timeout";
+export type UnikraftCloudErrorKind = "http" | "network" | "parse" | "fanout" | "config" | "timeout";
+
+/**
+ * Whether `err` is an {@link UnikraftCloudError}, from any copy of this
+ * package. A package manager can nest a second copy of the SDK when a plugin
+ * package's peer range does not match the installed SDK version. An error that
+ * the second copy constructs fails `instanceof` against this copy's class, so
+ * this check also accepts the error's `name` brand.
+ */
+export function isUnikraftCloudError(err: unknown): err is UnikraftCloudError {
+  return (
+    err instanceof UnikraftCloudError || (err instanceof Error && err.name === "UnikraftCloudError")
+  );
+}
 
 /** Error thrown when a request fails at the transport or HTTP level. */
 export class UnikraftCloudError extends Error {

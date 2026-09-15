@@ -182,7 +182,8 @@ the same code.
 - Formatting and linting are enforced by [Biome](https://biomejs.dev)
   (`npm run lint`). Run `npx biome check --write .` to fix.
 - Keep runtime dependencies at zero: rely on the platform `fetch` and standard
-  Web/Node APIs.
+  Web/Node APIs. The one exception is the generated plugin plumbing packages
+  (`@unikraft/cloud-plugin-<name>-api`), which the porcelain wraps.
 - Add a test in `test/` for new idiomatic behaviour.
 
 ## Commit messages

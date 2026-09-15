@@ -8,7 +8,7 @@
 // about. What to ask, and what to say when the answer never comes, belong to
 // the caller.
 
-import { UnikraftCloudError } from "./http.js";
+import { isUnikraftCloudError, UnikraftCloudError } from "./http.js";
 
 /**
  * How long to keep asking, and how fast.
@@ -50,7 +50,7 @@ const RETRYABLE_STATUSES: ReadonlySet<number> = new Set([404, 502, 503, 504]);
 
 /** Whether a failed probe says "not yet" rather than "no". */
 export function isRetryableReadyError(err: unknown): boolean {
-  if (!(err instanceof UnikraftCloudError)) return false;
+  if (!isUnikraftCloudError(err)) return false;
   // A refused connection, a reset, a DNS miss: the instance is still coming up.
   if (err.kind === "network") return true;
   if (err.kind !== "http") return false;
