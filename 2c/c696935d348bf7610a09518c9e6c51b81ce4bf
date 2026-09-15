@@ -1,0 +1,18 @@
+CONTRIBUTING.md
+  h_3a8cdd8dbdd7a3 153-155,161-163,166-187
+.github/workflows/release.yaml
+  h_3a8cdd8dbdd7a3 66-77,81,95-101
+.github/workflows/sync.yaml
+  h_3a8cdd8dbdd7a3 61,73,75-87,94-101
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2cc696935d348bf7610a09518c9e6c51b81ce4bf",
+  "prompts": {},
+  "humans": {
+    "h_3a8cdd8dbdd7a3": {
+      "author": "aabedraba <abdallah@unikraft.com>"
+    }
+  }
+}
