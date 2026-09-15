@@ -1,0 +1,73 @@
+src/index.ts
+  h_3a8cdd8dbdd7a3 18,110-114,116,120,219,309,313
+  s_f8efb81f67aa7f::t_366a56c4c31a80 280,355-381
+examples/sandbox.ts
+  s_f8efb81f67aa7f::t_334978bca4aeea 1-105
+src/resources/sandboxes/options.ts
+  s_f8efb81f67aa7f::t_dbd04b9b35180c 1-252
+src/resources/sandboxes/sandbox.ts
+  s_f8efb81f67aa7f::t_f700f4d45c1b7b 1-634
+src/resources/sandboxes/types.ts
+  s_f8efb81f67aa7f::t_d8f40900d685b9 1-207
+test/e2e/live.ts
+  s_f8efb81f67aa7f::t_d1695dd27b4ce8 1-65
+test/e2e/sandbox.test.ts
+  s_f8efb81f67aa7f::t_c7dc7e110e2526 1-100
+test/sandbox.test.ts
+  s_2bf6d7adf7a864::t_eda65eb960a9a5 1-316
+vitest.config.e2e.ts
+  s_f8efb81f67aa7f::t_c9139949c93275 1-26
+vitest.config.ts
+  s_f8efb81f67aa7f::t_6ebdf4e9a8a523 6-9
+CONTRIBUTING.md
+  s_f8efb81f67aa7f::t_ac72e72594bf2d 185-186
+package-lock.json
+  s_f8efb81f67aa7f::t_5114d10ee49182 11-13,19,880-909
+package.json
+  s_f8efb81f67aa7f::t_4d2d00db4fddc4 66-67,71-73,79
+src/core/fanout.ts
+  s_f8efb81f67aa7f::t_e17e6b2862f227 8,33,71
+src/core/ready.ts
+  s_f8efb81f67aa7f::t_c5be3f9c99dfc8 11,53
+src/core/response.ts
+  s_f8efb81f67aa7f::t_305dca876e92e2 4,145
+README.md
+  h_3a8cdd8dbdd7a3 396
+scripts/check-package.mjs
+  h_3a8cdd8dbdd7a3 14-22,58,65,71-77
+src/core/http.ts
+  h_3a8cdd8dbdd7a3 92-95,97-110
+src/resources/sandboxes/command.ts
+  h_3a8cdd8dbdd7a3 1-145
+src/resources/sandboxes/index.ts
+  h_3a8cdd8dbdd7a3 1-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0db16668c867bc1c77c166abed0e8aab29cdf8fa",
+  "prompts": {},
+  "humans": {
+    "h_3a8cdd8dbdd7a3": {
+      "author": "aabedraba <abdallah@unikraft.com>"
+    }
+  },
+  "sessions": {
+    "s_2bf6d7adf7a864": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fc1e61db-ed2c-48b4-9b31-0365f0882479",
+        "model": "claude-fable-5"
+      },
+      "human_author": "aabedraba <abdallah@unikraft.com>"
+    },
+    "s_f8efb81f67aa7f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4a76151b-cbb6-452a-93d5-d3e9b26e13f6",
+        "model": "claude-fable-5"
+      },
+      "human_author": "aabedraba <abdallah@unikraft.com>"
+    }
+  }
+}
