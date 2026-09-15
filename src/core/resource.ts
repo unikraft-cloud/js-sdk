@@ -6,7 +6,7 @@
 // through, and the two hard problems of a metro-scoped API: finding which metro
 // holds a named resource, and grouping a bulk operation by metro.
 
-import { AmbiguousRefError, type MetroFailure, MetroFanoutError, fanoutSettled } from "./fanout.js";
+import { AmbiguousRefError, fanoutSettled, type MetroFailure, MetroFanoutError } from "./fanout.js";
 import type { Located, MetroTarget } from "./handle.js";
 import type { ApiClient, CallOptions } from "./http.js";
 import { UnikraftCloudError } from "./http.js";
@@ -14,14 +14,14 @@ import {
   type Metro,
   type MetroEndpoint,
   type MetroScope,
-  type WithMetro,
   metroEndpoint,
+  type WithMetro,
   withMetro,
 } from "./metro.js";
 import {
+  describeRef,
   type Envelope,
   type Ref,
-  describeRef,
   toRefs,
   unwrapFirst,
   unwrapList,

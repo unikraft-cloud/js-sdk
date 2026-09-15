@@ -4,23 +4,23 @@
 import { CertificatesApi } from "../api/platform/certificates.gen.js";
 import type * as models from "../api/platform/models.gen.js";
 import { fanout } from "../core/fanout.js";
-import { HandleSet } from "../core/handle-set.js";
 import { type HandleSteps, type MetroTarget, ResourceHandle } from "../core/handle.js";
+import { HandleSet } from "../core/handle-set.js";
 import type { CallOptions } from "../core/http.js";
 import type { MetroEndpoint, MetroScope } from "../core/metro.js";
 import { paginate } from "../core/pagination.js";
 import {
   type EntryOf,
+  firstTagged,
   type ListEnvelope,
+  listTagged,
   type MetroGroup,
   Resource,
   type ScopeOptions,
   type WithMetro,
-  firstTagged,
-  listTagged,
   withMetro,
 } from "../core/resource.js";
-import { type Ref, describeRef, orAbsent, toQuery, unwrapList } from "../core/response.js";
+import { describeRef, orAbsent, type Ref, toQuery, unwrapList } from "../core/response.js";
 import type { Session } from "../core/session.js";
 
 /** Reference(s) accepted by certificate operations: `{ name }` or `{ uuid }`. */

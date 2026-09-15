@@ -12,7 +12,15 @@
   "bugs": {
     "url": "https://github.com/unikraft-cloud/js-sdk/issues"
   },
-  "keywords": ["unikraft", "unikraft-cloud", "kraftcloud", "sdk", "unikernel", "cloud", "api"],
+  "keywords": [
+    "unikraft",
+    "unikraft-cloud",
+    "kraftcloud",
+    "sdk",
+    "unikernel",
+    "cloud",
+    "api"
+  ],
   "type": "module",
   "engines": {
     "node": ">=22.12"
@@ -42,7 +50,11 @@
     },
     "./package.json": "./package.json"
   },
-  "files": ["dist", "README.md", "LICENSE.md"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "check:package": "node scripts/check-package.mjs",
@@ -55,7 +67,7 @@
     "prepublishOnly": "npm run clean && npm run build"
   },
   "devDependencies": {
-    "@biomejs/biome": "^1.9.4",
+    "@biomejs/biome": "^2.5.13",
     "@types/node": "^22.19.1",
     "typescript": "^7.0.2",
     "undici": "^8.10.1",

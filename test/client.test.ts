@@ -4,14 +4,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AmbiguousRefError,
+  collect,
   type FetchLike,
   MetroFanoutError,
-  UnikraftCloud,
-  UnikraftCloudError,
-  collect,
   metroBaseUrl,
   pluginBaseUrl,
   toQuery,
+  UnikraftCloud,
+  UnikraftCloudError,
 } from "../src/index.js";
 
 interface Call {
