@@ -1,0 +1,22 @@
+.github/workflows/release.yaml
+  h_3a8cdd8dbdd7a3 3-5,7-16,35,38-40,46-50,63-72,75,77-88,90-93,96-109,112,115,119,121-125,130-134,138,141,145,149,152-177,182-202
+.github/workflows/sync.yaml
+  h_3a8cdd8dbdd7a3 52-56,60,62,66,71-72,77-78
+CONTRIBUTING.md
+  h_3a8cdd8dbdd7a3 130-131,133-134,145-201
+package-lock.json
+  h_3a8cdd8dbdd7a3 3,9
+package.json
+  h_3a8cdd8dbdd7a3 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9c3e719b20a63428e6b57585823aa9f189418931",
+  "prompts": {},
+  "humans": {
+    "h_3a8cdd8dbdd7a3": {
+      "author": "aabedraba <abdallah@unikraft.com>"
+    }
+  }
+}
