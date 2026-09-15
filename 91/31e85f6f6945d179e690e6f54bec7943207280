@@ -1,0 +1,50 @@
+test/e2e/sandbox.test.ts
+  s_13985d17f7edb3::t_969825edc23635 8-9
+src/core/resource.ts
+  s_13985d17f7edb3::t_8f8ae2a99eac87 139-142
+src/resources/sandboxes/types.ts
+  s_13985d17f7edb3::t_7d2c55c3981e14 62-64,69
+  s_13985d17f7edb3::t_bdc9449eae2ba5 71-77
+  s_13985d17f7edb3::t_2c208ae16bafcb 134,176,185,196,202,208
+src/resources/sandboxes/command.ts
+  s_13985d17f7edb3::t_a9fdb80637008e 12-18,44,72,132,142,147
+test/sandbox.test.ts
+  s_13985d17f7edb3::t_c0106757f9152d 332-338,341-342,345
+  s_13985d17f7edb3::t_52bf6f93e5ee19 164-214
+  s_13985d17f7edb3::t_f5548e9c3fc4b5 303-308,311-329
+  s_13985d17f7edb3::t_336ba0879b8cee 309-310
+  s_13985d17f7edb3::t_9a44b7ad6b5610 349,355,358,364-377
+  s_13985d17f7edb3::t_8e0f0a759962f1 10-14
+  s_13985d17f7edb3::t_08330fdffcc01f 237,242-250
+src/resources/sandboxes/options.ts
+  s_13985d17f7edb3::t_73ac431cd1a06e 122-134
+  s_13985d17f7edb3::t_50a1f90baafabd 258-284
+src/resources/sandboxes/sandbox.ts
+  s_13985d17f7edb3::t_ba8c27231b5ac4 175-177
+  s_13985d17f7edb3::t_a9fdb80637008e 28,51,351,371
+  s_13985d17f7edb3::t_cf6466aef6f9dc 207-208,212-215
+  s_13985d17f7edb3::t_f96afe9e7af3a7 540-545
+  s_13985d17f7edb3::t_f3b5f87f47b9ed 493-494,496-502,505-506,512,517-519
+  s_13985d17f7edb3::t_b84c820b1835c3 16
+  s_13985d17f7edb3::t_420ca40a9d839f 548
+  s_13985d17f7edb3::t_1bd2e7971a84a5 526-539,546-547,549-551
+examples/sandbox.ts
+  s_13985d17f7edb3::t_3e60280263b9ee 100-102
+  s_13985d17f7edb3::t_acb94ded8d4f17 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9131e85f6f6945d179e690e6f54bec7943207280",
+  "prompts": {},
+  "sessions": {
+    "s_13985d17f7edb3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e587852b-bf0e-442a-af11-9cf12a8e9daf",
+        "model": "claude-fable-5"
+      },
+      "human_author": "aabedraba <abdallah@unikraft.com>"
+    }
+  }
+}

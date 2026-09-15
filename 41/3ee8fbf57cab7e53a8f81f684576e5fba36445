@@ -1,0 +1,21 @@
+package.json
+  s_13985d17f7edb3::t_f1a90fc7255bc4 72
+package-lock.json
+  s_13985d17f7edb3::t_312f9a14f08593 12,507,864-866,882-884,890,1330,1514
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "413ee8fbf57cab7e53a8f81f684576e5fba36445",
+  "prompts": {},
+  "sessions": {
+    "s_13985d17f7edb3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e587852b-bf0e-442a-af11-9cf12a8e9daf",
+        "model": "claude-fable-5"
+      },
+      "human_author": "aabedraba <abdallah@unikraft.com>"
+    }
+  }
+}
