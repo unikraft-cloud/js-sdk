@@ -1,0 +1,27 @@
+plans/inject-the-transport-tasks.md
+  s_aeec743f847ca2::t_d12c94de19540e 42-43
+  s_aeec743f847ca2::t_f5161f1eca8b7d 45-51,112-121,124,126-137,164-183,197-198
+  s_aeec743f847ca2::t_029ebda47d5c65 1-41,44,52-67,99-111,122-123,125,138-163,184-196,199-214
+  s_aeec743f847ca2::t_8796d2b79d7d60 68-98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1cf04552fb1a9658fc465cb0aacbd386ce3847d7",
+  "prompts": {},
+  "humans": {
+    "h_3a8cdd8dbdd7a3": {
+      "author": "aabedraba <abdallah@unikraft.com>"
+    }
+  },
+  "sessions": {
+    "s_aeec743f847ca2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8146d441-6e64-4df0-967c-927494b8770c",
+        "model": "claude-opus-5"
+      },
+      "human_author": "aabedraba <abdallah@unikraft.com>"
+    }
+  }
+}
