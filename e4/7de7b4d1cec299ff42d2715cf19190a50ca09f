@@ -1,0 +1,20 @@
+src/resources/sandboxes/options.ts
+  h_3a8cdd8dbdd7a3 91-107
+src/resources/sandboxes/sandbox.ts
+  h_3a8cdd8dbdd7a3 37,141-145,160-163,506-511,518-524,531,533
+src/resources/sandboxes/types.ts
+  h_3a8cdd8dbdd7a3 26-30
+test/sandbox.test.ts
+  h_3a8cdd8dbdd7a3 11,85-106,327-330,339-346
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e47de7b4d1cec299ff42d2715cf19190a50ca09f",
+  "prompts": {},
+  "humans": {
+    "h_3a8cdd8dbdd7a3": {
+      "author": "aabedraba <abdallah@unikraft.com>"
+    }
+  }
+}
