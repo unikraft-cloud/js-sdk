@@ -1,0 +1,34 @@
+HANDOFF-COMPUTESDK.md
+  s_4e0caabfba7099::t_993dcc70a935b6 1-181
+HANDOFF.md
+  s_ac3c738a11e852::t_1ce45ccad9db9f 1-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a40f6723a53e9975af1060eee26bd421e9bd3bdd",
+  "prompts": {},
+  "humans": {
+    "h_3a8cdd8dbdd7a3": {
+      "author": "aabedraba <abdallah@unikraft.com>"
+    }
+  },
+  "sessions": {
+    "s_4e0caabfba7099": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a068b1bf-b501-44bb-8a7b-8df03226723b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "aabedraba <abdallah@unikraft.com>"
+    },
+    "s_ac3c738a11e852": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5b0ec4d4-725f-4d1e-abbe-d5999f2c5830",
+        "model": "unknown"
+      },
+      "human_author": "aabedraba <abdallah@unikraft.com>"
+    }
+  }
+}
