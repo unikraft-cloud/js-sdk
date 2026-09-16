@@ -298,6 +298,15 @@ function encodeQuery(query: Record<string, QueryValue> | undefined): string {
  * Base transport for the generated resource clients. Performs authenticated
  * `fetch` requests and returns the parsed response envelope. Throws
  * {@link UnikraftCloudError} on network failures and non-2xx HTTP responses.
+ *
+ * The plugin packages, `@unikraft/cloud-plugin-<name>-api`, call `request()`,
+ * `bytes()` and `stream()` through their `Transport` interface, which lives in
+ * unikraft-cloud/plugin-sdk at `js/tools/tsplugingen/templates/transport.ts.tmpl`
+ * and ships inside each package, so the package needs no dependency on this
+ * one. A change to one of the three signatures, or to {@link RequestArgs} or
+ * {@link CallOptions}, must be made there too, and every plugin package must
+ * be republished. `test/sandbox.test.ts` checks this class against the
+ * published interface.
  */
 export class ApiClient {
   protected readonly baseUrl: string;
@@ -396,8 +405,10 @@ export class ApiClient {
     }
   }
 
-  /** Perform a request and return the parsed JSON envelope typed as `T`. */
-  protected async request<T>(args: RequestArgs, options: CallOptions = {}): Promise<T> {
+  /**
+   * Perform a request and return the parsed JSON envelope typed as `T`.
+   */
+  async request<T>(args: RequestArgs, options: CallOptions = {}): Promise<T> {
     const { response, url } = await this.#send(args, options, "application/json");
 
     const text = await response.text();
@@ -448,7 +459,7 @@ export class ApiClient {
    * The whole body is buffered, as `Response.bytes()` does; nothing is streamed
    * (unlike {@link ApiClient.stream}, which is named for its SSE delivery).
    */
-  protected async bytes(args: RequestArgs, options: CallOptions = {}): Promise<Uint8Array> {
+  async bytes(args: RequestArgs, options: CallOptions = {}): Promise<Uint8Array> {
     const { response } = await this.#send(args, options, "application/octet-stream");
 
     if (!response.ok) {
@@ -485,10 +496,7 @@ export class ApiClient {
    * @example
    * for await (const event of api.checkAuthorization({ body })) { ... }
    */
-  protected async *stream<T>(
-    args: RequestArgs,
-    options: CallOptions = {},
-  ): AsyncGenerator<T, void, void> {
+  async *stream<T>(args: RequestArgs, options: CallOptions = {}): AsyncGenerator<T, void, void> {
     const { response, url } = await this.#send(args, options, "text/event-stream");
 
     if (!response.ok) {
