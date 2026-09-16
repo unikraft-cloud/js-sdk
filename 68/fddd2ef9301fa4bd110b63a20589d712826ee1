@@ -1,0 +1,94 @@
+package.json
+  h_3a8cdd8dbdd7a3 66-67,71-73,79
+src/resources/sandboxes/index.ts
+  h_3a8cdd8dbdd7a3 1-35
+src/resources/sandboxes/options.ts
+  h_3a8cdd8dbdd7a3 1-8,10-42,50-237,242-245,250,256,260-286,290-332
+  s_aeec743f847ca2::t_6a8b0b1a4e4926 238-241,246-249,251-255,257-259,287-289
+  s_1a0cbc94b48f6d::t_49351bbdfd5c1d 9,43-49
+src/core/resource.ts
+  h_3a8cdd8dbdd7a3 139-142
+src/index.ts
+  s_aeec743f847ca2::t_75834e65ce4128 120
+  s_aeec743f847ca2::t_501dbbfa0f43a0 216
+  h_3a8cdd8dbdd7a3 18,110-114,308,312,354-380
+src/core/session.ts
+  h_3a8cdd8dbdd7a3 148
+  s_aeec743f847ca2::t_501dbbfa0f43a0 149
+  s_aeec743f847ca2::t_75834e65ce4128 160
+src/core/http.ts
+  h_3a8cdd8dbdd7a3 92-95,97
+test/e2e/sandbox.test.ts
+  h_3a8cdd8dbdd7a3 1-13,15-44,46-47,54,56-78,80-105
+  s_aeec743f847ca2::t_51bd50c1ac6fcf 14,79
+  s_1a0cbc94b48f6d::t_49351bbdfd5c1d 45,48-53,55
+vitest.config.ts
+  h_3a8cdd8dbdd7a3 6-9
+examples/sandbox.ts
+  h_3a8cdd8dbdd7a3 1-105
+scripts/check-package.mjs
+  h_3a8cdd8dbdd7a3 14-22,58,65,71-77
+src/resources/sandboxes/command.ts
+  s_aeec743f847ca2::t_6a8b0b1a4e4926 8,89,171-175
+  s_1a0cbc94b48f6d::t_c7a91c85e51ab9 87
+  h_3a8cdd8dbdd7a3 1-5,7,9,11-21,24-50,53,58,61,63-64,90-170,176
+  s_1a0cbc94b48f6d::t_49351bbdfd5c1d 6,10,22-23,51-52,54-57,59-60,62,65-86,88
+src/resources/sandboxes/types.ts
+  s_1a0cbc94b48f6d::t_49351bbdfd5c1d 7-9
+  h_3a8cdd8dbdd7a3 1-6,10-218
+vitest.config.e2e.ts
+  h_3a8cdd8dbdd7a3 1-6,15-26
+  s_aeec743f847ca2::t_51bd50c1ac6fcf 7-14
+test/e2e/live.ts
+  h_3a8cdd8dbdd7a3 1-15,21-66
+  s_aeec743f847ca2::t_51bd50c1ac6fcf 16-20
+README.md
+  h_3a8cdd8dbdd7a3 396
+src/resources/sandboxes/sandbox.ts
+  h_3a8cdd8dbdd7a3 1-19,22-24,31-65,67-83,85-105,111-129,131-137,139,141-180,182-183,185-197,199,201-220,224-229,238-243,252-318,323-340,342-344,352-494,500-513,516-520,523,525-560,562-578,582-601,629-677,680-730,743-749,757
+  s_aeec743f847ca2::t_59f6c53bceb973 233-237,499,740
+  s_1a0cbc94b48f6d::t_49351bbdfd5c1d 319-322,341,345-351
+  s_aeec743f847ca2::t_a9a8c4e82e031f 25-30,561,602-625,628
+  s_aeec743f847ca2::t_54d63244772876 244-251
+  s_aeec743f847ca2::t_05ab2b6d10f47b 627
+  s_aeec743f847ca2::t_32eadecfe28b4b 20-21,66,84,106-110,130,138,140,181,184,198,200,221-223,230-232,495-498,514-515,521-522,524,579-581,626,678-679,731-739,741-742,750-756
+test/sandbox.test.ts
+  s_aeec743f847ca2::t_59f6c53bceb973 301-303
+  s_aeec743f847ca2::t_51bd50c1ac6fcf 143-145,149-156,288-297,579-581,584-585,595-625
+  h_3a8cdd8dbdd7a3 1-16,18-26,28-41,43-142,157-287,298-300,304-305,388-578,626-631
+  s_1a0cbc94b48f6d::t_49351bbdfd5c1d 17,27,42,306-387
+  s_aeec743f847ca2::t_54d63244772876 146-148,582-583,586-594
+CONTRIBUTING.md
+  h_3a8cdd8dbdd7a3 61-81,206-207,216
+package-lock.json
+  h_3a8cdd8dbdd7a3 11-13,19,507,863-892,1330,1514
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "68fddd2ef9301fa4bd110b63a20589d712826ee1",
+  "prompts": {},
+  "humans": {
+    "h_3a8cdd8dbdd7a3": {
+      "author": "aabedraba <abdallah@unikraft.com>"
+    }
+  },
+  "sessions": {
+    "s_1a0cbc94b48f6d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd6bcb32-6eed-47ff-a7a6-069e711f6718",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    },
+    "s_aeec743f847ca2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8146d441-6e64-4df0-967c-927494b8770c",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}
