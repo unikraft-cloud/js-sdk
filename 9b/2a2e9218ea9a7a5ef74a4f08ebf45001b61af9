@@ -1,0 +1,50 @@
+CONTRIBUTING.md
+  h_3a8cdd8dbdd7a3 61-81,206-207,216
+README.md
+  h_3a8cdd8dbdd7a3 396
+examples/sandbox.ts
+  h_3a8cdd8dbdd7a3 1-105
+package-lock.json
+  h_3a8cdd8dbdd7a3 11-13,19,507,863-892,1330,1514
+package.json
+  h_3a8cdd8dbdd7a3 66-67,71-73,79
+scripts/check-package.mjs
+  h_3a8cdd8dbdd7a3 14-22,58,65,71-77
+src/core/http.ts
+  h_3a8cdd8dbdd7a3 92-95,97
+src/core/resource.ts
+  h_3a8cdd8dbdd7a3 139-142
+src/index.ts
+  h_3a8cdd8dbdd7a3 18,110-114,116,120,219,308,312,354-380
+src/resources/sandboxes/command.ts
+  h_3a8cdd8dbdd7a3 1-150
+src/resources/sandboxes/index.ts
+  h_3a8cdd8dbdd7a3 1-35
+src/resources/sandboxes/options.ts
+  h_3a8cdd8dbdd7a3 1-309
+src/resources/sandboxes/sandbox.ts
+  h_3a8cdd8dbdd7a3 1-687
+src/resources/sandboxes/types.ts
+  h_3a8cdd8dbdd7a3 1-216
+test/e2e/live.ts
+  h_3a8cdd8dbdd7a3 1-65
+test/e2e/sandbox.test.ts
+  h_3a8cdd8dbdd7a3 1-100
+test/sandbox.test.ts
+  h_3a8cdd8dbdd7a3 1-484
+vitest.config.e2e.ts
+  h_3a8cdd8dbdd7a3 1-26
+vitest.config.ts
+  h_3a8cdd8dbdd7a3 6-9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9b2a2e9218ea9a7a5ef74a4f08ebf45001b61af9",
+  "prompts": {},
+  "humans": {
+    "h_3a8cdd8dbdd7a3": {
+      "author": "aabedraba <abdallah@unikraft.com>"
+    }
+  }
+}
