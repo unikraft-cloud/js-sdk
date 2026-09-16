@@ -1,0 +1,15 @@
+src/core/http.ts
+  h_3a8cdd8dbdd7a3 301-309,409
+  h_3a8cdd8dbdd7a3 408,410-411,462,499,530,554
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bb2813f269f21ddbd55d4e08554fc5394778319d",
+  "prompts": {},
+  "humans": {
+    "h_3a8cdd8dbdd7a3": {
+      "author": "aabedraba <abdallah@unikraft.com>"
+    }
+  }
+}
