@@ -145,7 +145,8 @@ export class Session {
         { kind: "fanout" },
       );
     }
-    return codes.map(metroEndpoint);
+
+    return codes.map((code) => this.endpointFor(code));
   }
 
   /**
@@ -156,7 +157,7 @@ export class Session {
    */
   async resolveOne(scope: MetroScope, operation: string): Promise<MetroEndpoint> {
     if (this.pinned) return this.pinned;
-    if (scope === "all") return this.defaultEndpoint;
+    if (scope === "all") return this.endpointFor(this.defaultEndpoint.metro);
 
     const endpoints = await this.resolve(scope);
     if (endpoints.length === 1) return endpoints[0] as MetroEndpoint;

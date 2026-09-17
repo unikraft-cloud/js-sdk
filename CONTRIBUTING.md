@@ -58,6 +58,27 @@ them (`each()`, bulk ops), and `oneEndpoint()` for creation. Refs reaching the
 wire must go through `wireRef()` — `metro` says where to send the request and the
 API rejects it inside a body.
 
+### The transport contract
+
+The generated plugin packages, `@unikraft/cloud-plugin-<name>-api`, take a
+`Transport` in their constructor: an object with `request`, `bytes` and
+`stream`. The interface lives in [plugin-sdk] at
+`js/tools/tsplugingen/templates/transport.ts.tmpl` and ships inside every
+package, so a plugin package needs no dependency on the SDK. The porcelain
+hands each plugin client an `ApiClient`, which satisfies the interface by
+shape, and the contract test in `test/sandbox.test.ts` checks that against the
+published package. Two rules follow:
+
+- Widening is safe. A new optional parameter or a wider input type is a `fix:`
+  or a `feat:`.
+- A rename, a new required parameter, or a changed return type is a `feat!:`.
+  It needs the same change in the plugin-sdk template and a republish of every
+  plugin package in the same cycle.
+
+`ApiClient` must not rely on a `RequestArgs` field the interface does not
+declare. A plugin package compiles against its own copy of the interface, so
+the compiler cannot see that drift.
+
 ## Prerequisites
 
 - Node.js 22.12+
@@ -182,7 +203,8 @@ the same code.
 - Formatting and linting are enforced by [Biome](https://biomejs.dev)
   (`npm run lint`). Run `npx biome check --write .` to fix.
 - Keep runtime dependencies at zero: rely on the platform `fetch` and standard
-  Web/Node APIs.
+  Web/Node APIs. The one exception is the generated plugin plumbing packages
+  (`@unikraft/cloud-plugin-<name>-api`), which the porcelain wraps.
 - Add a test in `test/` for new idiomatic behaviour.
 
 ## Commit messages
@@ -191,6 +213,7 @@ This repository uses [Conventional Commits][cc]; pull requests targeting
 `prod-staging` are validated in CI.
 
 [openapi]: https://github.com/unikraft-cloud/openapi
+[plugin-sdk]: https://github.com/unikraft-cloud/plugin-sdk
 [openapi-gen]: https://github.com/unikraft-cloud/x/tree/prod-staging/tools/openapi-gen
 [cc]: https://www.conventionalcommits.org
 [svu]: https://github.com/caarlos0/svu
