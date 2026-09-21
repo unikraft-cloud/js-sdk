@@ -17,6 +17,7 @@ import { ApiClient, type CallOptions, UnikraftCloudError } from "../../core/http
 import type { Metro, MetroEndpoint, MetroScope } from "../../core/metro.js";
 import { pluginBaseUrl } from "../../core/plugin.js";
 import { type ReadyPolicy, waitUntilReady } from "../../core/ready.js";
+import { explicitEndpoint } from "../../core/resource.js";
 import { orAbsent, unwrap, unwrapList } from "../../core/response.js";
 import type { Session } from "../../core/session.js";
 // Cyclic with `index.js`, which owns a `Sandboxes`. Safe: neither module touches
@@ -655,14 +656,16 @@ export class Sandboxes {
         details: true,
       })) {
         if (instance.plugins?.some((plugin) => plugin.name === wanted)) {
-          yield self.#attach(instance, wanted);
+          yield self.#attach(instance, wanted, rest.baseUrl);
         }
       }
     })();
   }
 
-  /** Wrap an instance we have already read as a sandbox. */
-  #attach(instance: Instance, pluginName: string): Sandbox {
+  /**
+   * Wrap an instance we have already read as a sandbox.
+   */
+  #attach(instance: Instance, pluginName: string, baseUrl?: string): Sandbox {
     if (!instance.uuid) {
       throw new UnikraftCloudError(
         "The platform reported an instance with no UUID, so its plugin endpoint cannot be addressed.",
@@ -671,7 +674,10 @@ export class Sandboxes {
     }
     return new Sandbox({
       session: this.session,
-      endpoint: this.session.endpointFor(instance.metro),
+      endpoint:
+        baseUrl !== undefined
+          ? explicitEndpoint(baseUrl)
+          : this.session.endpointFor(instance.metro),
       uuid: instance.uuid,
       pluginName,
     });

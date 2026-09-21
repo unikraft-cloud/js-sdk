@@ -277,6 +277,19 @@ test("5a. a pinned staging cluster serves the plugin endpoint", async () => {
     { token: "t", baseUrl: "https://api.ukp-staging.example.com", fetch: fetchImpl },
   );
   expect(sb2.baseUrl).toBe("https://api.ukp-staging.example.com/v1/instances/u1/plugins/sandbox");
+
+  // A per-call `baseUrl` redirects the read, and the sandbox it yields must
+  // address its plugin on that host too. The pinned endpoint would otherwise
+  // win and every later call would leave the cluster the list came from.
+  const listed: Sandbox[] = [];
+  for await (const sb of ukc
+    .metro("fra")
+    .sandboxes.list({ baseUrl: "https://api.other-staging.example.com/v1" })) {
+    listed.push(sb);
+  }
+  expect(listed[0]?.baseUrl).toBe(
+    "https://api.other-staging.example.com/v1/instances/u1/plugins/sandbox",
+  );
 });
 
 test("5b. a discovered metro's own endpoint is used, not one built from the code", async () => {

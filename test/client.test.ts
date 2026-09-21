@@ -484,6 +484,23 @@ describe("metro scope", () => {
     ]);
   });
 
+  it("normalizes a per-call baseUrl the way a configured one is", async () => {
+    const { fetch, calls } = routedFetch(() => ({
+      body: okBody({ instances: [{ uuid: "u1", name: "web" }] }),
+    }));
+    const ukc = new UnikraftCloud({ token: "t", fetch });
+
+    const found = await collect(
+      ukc.instances.list({ baseUrl: "https://api.staging.internal/v1/", details: true }),
+    );
+
+    expect(calls.filter((c) => c.url.includes("/v1/metros"))).toHaveLength(0);
+    expect(calls[0]?.url).toContain("https://api.staging.internal/v1/instances?");
+    // The metro a result carries is the normalized URL, so a later call that
+    // reads it back through the session reaches the same host.
+    expect(found[0]?.metro).toBe("https://api.staging.internal");
+  });
+
   it("yields every healthy metro's results, then throws for the failures", async () => {
     const { fetch } = routedFetch((url) => {
       if (url.pathname === "/v1/metros") return { body: metrosBody(["fra", "dal", "sin"]) };
