@@ -14,7 +14,7 @@ import {
   type Metro,
   type MetroEndpoint,
   type MetroScope,
-  metroEndpoint,
+  metroBaseUrl,
   type WithMetro,
   withMetro,
 } from "./metro.js";
@@ -81,6 +81,14 @@ export interface ScopeOptions extends CallOptions {
   metros?: MetroScope;
 }
 
+/**
+ * The single endpoint a per-call `baseUrl` names.
+ */
+export function explicitEndpoint(baseUrl: string): MetroEndpoint {
+  const url = metroBaseUrl(baseUrl);
+  return { metro: url, baseUrl: url };
+}
+
 /** A bulk operation's refs, grouped by the metro that holds them. */
 export interface MetroGroup {
   endpoint: MetroEndpoint;
@@ -120,14 +128,14 @@ export abstract class Resource<A extends ApiClient> {
     // An explicit per-call baseUrl names exactly one endpoint, whatever the
     // scope says; it is how callers already redirect a single call.
     if (opts.baseUrl !== undefined) {
-      return Promise.resolve([{ metro: opts.baseUrl, baseUrl: opts.baseUrl }]);
+      return Promise.resolve([explicitEndpoint(opts.baseUrl)]);
     }
     return this.session.resolve(opts.metros ?? this.scope);
   }
 
   /** The single endpoint an operation that must pick one metro should use. */
   protected async oneEndpoint(operation: string, opts: ScopeOptions = {}): Promise<MetroEndpoint> {
-    if (opts.baseUrl !== undefined) return { metro: opts.baseUrl, baseUrl: opts.baseUrl };
+    if (opts.baseUrl !== undefined) return explicitEndpoint(opts.baseUrl);
     return this.session.resolveOne(opts.metros ?? this.scope, operation);
   }
 
@@ -137,8 +145,10 @@ export abstract class Resource<A extends ApiClient> {
    */
   protected async endpointsFor(ref: Ref, opts: ScopeOptions = {}): Promise<MetroEndpoint[]> {
     if (ref.metro !== undefined && opts.baseUrl === undefined) {
-      // An explicitly configured endpoint still wins: there is only one to talk to.
-      return [this.session.pinned ?? metroEndpoint(ref.metro)];
+      // The session's knowledge wins over a URL built from the code: a pinned
+      // client has one endpoint, and a discovered metro can report an endpoint
+      // that its code does not build.
+      return [this.session.endpointFor(ref.metro)];
     }
     return this.endpoints(opts);
   }
