@@ -1,0 +1,202 @@
+name: release
+
+# Publishes the package to npm. The branch maps to an npm dist-tag:
+#   prod-stable  -> latest, stable versions      (0.2.0)
+#   prod-staging -> next,   -next.N prereleases  (0.2.1-next.3)
+#
+# The version is never committed. package.json carries a 0.0.0 placeholder, and
+# svu derives the real version from the conventional-commit messages since the
+# last release tag. The run stamps it into package.json seconds before
+# publishing.
+#
+# Only prod-stable pushes a tag, and both channels measure from that same tag,
+# so a prerelease always sorts above the newest stable release. This is what
+# keeps `next` from ever resolving below `latest`, and it needs no cross-branch
+# coordination, because there is no committed version for the two branches to
+# disagree about.
+#
+# Authentication uses npm trusted publishing (OIDC): npm exchanges the GitHub
+# Actions ID token for a short-lived publish credential, so no long-lived
+# NPM_TOKEN secret is involved. The trusted publisher registered on npmjs.com
+# must name this repository and this workflow file (.github/workflows/
+# release.yaml); renaming or moving this file breaks publishing until the npm
+# side is updated to match.
+on:
+  push:
+    branches:
+    - prod-stable
+    - prod-staging
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write # required to push the release tag
+  id-token: write # required for trusted publishing and provenance
+
+env:
+  SVU_VERSION: '3.2.3'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Fetch all tags
+      run: git fetch --force --tags
+
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: 24
+        registry-url: https://registry.npmjs.org
+
+    # Trusted publishing requires npm >= 11.5.1, which is newer than the npm
+    # bundled with some Node 24 patch releases.
+    - name: Update npm
+      run: npm install -g npm@latest
+
+    - name: Install svu
+      run: |
+        curl -fsSL \
+          "https://github.com/caarlos0/svu/releases/download/v${SVU_VERSION}/svu_${SVU_VERSION}_linux_amd64.tar.gz" \
+          | tar -xz -C /usr/local/bin svu
+
+    - name: Resolve the version
+      id: version
+      env:
+        CHANNEL: ${{ github.ref_name }}
+      run: |
+        name=$(node -p 'require("./package.json").name')
+        base=$(svu current)
+
+        # Tags are the only record of what has been released. If npm holds
+        # releases that this repository has no tag for, svu starts again from
+        # zero and publishes below what is already out there, so stop instead.
+        if ! git rev-parse -q --verify "refs/tags/$base" >/dev/null \
+          && npm view "$name" version >/dev/null 2>&1; then
+          echo "::error::$name is published on npm but this repository has no \
+        release tag. Tag the commit behind the current release, for example \
+        git tag v1.2.3 <sha> && git push origin v1.2.3, then re-run."
+          exit 1
+        fi
+
+        if [ "$CHANNEL" = prod-stable ]; then
+          dist_tag=latest
+          # No --always here: a push carrying nothing bumpable (docs, CI, a
+          # refactor) must not burn a version number. svu then returns the
+          # current tag, the version is already on npm, and the run skips.
+          tag=$(svu next --v0)
+        else
+          dist_tag=next
+          # The prerelease counter is the commit distance from the last release
+          # tag. It rises on every staging push, and resets when a stable
+          # release moves the tag forward. An untagged repository has nothing
+          # to measure from, and the guard above has already proved it has
+          # published nothing either.
+          if git rev-parse -q --verify "refs/tags/$base" >/dev/null; then
+            count=$(git rev-list --count "$base..HEAD")
+          else
+            count=$(git rev-list --count HEAD)
+          fi
+          # --always, unlike the stable path: staging must sit above the newest
+          # stable release even when only chores landed, or `next` would
+          # resolve below `latest`.
+          tag=$(svu next --always --v0 --prerelease "next.$count")
+        fi
+
+        version=${tag#v}
+        {
+          echo "name=$name"
+          echo "tag=$tag"
+          echo "version=$version"
+          echo "dist_tag=$dist_tag"
+        } >> "$GITHUB_OUTPUT"
+        echo "Resolved $name@$version for $dist_tag"
+
+        # Re-running a finished release, or a run whose tag push succeeded but
+        # whose publish did not, must not fail. Only a confirmed 404 means the
+        # version is absent; any other lookup failure stops the release rather
+        # than being read as "not published".
+        if out=$(npm view "$name@$version" version 2>&1); then
+          echo "publish=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::$name@$version is already published; skipping release."
+          exit 0
+        fi
+        case "$out" in
+        *"code E404"*) ;;
+        *)
+          echo "$out"
+          echo "::error::Could not look up $name@$version on npm."
+          exit 1
+          ;;
+        esac
+        echo "publish=true" >> "$GITHUB_OUTPUT"
+
+    - name: Install dependencies
+      if: steps.version.outputs.publish == 'true'
+      run: npm ci
+
+    - name: Build
+      if: steps.version.outputs.publish == 'true'
+      run: npm run build
+
+    - name: Test
+      if: steps.version.outputs.publish == 'true'
+      run: npm run test
+
+    # Tagged before the publish, and only after the build and the tests pass, so
+    # that a failed publish can be retried by re-running the job: the tag step
+    # below is a no-op once the tag exists, and the lookup above proves the
+    # version is still absent from npm.
+    - name: Tag the release
+      if: steps.version.outputs.publish == 'true' && github.ref_name == 'prod-stable'
+      env:
+        TAG: ${{ steps.version.outputs.tag }}
+      run: |
+        if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+          echo "::notice::tag $TAG already exists; not re-tagging."
+          exit 0
+        fi
+        git config user.name "Unikraft Bot"
+        git config user.email "monkey@unikraft.io"
+        git tag -a "$TAG" -m "$TAG"
+        git push origin "$TAG"
+
+    # Writes the resolved version into package.json for the publish only. The
+    # commit keeps the 0.0.0 placeholder.
+    - name: Stamp the version
+      if: steps.version.outputs.publish == 'true'
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: npm version "$VERSION" --no-git-tag-version --allow-same-version
+
+    # Provenance attestations are generated automatically when publishing from
+    # a public repository via trusted publishing, so --provenance is implied.
+    # --access comes from publishConfig in package.json.
+    - name: Publish to npm
+      if: steps.version.outputs.publish == 'true'
+      run: npm publish --tag "$DIST_TAG"
+      env:
+        DIST_TAG: ${{ steps.version.outputs.dist_tag }}
+
+    # The version is no longer readable from the repository, so the run has to
+    # report what it shipped.
+    - name: Summary
+      env:
+        NAME: ${{ steps.version.outputs.name }}
+        VERSION: ${{ steps.version.outputs.version }}
+        DIST_TAG: ${{ steps.version.outputs.dist_tag }}
+        PUBLISHED: ${{ steps.version.outputs.publish }}
+      run: |
+        {
+          if [ "$PUBLISHED" = true ]; then
+            echo "Published \`$NAME@$VERSION\` to the \`$DIST_TAG\` dist-tag."
+          else
+            echo "\`$NAME@$VERSION\` was already published; nothing to do."
+          fi
+        } >> "$GITHUB_STEP_SUMMARY"

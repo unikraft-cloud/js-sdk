@@ -1,0 +1,83 @@
+name: sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: The release channel (OpenAPI spec branch) to sync from.
+        required: true
+        default: prod-staging
+        type: choice
+        options:
+        - prod-stable
+        - prod-staging
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.channel }}
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: stable
+
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: 24
+        cache: npm
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Generate SDK from the OpenAPI spec
+      run: make generate CHANNEL=${{ inputs.channel }}
+
+    - name: Show diff
+      run: git --no-pager diff --stat
+
+    # The release workflow derives the version from the commit history, so a
+    # sync never touches package.json. It only has to decide whether the
+    # regenerated client differs from what is already on the branch.
+    - name: Check for changes
+      id: check
+      run: |
+        if git diff --quiet -- src/api; then
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+          echo "src/api unchanged; no pull request needed."
+        else
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Create pull request
+      if: steps.check.outputs.changed == 'true'
+      uses: peter-evans/create-pull-request@v6
+      with:
+        base: ${{ inputs.channel }}
+        branch: sync/${{ inputs.channel }}
+        commit-message: "chore: Update SDK from OpenAPI spec"
+        title: "chore: Update SDK from OpenAPI spec (${{ inputs.channel }})"
+        body: |
+          Automated regeneration of the plumbing client from the
+          `${{ inputs.channel }}` OpenAPI specification.
+
+          Merging this pull request publishes a new version. The release
+          workflow derives the number from the commit history.
+        author: Unikraft Bot <monkey@unikraft.io>
+        committer: Unikraft Bot <monkey@unikraft.io>
+        signoff: true
+        add-paths: |
+          src/api

@@ -1,0 +1,18 @@
+# Source & build config — only dist ships (see package.json "files")
+src/
+templates/
+templates-tests/
+test/
+examples/
+scripts/
+.github/
+.tmp/
+coverage/
+
+tsconfig*.json
+biome.json
+vitest.config.ts
+Makefile
+CONTRIBUTING.md
+.editorconfig
+.gitignore

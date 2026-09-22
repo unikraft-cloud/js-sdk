@@ -1,0 +1,93 @@
+{
+  "name": "@unikraft/cloud",
+  "version": "0.0.0",
+  "description": "Official JavaScript/TypeScript SDK for the Unikraft Cloud Platform API",
+  "license": "BSD-3-Clause",
+  "author": "Unikraft GmbH",
+  "homepage": "https://unikraft.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/unikraft-cloud/js-sdk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/unikraft-cloud/js-sdk/issues"
+  },
+  "keywords": [
+    "unikraft",
+    "unikraft-cloud",
+    "kraftcloud",
+    "sdk",
+    "unikernel",
+    "cloud",
+    "api"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "sideEffects": false,
+  "types": "./dist/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/esm/index.d.ts",
+      "default": "./dist/esm/index.js"
+    },
+    "./api": {
+      "types": "./dist/esm/api/index.d.ts",
+      "default": "./dist/esm/api/index.js"
+    },
+    "./api/platform": {
+      "types": "./dist/esm/api/platform/index.d.ts",
+      "default": "./dist/esm/api/platform/index.js"
+    },
+    "./api/controlplane": {
+      "types": "./dist/esm/api/controlplane/index.d.ts",
+      "default": "./dist/esm/api/controlplane/index.js"
+    },
+    "./core/http": {
+      "types": "./dist/esm/core/http.d.ts",
+      "default": "./dist/esm/core/http.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check:package": "node scripts/check-package.mjs",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "test": "vitest run",
+    "test:e2e": "vitest run --config vitest.config.e2e.ts",
+    "test:e2e:watch": "vitest --config vitest.config.e2e.ts",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "dependencies": {
+    "@unikraft/cloud-plugin-sandbox-api": "^1.1.0-next.4"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.13",
+    "@types/node": "^22.19.1",
+    "typescript": "^7.0.2",
+    "undici": "^8.10.1",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.0"
+  },
+  "peerDependencies": {
+    "undici": "^8.10.1"
+  },
+  "peerDependenciesMeta": {
+    "undici": {
+      "optional": true
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
