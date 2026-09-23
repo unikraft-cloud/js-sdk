@@ -1,0 +1,15 @@
+examples/sandbox.ts
+  h_3a8cdd8dbdd7a3 8-10,21,25,40,53-57,59
+  h_3a8cdd8dbdd7a3 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d65335a8a07359a40150848c26088fb6c8a53ae7",
+  "prompts": {},
+  "humans": {
+    "h_3a8cdd8dbdd7a3": {
+      "author": "aabedraba <abdallah@unikraft.com>"
+    }
+  }
+}
