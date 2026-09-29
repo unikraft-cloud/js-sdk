@@ -13,7 +13,7 @@ import {
   DEFAULT_AUTOKILL_MS,
   DEFAULT_BOOT_TIMEOUT_S,
   DEFAULT_IMAGE,
-  DEFAULT_PLUGIN_ROM,
+  DEFAULT_PLUGIN_IMAGE,
 } from "../src/resources/sandboxes/options.js";
 
 function json(data: unknown) {
@@ -58,7 +58,7 @@ function mock(extra?: (url: string, init: any) => Response | undefined) {
       });
     }
     return json({
-      instances: [{ uuid: "u1", state: "running", plugins: [{ name: "sandbox", rom: "r" }] }],
+      instances: [{ uuid: "u1", state: "running", plugins: [{ name: "sandbox", image: "r" }] }],
     });
   }) as any;
   return { calls, fetchImpl };
@@ -69,34 +69,44 @@ test("1. the caller's own sandbox plugin entry is kept, not duplicated", async (
   const ukc = new UnikraftCloud({ token: "t", metro: "fra", fetch: fetchImpl });
   await ukc.metro("fra").sandboxes.create({
     image: "img",
-    plugins: [{ name: "sandbox", rom: "mine:1", config: { a: 1 } }],
+    plugins: [{ name: "sandbox", image: "mine:1", config: { a: 1 } }],
   });
-  expect(calls[0]?.body.plugins).toEqual([{ name: "sandbox", rom: "mine:1", config: { a: 1 } }]);
+  expect(calls[0]?.body.plugins).toEqual([{ name: "sandbox", image: "mine:1", config: { a: 1 } }]);
 
   // A different name still gets the sandbox plugin added alongside.
   calls.length = 0;
   await ukc
     .metro("fra")
-    .sandboxes.create({ image: "img", plugins: [{ name: "other", rom: "o:1" }] });
+    .sandboxes.create({ image: "img", plugins: [{ name: "other", image: "o:1" }] });
   // The constant, not a copy of its value: the assertion is that the entry is
-  // added, not what the default ROM happens to say.
+  // added, not what the default image happens to say.
   expect(calls[0]?.body.plugins).toEqual([
-    { name: "sandbox", rom: DEFAULT_PLUGIN_ROM },
-    { name: "other", rom: "o:1" },
+    { name: "sandbox", image: DEFAULT_PLUGIN_IMAGE },
+    { name: "other", image: "o:1" },
   ]);
 
-  // Both `rom` and an entry of the same name is a contradiction.
-  await expect(
-    ukc
-      .metro("fra")
-      .sandboxes.create({ image: "img", rom: "a:1", plugins: [{ name: "sandbox", rom: "b:1" }] }),
-  ).rejects.toMatchObject({ kind: "config" });
+  // `rom` is the former name of `pluginImage`, and the platform now wants
+  // `image` on the wire, so the deprecated name still reaches it as `image`.
+  calls.length = 0;
+  await ukc.metro("fra").sandboxes.create({ image: "img", rom: "old:1" });
+  expect(calls[0]?.body.plugins).toEqual([{ name: "sandbox", image: "old:1" }]);
+
+  // Both names for the plugin image is a contradiction, and so is the
+  // shorthand next to an entry of the same name.
+  for (const spec of [
+    { image: "img", pluginImage: "a:1", rom: "b:1" },
+    { image: "img", pluginImage: "a:1", plugins: [{ name: "sandbox", image: "b:1" }] },
+  ]) {
+    await expect(ukc.metro("fra").sandboxes.create(spec)).rejects.toMatchObject({
+      kind: "config",
+    });
+  }
 
   // A snapshot source already carries the sandbox plugin, so naming it again
   // is refused before the platform answers EINVAL; another plugin still passes.
   for (const spec of [
-    { template: { uuid: "t1" }, rom: "a:1" },
-    { template: { uuid: "t1" }, plugins: [{ name: "sandbox", rom: "b:1" }] },
+    { template: { uuid: "t1" }, pluginImage: "a:1" },
+    { template: { uuid: "t1" }, plugins: [{ name: "sandbox", image: "b:1" }] },
   ]) {
     await expect(ukc.metro("fra").sandboxes.create(spec)).rejects.toMatchObject({
       kind: "config",
@@ -105,8 +115,8 @@ test("1. the caller's own sandbox plugin entry is kept, not duplicated", async (
   calls.length = 0;
   await ukc
     .metro("fra")
-    .sandboxes.create({ template: { uuid: "t1" }, plugins: [{ name: "other", rom: "o:1" }] });
-  expect(calls[0]?.body.plugins).toEqual([{ name: "other", rom: "o:1" }]);
+    .sandboxes.create({ template: { uuid: "t1" }, plugins: [{ name: "other", image: "o:1" }] });
+  expect(calls[0]?.body.plugins).toEqual([{ name: "other", image: "o:1" }]);
   calls.length = 0;
   const custom = await ukc
     .metro("fra")
@@ -470,7 +480,7 @@ test("10b. an instance that never ran is diagnosed as a pull, not a crash", asyn
                 uuid: "u1",
                 state: "stopped",
                 image: "my-org/base:latest",
-                plugins: [{ name: "sandbox", rom: "plugins/sandbox:typo" }],
+                plugins: [{ name: "sandbox", image: "plugins/sandbox:typo" }],
                 ...ran,
               },
             ],

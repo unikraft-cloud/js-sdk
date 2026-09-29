@@ -21,8 +21,16 @@ import type {
 /** The plugin name, and so the URL segment, used when the caller names none. */
 export const DEFAULT_PLUGIN_NAME = "sandbox";
 
-/** The prebuilt sandbox plugin ROM used when the caller names none. */
-export const DEFAULT_PLUGIN_ROM = "plugins/sandbox:latest";
+/** The prebuilt sandbox plugin image used when the caller names none. */
+export const DEFAULT_PLUGIN_IMAGE = "plugins/sandbox:latest";
+
+/**
+ * The prebuilt sandbox plugin image used when the caller names none.
+ *
+ * @deprecated The platform renamed a plugin's `rom` to `image`. Use
+ * {@link DEFAULT_PLUGIN_IMAGE} instead.
+ */
+export const DEFAULT_PLUGIN_ROM = DEFAULT_PLUGIN_IMAGE;
 
 /**
  * The instance image a sandbox boots when the caller names none. A sandbox
@@ -66,22 +74,22 @@ export function encodeFileData(data: string | Uint8Array): {
 /**
  * The `plugins` array to create with: the caller's, plus the sandbox plugin. An
  * entry already named `pluginName` is the sandbox plugin, so it is left as
- * written and keeps its `config`. Passing `rom` as well names two ROMs for one
- * plugin, which is refused rather than settled by precedence.
+ * written and keeps its `config`. Passing `pluginImage` as well names two
+ * images for one plugin, which is refused rather than settled by precedence.
  */
 export function withSandboxPlugin(
   plugins: models.CreateInstanceRequestPlugin[] | undefined,
   pluginName: string,
-  rom?: string | models.ImageSpec,
+  pluginImage?: string | models.ImageSpec,
 ): models.CreateInstanceRequestPlugin[] {
   const attached = plugins ?? [];
   const own = attached.find((plugin) => plugin.name === pluginName);
   if (own === undefined) {
-    return [{ name: pluginName, rom: rom ?? DEFAULT_PLUGIN_ROM }, ...attached];
+    return [{ name: pluginName, image: pluginImage ?? DEFAULT_PLUGIN_IMAGE }, ...attached];
   }
-  if (rom !== undefined) {
+  if (pluginImage !== undefined) {
     throw new UnikraftCloudError(
-      `The spec attaches a plugin named "${pluginName}" in \`plugins\` and also passes \`rom\`, so there are two ROMs for one plugin. Keep the \`plugins\` entry, which can also carry \`config\`, and drop \`rom\`.`,
+      `The spec attaches a plugin named "${pluginName}" in \`plugins\` and also passes \`pluginImage\`, so there are two images for one plugin. Keep the \`plugins\` entry, which can also carry \`config\`, and drop \`pluginImage\`.`,
       { kind: "config" },
     );
   }
@@ -91,12 +99,12 @@ export function withSandboxPlugin(
 export function pluginsFromSnapshot(
   plugins: models.CreateInstanceRequestPlugin[] | undefined,
   pluginName: string,
-  rom?: string | models.ImageSpec,
+  pluginImage?: string | models.ImageSpec,
 ): models.CreateInstanceRequestPlugin[] | undefined {
   const own = plugins?.find((plugin) => plugin.name === pluginName);
-  if (rom === undefined && own === undefined) return plugins;
+  if (pluginImage === undefined && own === undefined) return plugins;
   const passed = [
-    ...(rom === undefined ? [] : ["`rom`"]),
+    ...(pluginImage === undefined ? [] : ["`pluginImage`"]),
     ...(own === undefined ? [] : [`a \`plugins\` entry named "${pluginName}"`]),
   ];
   throw new UnikraftCloudError(
@@ -117,7 +125,7 @@ const STOP_REASON_RAN = 0b00011;
  * because each is optional on the wire: a start counter, a start timestamp, and
  * a stop reason that only a started instance can report.
  *
- * An instance whose image or plugin ROM could not be pulled has none of them.
+ * An instance whose image or plugin image could not be pulled has none of them.
  */
 export function started(instance: Instance): boolean {
   return (
@@ -298,6 +306,12 @@ export function assertSandboxSpec(spec: object): void {
   if (record.replicas !== undefined) {
     throw new UnikraftCloudError(
       "A sandbox addresses exactly one instance, so `replicas` would create instances that no sandbox wraps. Create one sandbox per call, or create replicated instances through `instances.create()`.",
+      { kind: "config" },
+    );
+  }
+  if (record.pluginImage !== undefined && record.rom !== undefined) {
+    throw new UnikraftCloudError(
+      "The spec passes both `pluginImage` and `rom`, so there are two images for one plugin. `rom` is the former name of `pluginImage`. Keep `pluginImage`, and drop `rom`.",
       { kind: "config" },
     );
   }

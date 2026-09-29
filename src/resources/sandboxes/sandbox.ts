@@ -151,8 +151,8 @@ export class Sandbox implements AsyncDisposable {
    *
    * A `template`, a `branch_from` source, or a `checkpoint` replaces the image.
    * The snapshot carries the image, the memory and the plugins of its source,
-   * so the sandbox plugin comes with it: leave `rom` out, and pass `pluginName`
-   * only when the source attached the plugin under another name.
+   * so the sandbox plugin comes with it: leave `pluginImage` out, and pass
+   * `pluginName` only when the source attached the plugin under another name.
    *
    * The sandbox goes to one metro: `metro`, or `metros` naming a single one, or
    * `UKC_METRO`, or the default. Name a full `http(s)://` URL as the `metro` to
@@ -274,11 +274,9 @@ export class Sandbox implements AsyncDisposable {
           ? `the instance is running but carries no plugin at all, so nothing answers at \`${this.pluginName}\`. A plugin is attached when the instance is created, which \`sandboxes.create()\` does for you`
           : `the instance is running but carries no plugin named \`${this.pluginName}\`, only ${names.join(", ")}. Pass the name it does carry as \`pluginName\``;
       }
-      const rom =
-        plugin === undefined
-          ? ""
-          : ` and that its ROM (\`${plugin.rom}\`) is a sandbox plugin image`;
-      return `the instance is running, so it is the sandbox plugin that did not answer. Read the instance's console log (\`sandbox.instance.logs()\`), which carries the plugin's own output${rom}`;
+      const pluginImage =
+        plugin === undefined ? "" : ` and that its image (\`${plugin.image}\`) is a sandbox plugin`;
+      return `the instance is running, so it is the sandbox plugin that did not answer. Read the instance's console log (\`sandbox.instance.logs()\`), which carries the plugin's own output${pluginImage}`;
     }
 
     // The platform wakes a sleeping instance to serve a plugin request, so
@@ -303,14 +301,14 @@ export class Sandbox implements AsyncDisposable {
     // An instance that never ran is a different failure from one that ran and
     // exited, and it wants different advice: its console log is empty, so
     // pointing at the log sends the caller to look at nothing. An image or a
-    // plugin ROM that could not be pulled lands here, such as a private image
-    // or a typo in a ROM name.
+    // plugin image that could not be pulled lands here, such as a private image
+    // or a typo in an image name.
     if (!started(instance)) {
-      const roms = [
+      const images = [
         `\`${instance.image}\``,
-        ...(plugin === undefined ? [] : [`\`${plugin.rom}\``]),
+        ...(plugin === undefined ? [] : [`\`${plugin.image}\``]),
       ];
-      return `${state} and never started, so nothing inside it has run yet. The usual cause is an image the platform could not fetch or boot: check that ${roms.join(" or ")} ${roms.length > 1 ? "both exist" : "exists"}, that the name is spelled as the registry has it, and that this account can read ${roms.length > 1 ? "them" : "it"}`;
+      return `${state} and never started, so nothing inside it has run yet. The usual cause is an image the platform could not fetch or boot: check that ${images.join(" or ")} ${images.length > 1 ? "both exist" : "exists"}, that the name is spelled as the registry has it, and that this account can read ${images.length > 1 ? "them" : "it"}`;
     }
 
     return `${state}${exit}, and the sandbox plugin runs inside the instance, so nothing answers while the instance is down. Start it again (\`sandbox.instance.start()\`) and read the console log (\`sandbox.instance.logs()\`); a base image whose main process exits immediately stops the instance with it`;
@@ -531,8 +529,17 @@ export class Sandboxes {
   async create(spec: SandboxSpec = {}, opts: CreateSandboxOptions = {}): Promise<Sandbox> {
     assertNoClientConfig(opts, "`sandboxes.create()`");
     assertSandboxSpec(spec);
-    const { rom, pluginName: named, image: namedImage, ...instanceSpec } = spec;
+    const {
+      rom,
+      pluginImage: namedPluginImage,
+      pluginName: named,
+      image: namedImage,
+      ...instanceSpec
+    } = spec;
     const pluginName = named ?? DEFAULT_PLUGIN_NAME;
+    // `rom` is the former name of `pluginImage`, and `assertSandboxSpec` has
+    // already refused a spec that carries both.
+    const pluginImage = namedPluginImage ?? rom;
     // `template`, `branch_from` and `checkpoint` create from a snapshot, which
     // carries the image, the memory and the plugins of its source. The platform
     // answers 400 to `memory_mb` next to one, and refuses a second entry for a
@@ -550,8 +557,8 @@ export class Sandboxes {
       ? instanceSpec.memory_mb
       : (instanceSpec.memory_mb ?? DEFAULT_MEMORY_MB);
     const plugins = fromSnapshot
-      ? pluginsFromSnapshot(instanceSpec.plugins, pluginName, rom)
-      : withSandboxPlugin(instanceSpec.plugins, pluginName, rom);
+      ? pluginsFromSnapshot(instanceSpec.plugins, pluginName, pluginImage)
+      : withSandboxPlugin(instanceSpec.plugins, pluginName, pluginImage);
 
     const call = callOptions(opts);
     const instance = await this.#createInstance(
