@@ -1,0 +1,45 @@
+src/resources/sandboxes/index.ts
+  s_d78873db9e4ad4::t_32679cada60205 13
+src/resources/sandboxes/types.ts
+  s_d78873db9e4ad4::t_4510a5392f2268 37-46
+src/index.ts
+  s_d78873db9e4ad4::t_32679cada60205 362
+test/e2e/sandbox.test.ts
+  s_d78873db9e4ad4::t_4af3882613a372 17,26,87
+src/resources/sandboxes/options.ts
+  s_d78873db9e4ad4::t_4510a5392f2268 312-317
+  s_d78873db9e4ad4::t_2d7ff7a720daab 24-33,77-78,83,88,90,92,102,105,107,128
+src/resources/sandboxes/sandbox.ts
+  s_d78873db9e4ad4::t_6ae8723d75ed8a 277,279,304-305,307,309,311,540-542,560-561
+  s_d78873db9e4ad4::t_b8901793069670 278,532-538
+  s_d78873db9e4ad4::t_a776eed3f1d891 154-155
+test/sandbox.test.ts
+  s_d78873db9e4ad4::t_8dcac7a98a7b32 483
+  s_d78873db9e4ad4::t_cf96ce3fd1b581 16,61,72,74,80,82,84-85,88-103,108-109,118-119
+examples/sandbox.ts
+  s_d78873db9e4ad4::t_4af3882613a372 24-25
+test/e2e/live.ts
+  s_d78873db9e4ad4::t_4af3882613a372 25-26,30,37,64
+src/api/platform/audit.gen.ts
+  s_d78873db9e4ad4::t_d88e4257f9380b 1-33
+src/api/platform/index.gen.ts
+  s_d78873db9e4ad4::t_d8256710c64ba2 6
+src/api/platform/models.gen.ts
+  s_d78873db9e4ad4::t_2b5dcf261804f8 6-194,2032-2036,2063,2068-2076,2078,3526-3530,3533,3659,3664,4646-4648,4705-4707
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "21a50cd3a78b3ca0938b8914d24bc87dfb292af7",
+  "prompts": {},
+  "sessions": {
+    "s_d78873db9e4ad4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "743de6d8-b84e-4684-80d6-2be2055839fd",
+        "model": "claude-opus-5"
+      },
+      "human_author": "aabedraba <abdallah@unikraft.com>"
+    }
+  }
+}
