@@ -1,0 +1,19 @@
+.github/workflows/sync.yaml
+  s_d78873db9e4ad4::t_0979153a643d13 69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c46c8b9f54923aa0a8be2edadc12d3a236d0a773",
+  "prompts": {},
+  "sessions": {
+    "s_d78873db9e4ad4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "743de6d8-b84e-4684-80d6-2be2055839fd",
+        "model": "claude-opus-5"
+      },
+      "human_author": "aabedraba <abdallah@unikraft.com>"
+    }
+  }
+}
