@@ -21,6 +21,9 @@ import type {
 /** The plugin name, and so the URL segment, used when the caller names none. */
 export const DEFAULT_PLUGIN_NAME = "sandbox";
 
+/** The two spellings of the plugin image shorthand on a `SandboxSpec`. */
+export type PluginImageKey = "pluginImage" | "rom";
+
 /** The prebuilt sandbox plugin image used when the caller names none. */
 export const DEFAULT_PLUGIN_IMAGE = "plugins/sandbox:latest";
 
@@ -76,11 +79,15 @@ export function encodeFileData(data: string | Uint8Array): {
  * entry already named `pluginName` is the sandbox plugin, so it is left as
  * written and keeps its `config`. Passing `pluginImage` as well names two
  * images for one plugin, which is refused rather than settled by precedence.
+ *
+ * `key` is the spelling the caller used for the shorthand, so that an error
+ * never asks them to drop an option they did not pass.
  */
 export function withSandboxPlugin(
   plugins: models.CreateInstanceRequestPlugin[] | undefined,
   pluginName: string,
   pluginImage?: string | models.ImageSpec,
+  key: PluginImageKey = "pluginImage",
 ): models.CreateInstanceRequestPlugin[] {
   const attached = plugins ?? [];
   const own = attached.find((plugin) => plugin.name === pluginName);
@@ -89,7 +96,7 @@ export function withSandboxPlugin(
   }
   if (pluginImage !== undefined) {
     throw new UnikraftCloudError(
-      `The spec attaches a plugin named "${pluginName}" in \`plugins\` and also passes \`pluginImage\`, so there are two images for one plugin. Keep the \`plugins\` entry, which can also carry \`config\`, and drop \`pluginImage\`.`,
+      `The spec attaches a plugin named "${pluginName}" in \`plugins\` and also passes \`${key}\`, so there are two images for one plugin. Keep the \`plugins\` entry, which can also carry \`config\`, and drop \`${key}\`.`,
       { kind: "config" },
     );
   }
@@ -100,11 +107,12 @@ export function pluginsFromSnapshot(
   plugins: models.CreateInstanceRequestPlugin[] | undefined,
   pluginName: string,
   pluginImage?: string | models.ImageSpec,
+  key: PluginImageKey = "pluginImage",
 ): models.CreateInstanceRequestPlugin[] | undefined {
   const own = plugins?.find((plugin) => plugin.name === pluginName);
   if (pluginImage === undefined && own === undefined) return plugins;
   const passed = [
-    ...(pluginImage === undefined ? [] : ["`pluginImage`"]),
+    ...(pluginImage === undefined ? [] : [`\`${key}\``]),
     ...(own === undefined ? [] : [`a \`plugins\` entry named "${pluginName}"`]),
   ];
   throw new UnikraftCloudError(

@@ -540,6 +540,7 @@ export class Sandboxes {
     // `rom` is the former name of `pluginImage`, and `assertSandboxSpec` has
     // already refused a spec that carries both.
     const pluginImage = namedPluginImage ?? rom;
+    const pluginImageKey = namedPluginImage === undefined ? "rom" : "pluginImage";
     // `template`, `branch_from` and `checkpoint` create from a snapshot, which
     // carries the image, the memory and the plugins of its source. The platform
     // answers 400 to `memory_mb` next to one, and refuses a second entry for a
@@ -557,8 +558,8 @@ export class Sandboxes {
       ? instanceSpec.memory_mb
       : (instanceSpec.memory_mb ?? DEFAULT_MEMORY_MB);
     const plugins = fromSnapshot
-      ? pluginsFromSnapshot(instanceSpec.plugins, pluginName, pluginImage)
-      : withSandboxPlugin(instanceSpec.plugins, pluginName, pluginImage);
+      ? pluginsFromSnapshot(instanceSpec.plugins, pluginName, pluginImage, pluginImageKey)
+      : withSandboxPlugin(instanceSpec.plugins, pluginName, pluginImage, pluginImageKey);
 
     const call = callOptions(opts);
     const instance = await this.#createInstance(

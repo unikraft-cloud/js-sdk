@@ -102,6 +102,15 @@ test("1. the caller's own sandbox plugin entry is kept, not duplicated", async (
     });
   }
 
+  // A conflict names the spelling the caller used, not its replacement, for
+  // both a same-name entry and a snapshot source.
+  for (const spec of [
+    { image: "img", rom: "a:1", plugins: [{ name: "sandbox", image: "b:1" }] },
+    { template: { uuid: "t1" }, rom: "a:1" },
+  ]) {
+    await expect(ukc.metro("fra").sandboxes.create(spec)).rejects.toThrow(/`rom`/);
+  }
+
   // A snapshot source already carries the sandbox plugin, so naming it again
   // is refused before the platform answers EINVAL; another plugin still passes.
   for (const spec of [
