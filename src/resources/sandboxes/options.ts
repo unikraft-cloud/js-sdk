@@ -48,6 +48,22 @@ export const DEFAULT_BOOT_TIMEOUT_S = 30;
  */
 export const DEFAULT_MEMORY_MB = 2048;
 
+/**
+ * The longest time one request may hold the plugin for, in seconds. The
+ * gateway in front of a plugin cuts a request that it holds for about a minute
+ * and answers 504, so a longer wait is split into requests of this length. The
+ * plugin refuses a `req_timeout_s` above it for the same reason.
+ */
+export const MAX_WAIT_SLICE_S = 55;
+
+/**
+ * The seconds left until `deadline`, a `Date.now()` value, and never less than
+ * zero: a wait request with a negative `timeout_s` is a 400, not a short wait.
+ */
+export function secondsUntil(deadline: number): number {
+  return Math.max(0, (deadline - Date.now()) / 1000);
+}
+
 export const MISSING_TOKEN =
   "The UKC_TOKEN environment variable is missing or empty; either set it, or pass a token " +
   "explicitly: Sandbox.create({ image }, { token }), or use a client: " +

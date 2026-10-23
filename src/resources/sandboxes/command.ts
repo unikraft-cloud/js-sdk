@@ -7,7 +7,7 @@ import type { models as sandboxModels } from "@unikraft/cloud-plugin-sandbox-api
 import { decodeText, toBase64 } from "../../core/base64.js";
 import { UnikraftCloudError } from "../../core/http.js";
 import { unwrap } from "../../core/response.js";
-import { callOptions, rangeHeader } from "./options.js";
+import { callOptions, MAX_WAIT_SLICE_S, rangeHeader, secondsUntil } from "./options.js";
 // Type-only, and so erased: a `Command` belongs to a `Sandbox`, which builds it.
 import type { Sandbox } from "./sandbox.js";
 import type {
@@ -20,7 +20,8 @@ import type {
 
 /**
  * A command inside a sandbox. Each method is exactly one request, so a caller
- * can see what a wait costs.
+ * can see what a call costs. {@link Command.wait} is the exception: one request
+ * for each {@link MAX_WAIT_SLICE_S} seconds the command runs.
  *
  * @example
  * const command = await sandbox.start("sleep 30");
@@ -48,7 +49,10 @@ export class Command {
   }
 
   /**
-   * Block until the command exits.
+   * Block until the command exits, or until `timeoutSeconds` pass. The wait is
+   * a loop of requests that each hold the plugin for at most
+   * {@link MAX_WAIT_SLICE_S} seconds, because the gateway cuts a longer one.
+   * Each request counts the time it takes against `timeoutSeconds`.
    *
    * @example
    * await command.wait();                       // however long it takes
@@ -57,23 +61,32 @@ export class Command {
   async wait(opts: WaitCommandOptions = {}): Promise<void> {
     const { timeoutSeconds, ...rest } = opts;
     const call = callOptions(rest);
-    if (timeoutSeconds === undefined) {
-      unwrap(await this.sandbox.api.commands.waitForCommand(this.uuid, call));
-      return;
+    const deadline = timeoutSeconds === undefined ? undefined : Date.now() + timeoutSeconds * 1000;
+    for (;;) {
+      const remaining = deadline === undefined ? MAX_WAIT_SLICE_S : secondsUntil(deadline);
+      const exited = await this.#waitSlice(Math.min(MAX_WAIT_SLICE_S, remaining), call);
+      if (exited) return;
+      if (deadline !== undefined && secondsUntil(deadline) <= 0) return;
     }
+  }
+
+  /** One wait request. Whether the command exited within `seconds`. */
+  async #waitSlice(seconds: number, call: ReturnType<typeof callOptions>): Promise<boolean> {
     try {
       unwrap(
         await this.sandbox.api.commands.waitForCommandWithTimeout(this.uuid, {
-          body: { timeout_s: timeoutSeconds },
+          body: { timeout_s: seconds },
           ...call,
         }),
       );
+      return true;
     } catch (err) {
       // The plugin answers 408 when the timeout elapses, which is this method
       // doing what it was asked rather than a failure: the command keeps
       // running, and the caller reads its state next. Every other status is
       // still an error.
       if (!isTimedOut(err)) throw err;
+      return false;
     }
   }
 
