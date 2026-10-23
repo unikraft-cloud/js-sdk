@@ -3,6 +3,7 @@
 // Barrel for the generated "plumbing" API.
 export type { ApiClient, CallOptions } from "../../core/http.js";
 export * as models from "./models.gen.js";
+export { AuditApi } from "./audit.gen.js";
 export { AutoscaleApi } from "./autoscale.gen.js";
 export { CertificatesApi } from "./certificates.gen.js";
 export { ImagesApi } from "./images.gen.js";
