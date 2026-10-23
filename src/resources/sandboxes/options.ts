@@ -6,7 +6,7 @@
 // what a byte range looks like on the wire, and which options belong to a
 // client rather than to a call.
 
-import type * as sandboxModels from "@unikraft/cloud-plugin-sandbox-api/models";
+import type { models as sandboxModels } from "@unikraft/cloud-plugin-sandbox-api";
 import type * as models from "../../api/platform/models.gen.js";
 import { toBase64 } from "../../core/base64.js";
 import { type CallOptions, UnikraftCloudError } from "../../core/http.js";

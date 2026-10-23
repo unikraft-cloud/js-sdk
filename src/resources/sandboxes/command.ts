@@ -3,7 +3,7 @@
 //
 // One command inside a sandbox, addressed by the UUID the plugin assigned it.
 
-import type * as sandboxModels from "@unikraft/cloud-plugin-sandbox-api/models";
+import type { models as sandboxModels } from "@unikraft/cloud-plugin-sandbox-api";
 import { decodeText, toBase64 } from "../../core/base64.js";
 import { UnikraftCloudError } from "../../core/http.js";
 import { unwrap } from "../../core/response.js";
