@@ -59,6 +59,16 @@ export interface UnikraftCloudConfig {
    * `undici` dependency). Defaults to `true`; set `false` to opt out.
    */
   proxyFromEnv?: boolean;
+  /**
+   * Cache the DNS answer for each API host on Node, so that the new connections
+   * of a burst share one `dns.lookup` and do not queue for the libuv thread
+   * pool. A cached answer lives for 5 minutes, and a failed connection drops
+   * it. Requires the optional `undici` dependency, and has no effect with a
+   * custom `fetch`. Defaults to `true`. Set `false` to send requests through
+   * the global `fetch` again, for example when a mock or an instrumentation
+   * must see them on `globalThis.fetch` or on the global undici dispatcher.
+   */
+  dnsCache?: boolean;
 }
 
 /**
@@ -132,6 +142,7 @@ function buildSession(config: UnikraftCloudConfig): Session {
     headers: config.headers,
     userAgent: config.userAgent ?? USER_AGENT,
     proxyFromEnv: config.proxyFromEnv,
+    dnsCache: config.dnsCache,
   };
 
   // A named base URL (explicitly, or as the `metro`) is the only endpoint there

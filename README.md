@@ -451,6 +451,20 @@ import { UnikraftCloud } from "@unikraft/cloud";
 const ukc = new UnikraftCloud({ token, fetch: myFetch });
 ```
 
+On Node.js, install the optional `undici` dependency to make bursts of parallel
+requests faster:
+
+```sh
+npm install undici
+```
+
+Node.js resolves the host of each new connection with `dns.lookup`, which runs
+on the libuv thread pool of 4 threads. With `undici` installed, the SDK sends
+requests through undici's `fetch` and keeps each DNS answer for 5 minutes, so
+the new connections of a burst share one lookup. A failed connection drops the
+answer. Set `dnsCache: false` to use the global `fetch` again, for example
+when a mock or an instrumentation must see the requests there.
+
 ## Debugging with a proxy (MITM)
 
 On Node, the client honours the standard proxy environment variables so you can
@@ -467,8 +481,8 @@ node your-script.js
 
 `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY` are all recognised, in
 upper- or lower-case. Node's global `fetch` ignores these by itself, so the SDK
-applies them via undici's `EnvHttpProxyAgent`, imported lazily only when a proxy
-variable is set. If `undici` is not installed, requests proceed unproxied and a
+applies them via undici's `EnvHttpProxyAgent`, which it imports lazily on the
+first request. If `undici` is not installed, requests proceed unproxied and a
 one-time warning is logged.
 
 Opt out per client with `new UnikraftCloud({ proxyFromEnv: false })`. Proxy

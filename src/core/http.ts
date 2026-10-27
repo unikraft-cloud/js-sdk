@@ -5,6 +5,7 @@
 // A single UnikraftCloudError is defined here so `instanceof` works across
 // every resource of both the platform and control-plane APIs.
 
+import { type Dispatcher, sharedTransport, type Transport } from "./transport.js";
 import { stripTrailingSlashes } from "./url.js";
 
 /** A single error entry returned within a response envelope. */
@@ -51,17 +52,6 @@ export interface CallOptions {
 /** Minimal `fetch` signature the client depends on. */
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
-/** Opaque undici `Dispatcher` handle (resolved from proxy env vars on Node). */
-interface Dispatcher {
-  dispatch(...args: never[]): boolean;
-}
-
-/** A version-matched `fetch` + `dispatcher` pair from a single undici module. */
-interface ProxyTransport {
-  fetch: FetchLike;
-  dispatcher: Dispatcher;
-}
-
 /** `fetch` init plus the undici-only `dispatcher` extension. */
 type RequestInitWithDispatcher = RequestInit & { dispatcher?: Dispatcher };
 
@@ -83,6 +73,16 @@ export interface ApiClientConfig {
    * optional `undici` dependency. Defaults to `true`; set `false` to opt out.
    */
   proxyFromEnv?: boolean;
+  /**
+   * Cache the DNS answer for each API host on Node, so that the new connections
+   * of a burst share one `dns.lookup` and do not queue for the libuv thread
+   * pool. A cached answer lives for 5 minutes, and a failed connection drops
+   * it. Requires the optional `undici` dependency, and has no effect with a
+   * custom `fetch`. Defaults to `true`. Set `false` to send requests through
+   * the global `fetch` again, for example when a mock or an instrumentation
+   * must see them on `globalThis.fetch` or on the global undici dispatcher.
+   */
+  dnsCache?: boolean;
 }
 
 /**
@@ -132,93 +132,6 @@ export interface RequestArgs {
   path: string;
   query?: Record<string, QueryValue>;
   body?: unknown;
-}
-
-const PROXY_ENV_VARS = [
-  "HTTP_PROXY",
-  "http_proxy",
-  "HTTPS_PROXY",
-  "https_proxy",
-  "ALL_PROXY",
-  "all_proxy",
-];
-
-let warnedProxy = false;
-
-/** Emit a one-time warning explaining why a set proxy env var isn't applied. */
-function warnProxy(reason: string, cause?: unknown): void {
-  if (warnedProxy) return;
-  warnedProxy = true;
-  const detail = cause ? ` (${String(cause)})` : "";
-  console.warn(
-    `[@unikraft/cloud] A proxy environment variable is set but requests will not be proxied: ${reason}${detail}`,
-  );
-}
-
-/** True when any HTTP proxy environment variable is set. */
-function hasProxyEnv(): boolean {
-  if (typeof process === "undefined" || !process.env) return false;
-  return PROXY_ENV_VARS.some((name) => {
-    const v = process.env[name];
-    return typeof v === "string" && v.length > 0;
-  });
-}
-
-/**
- * Build a dispatcher that honours the proxy environment variables, using
- * undici's `EnvHttpProxyAgent` (which also respects `NO_PROXY`). Returns
- * undefined when no proxy is configured or `undici` is unavailable. Never
- * throws — proxy support is best-effort. Callers go through
- * {@link proxyTransport}, which memoises the result process-wide.
- *
- * The dispatcher and fetch come from the SAME undici module. A dispatcher must
- * only be used with its own version's `fetch`: mixing a standalone-undici
- * dispatcher into Node's bundled `fetch` fails with `UND_ERR_INVALID_ARG:
- * invalid onRequestStart method`.
- */
-async function createProxyTransport(): Promise<ProxyTransport | undefined> {
-  if (!hasProxyEnv()) return undefined;
-
-  // Non-literal specifier: keeps `undici` an optional, lazily-loaded dep and
-  // avoids eager bundling in browser/Deno builds.
-  const specifier = "undici";
-  let undici: {
-    EnvHttpProxyAgent?: new () => Dispatcher;
-    fetch?: FetchLike;
-  };
-  try {
-    undici = await import(specifier);
-  } catch (cause) {
-    warnProxy(
-      "the optional `undici` dependency is not installed. Install it (`npm install undici`) to route requests through the proxy.",
-      cause,
-    );
-    return undefined;
-  }
-
-  if (typeof undici.EnvHttpProxyAgent !== "function" || typeof undici.fetch !== "function") {
-    warnProxy("the installed `undici` is too old; upgrade to undici >= 8 for proxy support.");
-    return undefined;
-  }
-
-  try {
-    return { fetch: undici.fetch, dispatcher: new undici.EnvHttpProxyAgent() };
-  } catch (cause) {
-    warnProxy("failed to construct undici's EnvHttpProxyAgent.", cause);
-    return undefined;
-  }
-}
-
-/**
- * Process-global memo for {@link createProxyTransport} to reuse the same
- * connection pool across every client.
- */
-let proxyMemo: Promise<ProxyTransport | undefined> | undefined;
-
-/** Resolve the shared proxy transport, building it at most once per process. */
-function proxyTransport(): Promise<ProxyTransport | undefined> {
-  proxyMemo ??= createProxyTransport();
-  return proxyMemo;
 }
 
 /**
@@ -316,7 +229,8 @@ export class ApiClient {
   protected readonly fetchImpl: FetchLike;
   protected readonly defaultHeaders: Record<string, string>;
   protected readonly proxyFromEnv: boolean;
-  // Whether the caller supplied a custom fetch (suppresses env-proxy injection).
+  readonly #dnsCache: boolean;
+  // Whether the caller supplied a custom fetch (suppresses the undici transport).
   readonly #hasCustomFetch: boolean;
 
   constructor(config: ApiClientConfig) {
@@ -336,17 +250,18 @@ export class ApiClient {
     this.defaultHeaders = { ...config.headers };
     if (config.userAgent) this.defaultHeaders["User-Agent"] = config.userAgent;
     this.proxyFromEnv = config.proxyFromEnv ?? true;
+    this.#dnsCache = config.dnsCache ?? true;
   }
 
   /**
-   * Resolve the proxy transport (undici fetch + dispatcher), shared process-wide
-   * by {@link proxyTransport}. Skipped when a custom fetch was supplied — the
+   * Resolve the undici transport (fetch and dispatcher), shared process-wide by
+   * {@link sharedTransport}. Skipped when a custom fetch was supplied: the
    * caller owns transport, and a standalone-undici dispatcher is incompatible
    * with a foreign fetch.
    */
-  #proxyTransport(): Promise<ProxyTransport | undefined> {
-    if (!this.proxyFromEnv || this.#hasCustomFetch) return Promise.resolve(undefined);
-    return proxyTransport();
+  #transport(): Promise<Transport | undefined> {
+    if (this.#hasCustomFetch) return Promise.resolve(undefined);
+    return sharedTransport({ proxyFromEnv: this.proxyFromEnv, dnsCache: this.#dnsCache });
   }
 
   /**
@@ -385,19 +300,19 @@ export class ApiClient {
       signal: options.signal,
     };
 
-    // When a proxy env var is set, route through undici's own fetch + matching
-    // dispatcher; otherwise use the configured/global fetch.
-    const proxy = await this.#proxyTransport();
+    // The dispatcher works only with the fetch of its own undici module, so a
+    // transport replaces the configured or global fetch too.
+    const transport = await this.#transport();
     let fetchImpl = this.fetchImpl;
-    if (proxy) {
-      fetchImpl = proxy.fetch;
-      init.dispatcher = proxy.dispatcher;
+    if (transport) {
+      fetchImpl = transport.fetch;
+      init.dispatcher = transport.dispatcher;
     }
 
     try {
       return { response: await fetchImpl(url, init), url };
     } catch (cause) {
-      const via = init.dispatcher
+      const via = transport?.proxied
         ? " (routed through the proxy from your HTTP_PROXY/HTTPS_PROXY environment; check the proxy is reachable and its CA is trusted via NODE_EXTRA_CA_CERTS)"
         : "";
       throw new UnikraftCloudError(`Request to ${url} failed${via}: ${describeCause(cause)}`, {
