@@ -1,12 +1,9 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026, Unikraft GmbH.
 //
-// The undici transport behind ApiClient on Node. Node's own fetch resolves the
-// host of each new connection with `dns.lookup`, which runs `getaddrinfo` on
-// the libuv thread pool of 4 threads. A burst of parallel requests then opens
-// its connections only as fast as that pool resolves the same name again and
-// again. This transport puts a cache in front of `dns.lookup`, so that the
-// connections of a burst share one lookup.
+// Node's fetch resolves the host of each new connection with `dns.lookup` on
+// the libuv thread pool of 4 threads, so a burst opens its connections only as
+// fast as that pool resolves the same name. This transport caches the answer.
 
 import type { FetchLike } from "./http.js";
 
@@ -19,11 +16,9 @@ export interface Dispatcher {
 export interface Transport {
   fetch: FetchLike;
   dispatcher: Dispatcher;
-  /** True when the dispatcher routes requests through a proxy from the environment. */
   proxied: boolean;
 }
 
-/** Which transport {@link createTransport} builds. */
 export interface TransportOptions {
   proxyFromEnv: boolean;
   dnsCache: boolean;
@@ -63,7 +58,6 @@ export type Resolver = (
   options: LookupOptions & { all: true },
 ) => Promise<LookupAddress[]>;
 
-/** A {@link LookupFunction} that keeps each answer for a time to live. */
 export interface CachedLookup {
   lookup: LookupFunction;
   /** Drops the answers for a host, so that its next connection resolves it again. */
@@ -132,9 +126,8 @@ async function nodeResolve(...args: Parameters<Resolver>): Promise<LookupAddress
 }
 
 /**
- * Put a cache in front of `resolve`. Parallel lookups of one host share one
- * call to `resolve`. A failed answer is not kept, so the next lookup tries
- * again.
+ * Parallel lookups of one host share one call to `resolve`. A failed answer is
+ * not kept, so the next lookup tries again.
  */
 export function cachedLookup(
   resolve: Resolver = nodeResolve,
@@ -191,11 +184,10 @@ function cachingConnector(
 }
 
 /**
- * Build the transport for `options`, or return undefined when the global
- * `fetch` must carry the requests: `undici` is not installed, or neither a
- * proxy nor the DNS cache is in use. Never throws, because the transport only
- * makes requests faster or proxied, and the global `fetch` still works without
- * it. Callers go through {@link sharedTransport}.
+ * Returns undefined when the global `fetch` must carry the requests: `undici`
+ * is not installed, or neither a proxy nor the DNS cache is in use. Never
+ * throws, because the global `fetch` works without the transport. Callers go
+ * through {@link sharedTransport}, which builds it once per process.
  *
  * The dispatcher and fetch come from the SAME undici module. A dispatcher must
  * only be used with its own version's `fetch`: mixing a standalone-undici

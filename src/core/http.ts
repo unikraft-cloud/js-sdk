@@ -74,13 +74,12 @@ export interface ApiClientConfig {
    */
   proxyFromEnv?: boolean;
   /**
-   * Cache the DNS answer for each API host on Node, so that the new connections
-   * of a burst share one `dns.lookup` and do not queue for the libuv thread
-   * pool. A cached answer lives for 5 minutes, and a failed connection drops
-   * it. Requires the optional `undici` dependency, and has no effect with a
-   * custom `fetch`. Defaults to `true`. Set `false` to send requests through
-   * the global `fetch` again, for example when a mock or an instrumentation
-   * must see them on `globalThis.fetch` or on the global undici dispatcher.
+   * Cache the DNS answer of each API host on Node, so that the connections of
+   * a burst share one `dns.lookup` instead of a wait for the libuv thread
+   * pool. An answer lives for 5 minutes; a failed connection drops it. Needs
+   * the optional `undici` dependency; a custom `fetch` turns it off. Defaults
+   * to `true`. Set `false` when a mock or an instrumentation must see the
+   * requests on `globalThis.fetch` or on the global undici dispatcher.
    */
   dnsCache?: boolean;
 }
@@ -230,7 +229,7 @@ export class ApiClient {
   protected readonly defaultHeaders: Record<string, string>;
   protected readonly proxyFromEnv: boolean;
   readonly #dnsCache: boolean;
-  // Whether the caller supplied a custom fetch (suppresses the undici transport).
+  // A custom fetch turns the undici transport off; see #transport().
   readonly #hasCustomFetch: boolean;
 
   constructor(config: ApiClientConfig) {
@@ -254,10 +253,8 @@ export class ApiClient {
   }
 
   /**
-   * Resolve the undici transport (fetch and dispatcher), shared process-wide by
-   * {@link sharedTransport}. Skipped when a custom fetch was supplied: the
-   * caller owns transport, and a standalone-undici dispatcher is incompatible
-   * with a foreign fetch.
+   * A custom fetch owns the transport, and a standalone-undici dispatcher does
+   * not work with a foreign fetch, so it gets none.
    */
   #transport(): Promise<Transport | undefined> {
     if (this.#hasCustomFetch) return Promise.resolve(undefined);

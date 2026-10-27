@@ -31,14 +31,12 @@ afterEach(() => {
 
 const loopback: LookupAddress[] = [{ address: "127.0.0.1", family: 4 }];
 
-/** Ask `lookup` for a host, and return the values it calls back with. */
 function ask(lookup: LookupFunction, hostname: string, all = true): Promise<unknown[]> {
   return new Promise((resolve, reject) => {
     lookup(hostname, { all }, (error, ...answer) => (error ? reject(error) : resolve(answer)));
   });
 }
 
-/** Start an HTTP server on 127.0.0.1 that answers every request with an envelope. */
 async function listen(): Promise<{ port: number; close: () => Promise<void> }> {
   const server = createServer((_request, response) => {
     // Without keep-alive, each request opens a new connection, and each new
