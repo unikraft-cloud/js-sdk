@@ -208,6 +208,25 @@ function parseSseEvent(block: string, url: string, status: number): unknown {
   }
 }
 
+// Taken when this module loads, so that a caller's fake timers, which replace
+// the global `setImmediate` and run it only when the test advances the clock,
+// do not hold every request.
+const nativeSetImmediate = typeof setImmediate === "function" ? setImmediate : undefined;
+
+/**
+ * Resolves after the current turn of the event loop. undici, which carries
+ * `fetch` on Node, puts a keep-alive socket back in its pool only in a
+ * `setImmediate` after the response ends. A request that the caller sends
+ * before then finds no free socket, so it opens a new connection and pays one
+ * more round trip, and a TLS handshake over HTTPS. undici queues its
+ * `setImmediate` before the body ends, so one queued after the body is read
+ * runs after it. Runtimes without `setImmediate` resolve at once.
+ */
+function socketRelease(): Promise<void> {
+  if (nativeSetImmediate === undefined) return Promise.resolve();
+  return new Promise((resolve) => nativeSetImmediate(resolve));
+}
+
 /** Serialise a query object into a URL search string (form/explode style). */
 function encodeQuery(query: Record<string, QueryValue> | undefined): string {
   if (!query) return "";
@@ -357,6 +376,7 @@ export class ApiClient {
     const { response, url } = await this.#send(args, options, "application/json");
 
     const text = await response.text();
+    await socketRelease();
     let parsed: unknown;
     if (text.length > 0) {
       try {
@@ -429,7 +449,9 @@ export class ApiClient {
       );
     }
 
-    return new Uint8Array(await response.arrayBuffer());
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    await socketRelease();
+    return bytes;
   }
 
   /**

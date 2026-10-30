@@ -217,4 +217,24 @@ describe("UnikraftCloud", () => {
       await server.close();
     }
   });
+
+  it.each([
+    { via: "undici", dnsCache: undefined },
+    { via: "the global fetch", dnsCache: false },
+  ])(
+    "sends a request that follows another on the same connection, through $via",
+    async ({ dnsCache }) => {
+      const server = await listen({ keepAlive: true });
+      const baseUrl = `http://127.0.0.1:${server.port}`;
+      const ukc = new UnikraftCloud({ token: "t", baseUrl, dnsCache });
+
+      try {
+        await ukc.api.platform.instances.getInstances({});
+        await ukc.api.platform.instances.getInstances({});
+        expect(server.connections()).toBe(1);
+      } finally {
+        await server.close();
+      }
+    },
+  );
 });
