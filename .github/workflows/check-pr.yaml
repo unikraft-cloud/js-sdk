@@ -9,7 +9,6 @@ on:
     - edited
     branches:
     - prod-staging
-    - prod-stable
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
