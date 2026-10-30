@@ -25,6 +25,13 @@
   "engines": {
     "node": ">=22.12"
   },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "^24.22.1",
+      "onFail": "warn"
+    }
+  },
   "sideEffects": false,
   "types": "./dist/esm/index.d.ts",
   "exports": {
