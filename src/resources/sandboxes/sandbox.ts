@@ -11,7 +11,8 @@
 // `Sandboxes`, which runs through one you already have. They call each other,
 // so they share a module rather than a cycle.
 
-import { SandboxPluginApi } from "@unikraft/cloud-plugin-sandbox-api";
+import { SandboxPluginApi, type models as sandboxModels } from "@unikraft/cloud-plugin-sandbox-api";
+import { decodeText } from "../../core/base64.js";
 import { readEnv } from "../../core/env.js";
 import { ApiClient, type CallOptions, UnikraftCloudError } from "../../core/http.js";
 import type { Metro, MetroEndpoint, MetroScope } from "../../core/metro.js";
@@ -40,8 +41,10 @@ import {
   DEFAULT_MEMORY_MB,
   DEFAULT_PLUGIN_NAME,
   encodeFileData,
+  MAX_WAIT_SLICE_S,
   MISSING_TOKEN,
   pluginsFromSnapshot,
+  secondsUntil,
   started,
   withoutClientConfig,
   withSandboxPlugin,
@@ -317,13 +320,20 @@ export class Sandbox implements AsyncDisposable {
   }
 
   /**
-   * Run a command, wait for it to exit, and return its output. Five requests
-   * over four round trips: start, wait, then the exit code and the logs
-   * together, then delete the record.
+   * Run a command, wait for it to exit, and return its output. One request for
+   * a command that exits within {@link MAX_WAIT_SLICE_S} seconds: the start
+   * request holds the plugin until the command exits, carries its exit code
+   * and output back, and forgets the record. A longer command continues in
+   * {@link Command.wait}, then costs the exit code and the logs together, and
+   * the delete.
    *
    * A `timeoutSeconds` that runs out is not an error: you get the output so far
    * and `exitcode: null`, and the command is left running and addressable as
    * `sandbox.command(uuid)`.
+   *
+   * A sandbox plugin from before `req_timeout_s` refuses the one-request start.
+   * The sandbox then starts the command without it, waits, and reads the exit
+   * code and the logs, as five requests, and does so for every later `exec`.
    *
    * @example
    * const { stdout, exitcode } = await sandbox.exec("echo hello");
@@ -332,14 +342,49 @@ export class Sandbox implements AsyncDisposable {
   async exec(cmd: string, opts: ExecOptions = {}): Promise<ExecResult> {
     const { keep, timeoutSeconds, cwd, env, ...rest } = opts;
     const call = callOptions(rest);
-
-    const command = await this.start(cmd, {
+    const deadline = timeoutSeconds === undefined ? undefined : Date.now() + timeoutSeconds * 1000;
+    const request: sandboxModels.RunCommandRequest = {
+      cmd,
       ...(cwd === undefined ? {} : { cwd }),
       ...(env === undefined ? {} : { env }),
-      ...call,
-    });
+    };
+
+    let started: sandboxModels.RunCommandData | undefined;
+    let refused = false;
+    if (this.#blockingStart) {
+      try {
+        started = await this.#startBlocking(request, deadline, keep ?? false, call);
+      } catch (err) {
+        if (!isBlockingStartRefused(err)) throw err;
+        refused = true;
+      }
+    }
+
+    // The one-request path answered. The record is already forgotten when the
+    // command exited, and a timeout that is also the caller's deadline leaves
+    // nothing more to ask.
+    if (started?.logs !== undefined) {
+      const timedOut = started.exitcode === null;
+      if (!timedOut || (deadline !== undefined && secondsUntil(deadline) <= 0)) {
+        return {
+          uuid: started.uuid,
+          stdout: decodeText(started.logs.stdout),
+          stderr: decodeText(started.logs.stderr),
+          exitcode: started.exitcode,
+        };
+      }
+    }
+
+    const command =
+      started === undefined
+        ? await this.#startPlain(request, call)
+        : new Command(this, started.uuid);
+    // Only a plain start that the plugin accepted proves that the refusal was
+    // about `req_timeout_s`, and not about the command itself.
+    if (refused) this.#blockingStart = false;
+
     await command.wait({
-      ...(timeoutSeconds === undefined ? {} : { timeoutSeconds }),
+      ...(deadline === undefined ? {} : { timeoutSeconds: secondsUntil(deadline) }),
       ...call,
     });
     // Two reads of unrelated state, so they go together: one round trip
@@ -357,6 +402,64 @@ export class Sandbox implements AsyncDisposable {
   }
 
   /**
+   * Whether `exec` asks the plugin to hold the start request until the command
+   * exits. It stops asking once the plugin has refused `req_timeout_s`, so a
+   * sandbox on an older plugin pays the refusal once.
+   */
+  #blockingStart = true;
+
+  /**
+   * Start a command and hold the request until it exits or the first wait slice
+   * ends. The slice is the caller's whole timeout when that is shorter. A
+   * deadline that has already passed sends nothing and reports no start, so the
+   * plain path polls once, as `timeoutSeconds: 0` asks.
+   */
+  async #startBlocking(
+    request: sandboxModels.RunCommandRequest,
+    deadline: number | undefined,
+    keep: boolean,
+    call: CallOptions,
+  ): Promise<sandboxModels.RunCommandData | undefined> {
+    const slice =
+      deadline === undefined
+        ? MAX_WAIT_SLICE_S
+        : Math.min(MAX_WAIT_SLICE_S, secondsUntil(deadline));
+    if (slice <= 0) return undefined;
+    return this.#run(
+      {
+        ...request,
+        req_timeout_s: slice,
+        // `forget` deletes the record when the command exits within the slice,
+        // and does nothing on a timeout, where the record is still needed.
+        ...(keep ? {} : { forget: true }),
+      },
+      call,
+    );
+  }
+
+  /** Start a command and return at once, as a `Command`. */
+  async #startPlain(request: sandboxModels.RunCommandRequest, call: CallOptions): Promise<Command> {
+    const { uuid } = await this.#run(request, call);
+    return new Command(this, uuid);
+  }
+
+  /** Send one start request, and refuse an answer that names no command. */
+  async #run(
+    request: sandboxModels.RunCommandRequest,
+    call: CallOptions,
+  ): Promise<sandboxModels.RunCommandData> {
+    const res = await this.api.commands.runCommand({ body: request, ...call });
+    const data = unwrap(res);
+    if (data?.uuid === undefined) {
+      throw new UnikraftCloudError("The sandbox started a command but reported no UUID for it.", {
+        kind: "http",
+        body: res,
+      });
+    }
+    return data;
+  }
+
+  /**
    * Start a command and return immediately, without waiting for it to exit.
    *
    * @example
@@ -365,22 +468,14 @@ export class Sandbox implements AsyncDisposable {
    */
   async start(cmd: string, opts: StartCommandOptions = {}): Promise<Command> {
     const { cwd, env, ...rest } = opts;
-    const res = await this.api.commands.runCommand({
-      body: {
+    return this.#startPlain(
+      {
         cmd,
         ...(cwd === undefined ? {} : { cwd }),
         ...(env === undefined ? {} : { env }),
       },
-      ...callOptions(rest),
-    });
-    const uuid = unwrap(res)?.uuid;
-    if (uuid === undefined) {
-      throw new UnikraftCloudError("The sandbox started a command but reported no UUID for it.", {
-        kind: "http",
-        body: res,
-      });
-    }
-    return new Command(this, uuid);
+      callOptions(rest),
+    );
   }
 
   /** Every command the sandbox knows about, in the order they were started. */
@@ -755,4 +850,17 @@ function anySignal(...signals: Array<AbortSignal | undefined>): AbortSignal | un
   const given = signals.filter((signal): signal is AbortSignal => signal !== undefined);
   if (given.length < 2) return given[0];
   return AbortSignal.any(given);
+}
+
+/**
+ * Whether a start that asked the plugin to hold the request was refused
+ * because the plugin does not know `req_timeout_s`. A sandbox plugin from
+ * before the field answers 400 to it. The other causes of a 400 on a start are
+ * out of reach from `exec`: the command line is a string, not a vector, no
+ * terminal is asked for, and the slice stays within the plugin's bounds. The
+ * plain start that follows settles it either way: a command that is itself
+ * refused is refused again there, and throws from there.
+ */
+function isBlockingStartRefused(err: unknown): boolean {
+  return err instanceof UnikraftCloudError && err.kind === "http" && err.status === 400;
 }

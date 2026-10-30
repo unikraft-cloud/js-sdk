@@ -4,7 +4,7 @@
 // A `Sandboxes` type takes the per-call options, and the matching `Sandbox`
 // entry point takes those plus the configuration a client is built from.
 
-import type * as sandboxModels from "@unikraft/cloud-plugin-sandbox-api/models";
+import type { models as sandboxModels } from "@unikraft/cloud-plugin-sandbox-api";
 import type * as models from "../../api/platform/models.gen.js";
 import type { CallOptions } from "../../core/http.js";
 import type { MetroScope } from "../../core/metro.js";
