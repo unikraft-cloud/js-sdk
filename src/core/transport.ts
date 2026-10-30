@@ -30,7 +30,7 @@ export interface TransportOptions {
 
 /** The boundaries of {@link createTransport}, which a test can replace. */
 export interface TransportDeps {
-  /** Loads the `undici` module. Defaults to a dynamic `import("undici")`. */
+  /** Loads the `undici` module. Defaults to the `import("undici")` that starts when this module loads. */
   importUndici?: () => Promise<unknown>;
   /** Resolves a host on a cache miss. Defaults to `dns.promises.lookup`. */
   resolve?: Resolver;
@@ -123,6 +123,22 @@ function importOptional(specifier: string): Promise<unknown> {
   return import(specifier);
 }
 
+let undiciModule: Promise<unknown> | undefined;
+
+function loadUndici(): Promise<unknown> {
+  undiciModule ??= importOptional("undici");
+  return undiciModule;
+}
+
+// Node needs tens of milliseconds of CPU to load undici. If the first request
+// starts the load, every request sent in the same tick waits for it, and a
+// burst of creates pays the load in each create. So the load starts when this
+// module loads, before the first request. A failed load is reported to
+// createTransport, which decides what to do without undici.
+if (typeof process !== "undefined" && typeof process.versions?.node === "string") {
+  loadUndici().catch(() => {});
+}
+
 /** Resolves a host through `dns.lookup`, which reads /etc/hosts before DNS. */
 async function nodeResolve(...args: Parameters<Resolver>): Promise<LookupAddress[]> {
   const dns = (await importOptional("node:dns")) as { promises: { lookup: Resolver } };
@@ -209,7 +225,7 @@ export async function createTransport(
 
   let undici: Undici;
   try {
-    undici = (await (deps.importUndici ?? (() => importOptional("undici")))()) as Undici;
+    undici = (await (deps.importUndici ?? loadUndici)()) as Undici;
   } catch (cause) {
     if (proxy) {
       warnProxy(
