@@ -12,6 +12,7 @@ import {
   type Resolver,
   type Transport,
   type TransportDeps,
+  type TransportOptions,
 } from "../src/core/transport.js";
 import { UnikraftCloud } from "../src/index.js";
 
@@ -37,17 +38,27 @@ function ask(lookup: LookupFunction, hostname: string, all = true): Promise<unkn
   });
 }
 
-async function listen(): Promise<{ port: number; close: () => Promise<void> }> {
+async function listen({ keepAlive = false } = {}): Promise<{
+  port: number;
+  connections: () => number;
+  close: () => Promise<void>;
+}> {
   const server = createServer((_request, response) => {
     // Without keep-alive, each request opens a new connection, and each new
     // connection looks up the host.
-    response.writeHead(200, { "content-type": "application/json", connection: "close" });
+    response.writeHead(200, {
+      "content-type": "application/json",
+      ...(!keepAlive && { connection: "close" }),
+    });
     response.end(JSON.stringify({ status: "success", op_time_us: 1 }));
   });
+  let connections = 0;
+  server.on("connection", () => connections++);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address() as AddressInfo;
   return {
     port,
+    connections: () => connections,
     close: () =>
       new Promise((resolve) => {
         server.closeAllConnections();
@@ -56,8 +67,11 @@ async function listen(): Promise<{ port: number; close: () => Promise<void> }> {
   };
 }
 
-async function directTransport(deps: TransportDeps = {}): Promise<Transport> {
-  const transport = await createTransport({ proxyFromEnv: true, dnsCache: true }, deps);
+async function directTransport(
+  deps: TransportDeps = {},
+  options: Partial<TransportOptions> = {},
+): Promise<Transport> {
+  const transport = await createTransport({ proxyFromEnv: true, dnsCache: true, ...options }, deps);
   if (!transport) throw new Error("expected the undici transport");
   return transport;
 }
@@ -137,6 +151,41 @@ describe("createTransport", () => {
     await expect(send(transport, url)).rejects.toMatchObject({ cause: { code: "ECONNREFUSED" } });
     expect(resolve).toHaveBeenCalledTimes(2);
   });
+
+  it("opens no more than maxConnections connections to a host", async () => {
+    const server = await listen({ keepAlive: true });
+    const transport = await directTransport({}, { maxConnections: 2 });
+
+    try {
+      const responses = await Promise.all(
+        Array.from({ length: 20 }, () => send(transport, `http://127.0.0.1:${server.port}/`)),
+      );
+
+      expect(responses.map((response) => response.status)).toEqual(Array(20).fill(200));
+      expect(server.connections()).toBe(2);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it.each([
+    { http2: undefined, allowH2: true },
+    { http2: false, allowH2: false },
+  ])(
+    "passes allowH2: $allowH2 to the connector when http2 is $http2",
+    async ({ http2, allowH2 }) => {
+      const buildConnector = vi.fn(() => () => undefined);
+      const importUndici = async () => ({
+        buildConnector,
+        fetch: globalThis.fetch,
+        Agent: class {},
+      });
+
+      await createTransport({ proxyFromEnv: false, dnsCache: true, http2 }, { importUndici });
+
+      expect(buildConnector).toHaveBeenCalledWith(expect.objectContaining({ allowH2 }));
+    },
+  );
 
   it("leaves the requests to the global fetch when undici is not installed", async () => {
     const importUndici = () => Promise.reject(new Error("Cannot find package 'undici'"));

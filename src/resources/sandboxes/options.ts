@@ -212,6 +212,8 @@ const CLIENT_ONLY_OPTIONS = {
   userAgent: true,
   proxyFromEnv: true,
   dnsCache: true,
+  http2: true,
+  maxConnections: true,
 } as const satisfies Record<ClientOnlyOption, true>;
 
 const CLIENT_ONLY_KEYS = Object.keys(CLIENT_ONLY_OPTIONS) as ClientOnlyOption[];

@@ -22,6 +22,10 @@ export interface Transport {
 export interface TransportOptions {
   proxyFromEnv: boolean;
   dnsCache: boolean;
+  /** Offer HTTP/2 in the TLS handshake. Defaults to `true`. */
+  http2?: boolean;
+  /** The most connections to one origin. Defaults to no limit. */
+  maxConnections?: number;
 }
 
 /** The boundaries of {@link createTransport}, which a test can replace. */
@@ -73,9 +77,9 @@ type Connector = (
 /** The parts of the `undici` module that this transport uses. */
 interface Undici {
   fetch?: FetchLike;
-  Agent?: new (options: { connect: Connector }) => Dispatcher;
+  Agent?: new (options: { connect: Connector; connections?: number }) => Dispatcher;
   EnvHttpProxyAgent?: new (options?: { connect: Connector }) => Dispatcher;
-  buildConnector?: (options: { lookup: LookupFunction }) => Connector;
+  buildConnector?: (options: { lookup: LookupFunction; allowH2?: boolean }) => Connector;
 }
 
 // `getaddrinfo` does not report the time to live of a DNS record, so the
@@ -170,10 +174,12 @@ export function cachedLookup(
 
 function cachingConnector(
   buildConnector: NonNullable<Undici["buildConnector"]>,
-  resolve?: Resolver,
+  resolve: Resolver | undefined,
+  allowH2: boolean,
 ): Connector {
   const cache = cachedLookup(resolve);
-  const connect = buildConnector({ lookup: cache.lookup });
+  // undici reads `allowH2` here, not on the Agent, when it gets a connector.
+  const connect = buildConnector({ lookup: cache.lookup, allowH2 });
   return (options, callback) =>
     connect(options, (error, socket) => {
       // The host can move to a new address. A failed connection is the first
@@ -217,7 +223,7 @@ export async function createTransport(
   let connect: Connector | undefined;
   if (options.dnsCache && typeof undici.buildConnector === "function") {
     try {
-      connect = cachingConnector(undici.buildConnector, deps.resolve);
+      connect = cachingConnector(undici.buildConnector, deps.resolve, options.http2 ?? true);
     } catch {
       // Continue without the cache, because it only makes requests faster.
     }
@@ -244,7 +250,11 @@ export async function createTransport(
     return undefined;
   }
   try {
-    return { fetch: undici.fetch, dispatcher: new undici.Agent({ connect }), proxied: false };
+    const dispatcher = new undici.Agent({
+      connect,
+      ...(options.maxConnections !== undefined && { connections: options.maxConnections }),
+    });
+    return { fetch: undici.fetch, dispatcher, proxied: false };
   } catch {
     return undefined;
   }
@@ -257,7 +267,12 @@ const shared = new Map<string, Promise<Transport | undefined>>();
  * that every client shares one connection pool and one DNS cache.
  */
 export function sharedTransport(options: TransportOptions): Promise<Transport | undefined> {
-  const key = `${options.proxyFromEnv}/${options.dnsCache}`;
+  const key = [
+    options.proxyFromEnv,
+    options.dnsCache,
+    options.http2 ?? true,
+    options.maxConnections ?? "",
+  ].join("/");
   let transport = shared.get(key);
   if (!transport) {
     transport = createTransport(options);

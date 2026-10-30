@@ -68,6 +68,22 @@ export interface UnikraftCloudConfig {
    * requests on `globalThis.fetch` or on the global undici dispatcher.
    */
   dnsCache?: boolean;
+  /**
+   * Offer HTTP/2 to the API host on Node. A burst then shares a few
+   * connections instead of a TLS handshake per request, when the host
+   * answers HTTP/2. Needs the undici transport (see `dnsCache`). Defaults to
+   * `true`; set `false` to keep every connection on HTTP/1.1.
+   */
+  http2?: boolean;
+  /**
+   * The most connections the undici transport opens to one API host. Until
+   * the first HTTP/2 connection is up, undici opens one connection per
+   * request, so a cold burst of 100 does 100 TLS handshakes without a limit.
+   * Set it, for example to 8, only when the host answers HTTP/2: over
+   * HTTP/1.1, a limit of n lets only n requests run at the same time.
+   * Defaults to no limit. Does not apply through a proxy.
+   */
+  maxConnections?: number;
 }
 
 /**
@@ -142,6 +158,8 @@ function buildSession(config: UnikraftCloudConfig): Session {
     userAgent: config.userAgent ?? USER_AGENT,
     proxyFromEnv: config.proxyFromEnv,
     dnsCache: config.dnsCache,
+    http2: config.http2,
+    maxConnections: config.maxConnections,
   };
 
   // A named base URL (explicitly, or as the `metro`) is the only endpoint there

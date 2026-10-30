@@ -82,6 +82,22 @@ export interface ApiClientConfig {
    * requests on `globalThis.fetch` or on the global undici dispatcher.
    */
   dnsCache?: boolean;
+  /**
+   * Offer HTTP/2 to the API host on Node. A burst then shares a few
+   * connections instead of a TLS handshake per request, when the host
+   * answers HTTP/2. Needs the undici transport (see `dnsCache`). Defaults to
+   * `true`; set `false` to keep every connection on HTTP/1.1.
+   */
+  http2?: boolean;
+  /**
+   * The most connections the undici transport opens to one API host. Until
+   * the first HTTP/2 connection is up, undici opens one connection per
+   * request, so a cold burst of 100 does 100 TLS handshakes without a limit.
+   * Set it, for example to 8, only when the host answers HTTP/2: over
+   * HTTP/1.1, a limit of n lets only n requests run at the same time.
+   * Defaults to no limit. Does not apply through a proxy.
+   */
+  maxConnections?: number;
 }
 
 /**
@@ -229,6 +245,8 @@ export class ApiClient {
   protected readonly defaultHeaders: Record<string, string>;
   protected readonly proxyFromEnv: boolean;
   readonly #dnsCache: boolean;
+  readonly #http2: boolean;
+  readonly #maxConnections?: number;
   // A custom fetch turns the undici transport off; see #transport().
   readonly #hasCustomFetch: boolean;
 
@@ -250,6 +268,14 @@ export class ApiClient {
     if (config.userAgent) this.defaultHeaders["User-Agent"] = config.userAgent;
     this.proxyFromEnv = config.proxyFromEnv ?? true;
     this.#dnsCache = config.dnsCache ?? true;
+    this.#http2 = config.http2 ?? true;
+    const max = config.maxConnections;
+    if (max !== undefined && !(Number.isInteger(max) && max > 0)) {
+      throw new UnikraftCloudError(`maxConnections must be a positive integer, not ${max}.`, {
+        kind: "config",
+      });
+    }
+    this.#maxConnections = max;
   }
 
   /**
@@ -258,7 +284,12 @@ export class ApiClient {
    */
   #transport(): Promise<Transport | undefined> {
     if (this.#hasCustomFetch) return Promise.resolve(undefined);
-    return sharedTransport({ proxyFromEnv: this.proxyFromEnv, dnsCache: this.#dnsCache });
+    return sharedTransport({
+      proxyFromEnv: this.proxyFromEnv,
+      dnsCache: this.#dnsCache,
+      http2: this.#http2,
+      maxConnections: this.#maxConnections,
+    });
   }
 
   /**

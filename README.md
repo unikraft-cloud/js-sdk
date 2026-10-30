@@ -465,6 +465,19 @@ the new connections of a burst share one lookup. A failed connection drops the
 answer. Set `dnsCache: false` to use the global `fetch` again, for example
 when a mock or an instrumentation must see the requests there.
 
+undici offers HTTP/2 to the API host. Until the first HTTP/2 connection is up,
+undici opens one connection per request, so a cold burst still does one TLS
+handshake per request. When the API host answers HTTP/2, set `maxConnections`
+to make the burst share a few connections:
+
+```ts
+const ukc = new UnikraftCloud({ token, maxConnections: 8 });
+```
+
+Do not set `maxConnections` for a host that answers only HTTP/1.1: there, a
+limit of 8 lets only 8 requests run at the same time. Set `http2: false` to
+keep every connection on HTTP/1.1.
+
 ## Debugging with a proxy (MITM)
 
 On Node, the client honours the standard proxy environment variables so you can
