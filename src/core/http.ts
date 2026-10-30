@@ -5,6 +5,7 @@
 // A single UnikraftCloudError is defined here so `instanceof` works across
 // every resource of both the platform and control-plane APIs.
 
+import { type Dispatcher, sharedTransport, type Transport } from "./transport.js";
 import { stripTrailingSlashes } from "./url.js";
 
 /** A single error entry returned within a response envelope. */
@@ -51,17 +52,6 @@ export interface CallOptions {
 /** Minimal `fetch` signature the client depends on. */
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
-/** Opaque undici `Dispatcher` handle (resolved from proxy env vars on Node). */
-interface Dispatcher {
-  dispatch(...args: never[]): boolean;
-}
-
-/** A version-matched `fetch` + `dispatcher` pair from a single undici module. */
-interface ProxyTransport {
-  fetch: FetchLike;
-  dispatcher: Dispatcher;
-}
-
 /** `fetch` init plus the undici-only `dispatcher` extension. */
 type RequestInitWithDispatcher = RequestInit & { dispatcher?: Dispatcher };
 
@@ -83,6 +73,31 @@ export interface ApiClientConfig {
    * optional `undici` dependency. Defaults to `true`; set `false` to opt out.
    */
   proxyFromEnv?: boolean;
+  /**
+   * Cache the DNS answer of each API host on Node, so that the connections of
+   * a burst share one `dns.lookup` instead of a wait for the libuv thread
+   * pool. An answer lives for 5 minutes; a failed connection drops it. Needs
+   * the optional `undici` dependency; a custom `fetch` turns it off. Defaults
+   * to `true`. Set `false` when a mock or an instrumentation must see the
+   * requests on `globalThis.fetch` or on the global undici dispatcher.
+   */
+  dnsCache?: boolean;
+  /**
+   * Offer HTTP/2 to the API host on Node. A burst then shares a few
+   * connections instead of a TLS handshake per request, when the host
+   * answers HTTP/2. Needs the undici transport (see `dnsCache`). Defaults to
+   * `true`; set `false` to keep every connection on HTTP/1.1.
+   */
+  http2?: boolean;
+  /**
+   * The most connections the undici transport opens to one API host. Until
+   * the first HTTP/2 connection is up, undici opens one connection per
+   * request, so a cold burst of 100 does 100 TLS handshakes without a limit.
+   * Set it, for example to 8, only when the host answers HTTP/2: over
+   * HTTP/1.1, a limit of n lets only n requests run at the same time.
+   * Defaults to no limit. Does not apply through a proxy.
+   */
+  maxConnections?: number;
 }
 
 /**
@@ -132,93 +147,6 @@ export interface RequestArgs {
   path: string;
   query?: Record<string, QueryValue>;
   body?: unknown;
-}
-
-const PROXY_ENV_VARS = [
-  "HTTP_PROXY",
-  "http_proxy",
-  "HTTPS_PROXY",
-  "https_proxy",
-  "ALL_PROXY",
-  "all_proxy",
-];
-
-let warnedProxy = false;
-
-/** Emit a one-time warning explaining why a set proxy env var isn't applied. */
-function warnProxy(reason: string, cause?: unknown): void {
-  if (warnedProxy) return;
-  warnedProxy = true;
-  const detail = cause ? ` (${String(cause)})` : "";
-  console.warn(
-    `[@unikraft/cloud] A proxy environment variable is set but requests will not be proxied: ${reason}${detail}`,
-  );
-}
-
-/** True when any HTTP proxy environment variable is set. */
-function hasProxyEnv(): boolean {
-  if (typeof process === "undefined" || !process.env) return false;
-  return PROXY_ENV_VARS.some((name) => {
-    const v = process.env[name];
-    return typeof v === "string" && v.length > 0;
-  });
-}
-
-/**
- * Build a dispatcher that honours the proxy environment variables, using
- * undici's `EnvHttpProxyAgent` (which also respects `NO_PROXY`). Returns
- * undefined when no proxy is configured or `undici` is unavailable. Never
- * throws — proxy support is best-effort. Callers go through
- * {@link proxyTransport}, which memoises the result process-wide.
- *
- * The dispatcher and fetch come from the SAME undici module. A dispatcher must
- * only be used with its own version's `fetch`: mixing a standalone-undici
- * dispatcher into Node's bundled `fetch` fails with `UND_ERR_INVALID_ARG:
- * invalid onRequestStart method`.
- */
-async function createProxyTransport(): Promise<ProxyTransport | undefined> {
-  if (!hasProxyEnv()) return undefined;
-
-  // Non-literal specifier: keeps `undici` an optional, lazily-loaded dep and
-  // avoids eager bundling in browser/Deno builds.
-  const specifier = "undici";
-  let undici: {
-    EnvHttpProxyAgent?: new () => Dispatcher;
-    fetch?: FetchLike;
-  };
-  try {
-    undici = await import(specifier);
-  } catch (cause) {
-    warnProxy(
-      "the optional `undici` dependency is not installed. Install it (`npm install undici`) to route requests through the proxy.",
-      cause,
-    );
-    return undefined;
-  }
-
-  if (typeof undici.EnvHttpProxyAgent !== "function" || typeof undici.fetch !== "function") {
-    warnProxy("the installed `undici` is too old; upgrade to undici >= 8 for proxy support.");
-    return undefined;
-  }
-
-  try {
-    return { fetch: undici.fetch, dispatcher: new undici.EnvHttpProxyAgent() };
-  } catch (cause) {
-    warnProxy("failed to construct undici's EnvHttpProxyAgent.", cause);
-    return undefined;
-  }
-}
-
-/**
- * Process-global memo for {@link createProxyTransport} to reuse the same
- * connection pool across every client.
- */
-let proxyMemo: Promise<ProxyTransport | undefined> | undefined;
-
-/** Resolve the shared proxy transport, building it at most once per process. */
-function proxyTransport(): Promise<ProxyTransport | undefined> {
-  proxyMemo ??= createProxyTransport();
-  return proxyMemo;
 }
 
 /**
@@ -280,6 +208,25 @@ function parseSseEvent(block: string, url: string, status: number): unknown {
   }
 }
 
+// Taken when this module loads, so that a caller's fake timers, which replace
+// the global `setImmediate` and run it only when the test advances the clock,
+// do not hold every request.
+const nativeSetImmediate = typeof setImmediate === "function" ? setImmediate : undefined;
+
+/**
+ * Resolves after the current turn of the event loop. undici, which carries
+ * `fetch` on Node, puts a keep-alive socket back in its pool only in a
+ * `setImmediate` after the response ends. A request that the caller sends
+ * before then finds no free socket, so it opens a new connection and pays one
+ * more round trip, and a TLS handshake over HTTPS. undici queues its
+ * `setImmediate` before the body ends, so one queued after the body is read
+ * runs after it. Runtimes without `setImmediate` resolve at once.
+ */
+function socketRelease(): Promise<void> {
+  if (nativeSetImmediate === undefined) return Promise.resolve();
+  return new Promise((resolve) => nativeSetImmediate(resolve));
+}
+
 /** Serialise a query object into a URL search string (form/explode style). */
 function encodeQuery(query: Record<string, QueryValue> | undefined): string {
   if (!query) return "";
@@ -316,7 +263,10 @@ export class ApiClient {
   protected readonly fetchImpl: FetchLike;
   protected readonly defaultHeaders: Record<string, string>;
   protected readonly proxyFromEnv: boolean;
-  // Whether the caller supplied a custom fetch (suppresses env-proxy injection).
+  readonly #dnsCache: boolean;
+  readonly #http2: boolean;
+  readonly #maxConnections?: number;
+  // A custom fetch turns the undici transport off; see #transport().
   readonly #hasCustomFetch: boolean;
 
   constructor(config: ApiClientConfig) {
@@ -336,17 +286,29 @@ export class ApiClient {
     this.defaultHeaders = { ...config.headers };
     if (config.userAgent) this.defaultHeaders["User-Agent"] = config.userAgent;
     this.proxyFromEnv = config.proxyFromEnv ?? true;
+    this.#dnsCache = config.dnsCache ?? true;
+    this.#http2 = config.http2 ?? true;
+    const max = config.maxConnections;
+    if (max !== undefined && !(Number.isInteger(max) && max > 0)) {
+      throw new UnikraftCloudError(`maxConnections must be a positive integer, not ${max}.`, {
+        kind: "config",
+      });
+    }
+    this.#maxConnections = max;
   }
 
   /**
-   * Resolve the proxy transport (undici fetch + dispatcher), shared process-wide
-   * by {@link proxyTransport}. Skipped when a custom fetch was supplied — the
-   * caller owns transport, and a standalone-undici dispatcher is incompatible
-   * with a foreign fetch.
+   * A custom fetch owns the transport, and a standalone-undici dispatcher does
+   * not work with a foreign fetch, so it gets none.
    */
-  #proxyTransport(): Promise<ProxyTransport | undefined> {
-    if (!this.proxyFromEnv || this.#hasCustomFetch) return Promise.resolve(undefined);
-    return proxyTransport();
+  #transport(): Promise<Transport | undefined> {
+    if (this.#hasCustomFetch) return Promise.resolve(undefined);
+    return sharedTransport({
+      proxyFromEnv: this.proxyFromEnv,
+      dnsCache: this.#dnsCache,
+      http2: this.#http2,
+      maxConnections: this.#maxConnections,
+    });
   }
 
   /**
@@ -385,19 +347,19 @@ export class ApiClient {
       signal: options.signal,
     };
 
-    // When a proxy env var is set, route through undici's own fetch + matching
-    // dispatcher; otherwise use the configured/global fetch.
-    const proxy = await this.#proxyTransport();
+    // The dispatcher works only with the fetch of its own undici module, so a
+    // transport replaces the configured or global fetch too.
+    const transport = await this.#transport();
     let fetchImpl = this.fetchImpl;
-    if (proxy) {
-      fetchImpl = proxy.fetch;
-      init.dispatcher = proxy.dispatcher;
+    if (transport) {
+      fetchImpl = transport.fetch;
+      init.dispatcher = transport.dispatcher;
     }
 
     try {
       return { response: await fetchImpl(url, init), url };
     } catch (cause) {
-      const via = init.dispatcher
+      const via = transport?.proxied
         ? " (routed through the proxy from your HTTP_PROXY/HTTPS_PROXY environment; check the proxy is reachable and its CA is trusted via NODE_EXTRA_CA_CERTS)"
         : "";
       throw new UnikraftCloudError(`Request to ${url} failed${via}: ${describeCause(cause)}`, {
@@ -414,6 +376,7 @@ export class ApiClient {
     const { response, url } = await this.#send(args, options, "application/json");
 
     const text = await response.text();
+    await socketRelease();
     let parsed: unknown;
     if (text.length > 0) {
       try {
@@ -486,7 +449,9 @@ export class ApiClient {
       );
     }
 
-    return new Uint8Array(await response.arrayBuffer());
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    await socketRelease();
+    return bytes;
   }
 
   /**

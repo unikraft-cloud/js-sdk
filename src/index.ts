@@ -59,6 +59,31 @@ export interface UnikraftCloudConfig {
    * `undici` dependency). Defaults to `true`; set `false` to opt out.
    */
   proxyFromEnv?: boolean;
+  /**
+   * Cache the DNS answer of each API host on Node, so that the connections of
+   * a burst share one `dns.lookup` instead of a wait for the libuv thread
+   * pool. An answer lives for 5 minutes; a failed connection drops it. Needs
+   * the optional `undici` dependency; a custom `fetch` turns it off. Defaults
+   * to `true`. Set `false` when a mock or an instrumentation must see the
+   * requests on `globalThis.fetch` or on the global undici dispatcher.
+   */
+  dnsCache?: boolean;
+  /**
+   * Offer HTTP/2 to the API host on Node. A burst then shares a few
+   * connections instead of a TLS handshake per request, when the host
+   * answers HTTP/2. Needs the undici transport (see `dnsCache`). Defaults to
+   * `true`; set `false` to keep every connection on HTTP/1.1.
+   */
+  http2?: boolean;
+  /**
+   * The most connections the undici transport opens to one API host. Until
+   * the first HTTP/2 connection is up, undici opens one connection per
+   * request, so a cold burst of 100 does 100 TLS handshakes without a limit.
+   * Set it, for example to 8, only when the host answers HTTP/2: over
+   * HTTP/1.1, a limit of n lets only n requests run at the same time.
+   * Defaults to no limit. Does not apply through a proxy.
+   */
+  maxConnections?: number;
 }
 
 /**
@@ -132,6 +157,9 @@ function buildSession(config: UnikraftCloudConfig): Session {
     headers: config.headers,
     userAgent: config.userAgent ?? USER_AGENT,
     proxyFromEnv: config.proxyFromEnv,
+    dnsCache: config.dnsCache,
+    http2: config.http2,
+    maxConnections: config.maxConnections,
   };
 
   // A named base URL (explicitly, or as the `metro`) is the only endpoint there
