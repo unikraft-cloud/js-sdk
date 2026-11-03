@@ -64,15 +64,18 @@ jobs:
     - name: Type-check
       run: npm run typecheck
 
-  # The test suite and the build cover every supported runtime.
+  # The test suite and the build cover every supported runtime. The transport
+  # depends on how undici behaves on each Node major, so the tests run on the
+  # oldest supported Node too.
   test:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         node-version:
-        - 22
+        - "22.19"
         - 24
+        - 26
     steps:
     - uses: actions/checkout@v4
 
@@ -94,7 +97,7 @@ jobs:
       fail-fast: false
       matrix:
         node-version:
-        - "22.12"
+        - "22.19"
         - 24
     steps:
     - uses: actions/checkout@v4
