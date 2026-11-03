@@ -533,7 +533,7 @@ export type MutableNodeOperation = "set" | "add" | "del";
  * The mutable properties of a node which can be updated.
  */
 
-export type MutableNodeProperty = "tags" | "delete_lock" | "ssh_keys";
+export type MutableNodeProperty = "tags" | "delete_lock" | "ssh_keys" | "api_endpoint";
 
 /**
  * An identifier for a resource.  Either a name or a UUID.
@@ -1011,6 +1011,7 @@ export interface UpdateNodePayload {
    * - TAGS: google.protobuf.Struct with key-value pairs
    * - DELETE_LOCK: google.protobuf.Value with boolean
    * - SSH_KEYS: google.protobuf.ListValue with SSHKey objects
+   * - API_ENDPOINT: the URL as plain text
    */
   value?: string;
 }
