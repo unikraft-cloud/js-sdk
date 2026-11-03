@@ -1,9 +1,16 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026, Unikraft GmbH.
 //
-// Node's fetch resolves the host of each new connection with `dns.lookup` on
-// the libuv thread pool of 4 threads, so a burst opens its connections only as
-// fast as that pool resolves the same name. This transport caches the answer.
+// On Node, the SDK sends its requests through the `fetch` and an `Agent` of
+// the undici package. A dispatcher works only with the `fetch` of its own
+// undici version (see createTransport), and Node does not export the undici
+// that it bundles, so the SDK cannot set the DNS lookup, HTTP/2, or the
+// connection cap on the global `fetch`.
+//
+// The `Agent` caches DNS answers. Node's `fetch` resolves the host of each new
+// connection with `dns.lookup` on the libuv thread pool of 4 threads, so a
+// burst opens its connections only as fast as that pool resolves the same
+// name.
 
 import type { FetchLike } from "./http.js";
 
@@ -79,7 +86,7 @@ interface Undici {
   fetch?: FetchLike;
   Agent?: new (options: { connect: Connector; connections?: number }) => Dispatcher;
   EnvHttpProxyAgent?: new (options?: { connect: Connector }) => Dispatcher;
-  buildConnector?: (options: { lookup: LookupFunction; allowH2?: boolean }) => Connector;
+  buildConnector?: (options: { lookup?: LookupFunction; allowH2?: boolean }) => Connector;
 }
 
 // `getaddrinfo` does not report the time to live of a DNS record, so the
@@ -116,9 +123,8 @@ function hasProxyEnv(): boolean {
   });
 }
 
-// Non-literal specifiers keep `undici` an optional, lazily loaded dependency.
-// They also stop a bundler for browsers or Deno from including `undici` or
-// `node:dns`.
+// A non-literal specifier stops a bundler for browsers or Deno from including
+// `undici` or `node:dns`.
 function importOptional(specifier: string): Promise<unknown> {
   return import(specifier);
 }
@@ -188,26 +194,30 @@ export function cachedLookup(
   };
 }
 
-function cachingConnector(
+/** undici's connector, with the DNS cache when `dnsCache` is on. */
+function connector(
   buildConnector: NonNullable<Undici["buildConnector"]>,
+  options: TransportOptions,
   resolve: Resolver | undefined,
-  allowH2: boolean,
 ): Connector {
-  const cache = cachedLookup(resolve);
+  const cache = options.dnsCache ? cachedLookup(resolve) : undefined;
   // undici reads `allowH2` here, not on the Agent, when it gets a connector.
-  const connect = buildConnector({ lookup: cache.lookup, allowH2 });
-  return (options, callback) =>
-    connect(options, (error, socket) => {
+  const connect = buildConnector({
+    ...(cache && { lookup: cache.lookup }),
+    allowH2: options.http2 ?? true,
+  });
+  return (target, callback) =>
+    connect(target, (error, connected) => {
       // The host can move to a new address. A failed connection is the first
       // sign of that, so the next connection resolves the host again.
-      if (error) cache.forget(options.hostname);
-      callback(error, socket);
+      if (error) cache?.forget(target.hostname);
+      callback(error, connected);
     });
 }
 
 /**
- * Returns undefined when the global `fetch` must carry the requests: `undici`
- * is not installed, or neither a proxy nor the DNS cache is in use. Never
+ * Returns undefined when `undici` does not load, or does not have a part that
+ * this transport needs. The global `fetch` then carries the requests. Never
  * throws, because the global `fetch` works without the transport. Callers go
  * through {@link sharedTransport}, which builds it once per process.
  *
@@ -221,27 +231,23 @@ export async function createTransport(
   deps: TransportDeps = {},
 ): Promise<Transport | undefined> {
   const proxy = options.proxyFromEnv && hasProxyEnv();
-  if (!proxy && !options.dnsCache) return undefined;
 
   let undici: Undici;
   try {
     undici = (await (deps.importUndici ?? loadUndici)()) as Undici;
   } catch (cause) {
     if (proxy) {
-      warnProxy(
-        "the optional `undici` dependency is not installed. Install it (`npm install undici`) to route requests through the proxy.",
-        cause,
-      );
+      warnProxy("the `undici` dependency does not load.", cause);
     }
     return undefined;
   }
 
   let connect: Connector | undefined;
-  if (options.dnsCache && typeof undici.buildConnector === "function") {
+  if (typeof undici.buildConnector === "function") {
     try {
-      connect = cachingConnector(undici.buildConnector, deps.resolve, options.http2 ?? true);
+      connect = connector(undici.buildConnector, options, deps.resolve);
     } catch {
-      // Continue without the cache, because it only makes requests faster.
+      // Continue without the connector, because it only makes requests faster.
     }
   }
 

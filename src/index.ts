@@ -55,23 +55,30 @@ export interface UnikraftCloudConfig {
   userAgent?: string;
   /**
    * Honour the `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` environment variables (any
-   * case) on Node, routing requests through the proxy (requires the optional
-   * `undici` dependency). Defaults to `true`; set `false` to opt out.
+   * case) on Node, routing requests through the proxy. Defaults to `true`; set
+   * `false` to opt out.
    */
   proxyFromEnv?: boolean;
   /**
-   * Cache the DNS answer of each API host on Node, so that the connections of
-   * a burst share one `dns.lookup` instead of a wait for the libuv thread
-   * pool. An answer lives for 5 minutes; a failed connection drops it. Needs
-   * the optional `undici` dependency; a custom `fetch` turns it off. Defaults
-   * to `true`. Set `false` when a mock or an instrumentation must see the
-   * requests on `globalThis.fetch` or on the global undici dispatcher.
+   * Send every request through `globalThis.fetch` and the global undici
+   * dispatcher, not through the SDK's own undici transport. Set it in tests
+   * whose mock replaces `globalThis.fetch` (`vi.stubGlobal`, MSW, nock) or
+   * sets an undici `MockAgent`, because the SDK transport bypasses both. It
+   * turns off the DNS cache, HTTP/2, `maxConnections`, and the proxy from the
+   * environment. A custom `fetch` has the same effect. Defaults to `false`.
+   */
+  globalFetch?: boolean;
+  /**
+   * Cache the DNS answer of each API host on Node. Then the new connections of
+   * a burst share one `dns.lookup`, and do not wait in turn for the libuv
+   * thread pool. An answer stays for 5 minutes, and a failed connection drops
+   * it. Defaults to `true`.
    */
   dnsCache?: boolean;
   /**
    * Offer HTTP/2 to the API host on Node. A burst then shares a few
    * connections instead of a TLS handshake per request, when the host
-   * answers HTTP/2. Needs the undici transport (see `dnsCache`). Defaults to
+   * answers HTTP/2. Needs the undici transport (see `globalFetch`). Defaults to
    * `true`; set `false` to keep every connection on HTTP/1.1.
    */
   http2?: boolean;
@@ -157,6 +164,7 @@ function buildSession(config: UnikraftCloudConfig): Session {
     headers: config.headers,
     userAgent: config.userAgent ?? USER_AGENT,
     proxyFromEnv: config.proxyFromEnv,
+    globalFetch: config.globalFetch,
     dnsCache: config.dnsCache,
     http2: config.http2,
     maxConnections: config.maxConnections,

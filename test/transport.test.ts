@@ -198,14 +198,19 @@ describe("createTransport", () => {
 
 describe("UnikraftCloud", () => {
   it.each([
-    { via: "undici by default", dnsCache: undefined, globalFetchCalls: 0 },
-    { via: "the global fetch when dnsCache is false", dnsCache: false, globalFetchCalls: 1 },
-  ])("sends a request through $via", async ({ dnsCache, globalFetchCalls }) => {
+    { via: "undici by default", config: {}, globalFetchCalls: 0 },
+    { via: "undici when dnsCache is false", config: { dnsCache: false }, globalFetchCalls: 0 },
+    {
+      via: "the global fetch when globalFetch is set",
+      config: { globalFetch: true },
+      globalFetchCalls: 1,
+    },
+  ])("sends a request through $via", async ({ config, globalFetchCalls }) => {
     const server = await listen();
     const globalFetch = vi.fn(globalThis.fetch);
     vi.stubGlobal("fetch", globalFetch);
     const baseUrl = `http://127.0.0.1:${server.port}`;
-    const ukc = new UnikraftCloud({ token: "t", baseUrl, dnsCache });
+    const ukc = new UnikraftCloud({ token: "t", baseUrl, ...config });
 
     try {
       await expect(ukc.api.platform.instances.getInstances({})).resolves.toEqual({
@@ -219,14 +224,14 @@ describe("UnikraftCloud", () => {
   });
 
   it.each([
-    { via: "undici", dnsCache: undefined },
-    { via: "the global fetch", dnsCache: false },
+    { via: "undici", globalFetch: undefined },
+    { via: "the global fetch", globalFetch: true },
   ])(
     "sends a request that follows another on the same connection, through $via",
-    async ({ dnsCache }) => {
+    async ({ globalFetch }) => {
       const server = await listen({ keepAlive: true });
       const baseUrl = `http://127.0.0.1:${server.port}`;
-      const ukc = new UnikraftCloud({ token: "t", baseUrl, dnsCache });
+      const ukc = new UnikraftCloud({ token: "t", baseUrl, globalFetch });
 
       try {
         await ukc.api.platform.instances.getInstances({});
