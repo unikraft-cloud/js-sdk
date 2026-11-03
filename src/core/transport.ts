@@ -194,7 +194,21 @@ export function cachedLookup(
   };
 }
 
-/** undici's connector, with the DNS cache when `dnsCache` is on. */
+/** The part of a TLS socket that {@link connector} uses. */
+interface SessionSocket {
+  encrypted?: boolean;
+  on(event: "session", listener: (session: unknown) => void): unknown;
+}
+
+/**
+ * undici's connector, with the DNS cache when `dnsCache` is on.
+ *
+ * undici keeps the TLS session of a host only through a `WeakRef`. So if a
+ * garbage collection occurs between two waves of new connections, each
+ * connection of the second wave does a full TLS handshake, and the main thread
+ * of a burst spends its time on the handshakes. The connector holds the
+ * latest session of each host, so that the next connections resume it.
+ */
 function connector(
   buildConnector: NonNullable<Undici["buildConnector"]>,
   options: TransportOptions,
@@ -206,13 +220,19 @@ function connector(
     ...(cache && { lookup: cache.lookup }),
     allowH2: options.http2 ?? true,
   });
-  return (target, callback) =>
-    connect(target, (error, connected) => {
+  const sessions = new Map<string, unknown>();
+  return (target, callback) => {
+    const socket = connect(target, (error, connected) => {
       // The host can move to a new address. A failed connection is the first
       // sign of that, so the next connection resolves the host again.
       if (error) cache?.forget(target.hostname);
       callback(error, connected);
-    });
+    }) as SessionSocket | undefined;
+    if (socket?.encrypted) {
+      socket.on("session", (session) => sessions.set(target.hostname, session));
+    }
+    return socket;
+  };
 }
 
 /**

@@ -2,7 +2,11 @@
 // Copyright (c) 2026, Unikraft GmbH.
 
 import { createServer } from "node:http";
+import { createServer as createTlsServer } from "node:https";
 import type { AddressInfo } from "node:net";
+import type { TLSSocket } from "node:tls";
+import { setFlagsFromString } from "node:v8";
+import { runInNewContext } from "node:vm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cachedLookup,
@@ -15,6 +19,7 @@ import {
   type TransportOptions,
 } from "../src/core/transport.js";
 import { UnikraftCloud } from "../src/index.js";
+import { cert, key } from "./fixtures/tls.js";
 
 // A proxy variable from the developer's shell would send these requests to
 // the proxy, which does not resolve them through the cache.
@@ -74,6 +79,35 @@ async function directTransport(
   const transport = await createTransport({ proxyFromEnv: true, dnsCache: true, ...options }, deps);
   if (!transport) throw new Error("expected the undici transport");
   return transport;
+}
+
+// V8 gives `gc()` only behind a flag. A new context sees a flag set at run time.
+setFlagsFromString("--expose-gc");
+const collectGarbage = runInNewContext("gc") as () => void;
+
+/** An HTTPS server that records, per request, whether its connection resumed a TLS session. */
+async function listenTls(): Promise<{
+  port: number;
+  resumed: boolean[];
+  close: () => Promise<void>;
+}> {
+  const resumed: boolean[] = [];
+  const server = createTlsServer({ key, cert }, (request, response) => {
+    resumed.push((request.socket as TLSSocket).isSessionReused());
+    response.writeHead(200, { "content-type": "application/json", connection: "close" });
+    response.end(JSON.stringify({ status: "success", op_time_us: 1 }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  return {
+    port,
+    resumed,
+    close: () =>
+      new Promise((resolve) => {
+        server.closeAllConnections();
+        server.close(() => resolve());
+      }),
+  };
 }
 
 const send = (transport: Transport, url: string) =>
@@ -186,6 +220,24 @@ describe("createTransport", () => {
       expect(buildConnector).toHaveBeenCalledWith(expect.objectContaining({ allowH2 }));
     },
   );
+
+  it("resumes the TLS session of a host after a garbage collection", async () => {
+    // The certificate of the fixture is self-signed, so no CA can verify it.
+    vi.stubEnv("NODE_TLS_REJECT_UNAUTHORIZED", "0");
+    const server = await listenTls();
+    const transport = await directTransport({ resolve: async () => loopback });
+    const url = `https://api.metro.test:${server.port}/`;
+
+    try {
+      await (await send(transport, url)).arrayBuffer();
+      collectGarbage();
+      await (await send(transport, url)).arrayBuffer();
+
+      expect(server.resumed).toEqual([false, true]);
+    } finally {
+      await server.close();
+    }
+  });
 
   it("leaves the requests to the global fetch when undici is not installed", async () => {
     const importUndici = () => Promise.reject(new Error("Cannot find package 'undici'"));
