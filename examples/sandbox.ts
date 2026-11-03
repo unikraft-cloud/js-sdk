@@ -21,8 +21,8 @@ async function configured() {
       image: "debian-slim:latest",
       memory_mb: 1024,
       env: { LOG_LEVEL: "debug" },
-      // Your own plugin rom
-      rom: "plugins/sandbox:latest",
+      // Your own plugin image
+      pluginImage: "plugins/sandbox:latest",
     },
     {
       token: process.env.UKC_TOKEN,
