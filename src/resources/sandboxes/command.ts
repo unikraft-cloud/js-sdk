@@ -74,7 +74,7 @@ export class Command {
   async #waitSlice(seconds: number, call: ReturnType<typeof callOptions>): Promise<boolean> {
     try {
       unwrap(
-        await this.sandbox.api.commands.waitForCommandWithTimeout(this.uuid, {
+        await this.sandbox.api.commands.waitForCommand(this.uuid, {
           body: { timeout_s: seconds },
           ...call,
         }),

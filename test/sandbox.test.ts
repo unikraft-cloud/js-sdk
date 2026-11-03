@@ -39,11 +39,10 @@ function mock(extra?: (url: string, init: any) => Response | undefined) {
     if (url.includes("/plugins/")) {
       if (url.endsWith("/commands") && init.method === "POST") return json({ uuid: "c1" });
       if (url.endsWith("/commands")) return json({ commands: [] });
-      if (url.endsWith("/wait")) return json(null);
       // The plugin answers 408 when `timeout_s` elapses. A test that waits
       // needs the clock to move with it, which `fakePlugin` does; this answer
       // alone makes `Command.wait` ask again at once.
-      if (url.endsWith("/wait_timeout")) return error(408, "Timed out");
+      if (url.endsWith("/wait")) return error(408, "Timed out");
       if (url.includes("/commands/c1") && init.method === "DELETE") return json(null);
       if (url.endsWith("/commands/c1"))
         return json({ uuid: "c1", cmdline: "x", cwd: null, env: null, exitcode: null });
@@ -114,7 +113,7 @@ function fakePlugin({
       hold(body.req_timeout_s);
       return json({ ...state(), logs: logs() });
     }
-    if (url.endsWith("/wait_timeout")) {
+    if (url.endsWith("/wait")) {
       hold(body.timeout_s);
       return exited() ? json(null) : error(408, "Timed out");
     }
