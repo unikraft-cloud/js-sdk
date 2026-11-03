@@ -2,6 +2,7 @@
 // Copyright (c) 2026, Unikraft GmbH.
 
 import { createServer } from "node:http";
+import { createSecureServer, type ServerHttp2Session } from "node:http2";
 import { createServer as createTlsServer } from "node:https";
 import type { AddressInfo } from "node:net";
 import type { TLSSocket } from "node:tls";
@@ -203,8 +204,8 @@ describe("createTransport", () => {
   });
 
   it.each([
-    { http2: undefined, allowH2: true },
-    { http2: false, allowH2: false },
+    { http2: undefined, allowH2: false },
+    { http2: true, allowH2: true },
   ])(
     "passes allowH2: $allowH2 to the connector when http2 is $http2",
     async ({ http2, allowH2 }) => {
@@ -236,6 +237,28 @@ describe("createTransport", () => {
       expect(server.resumed).toEqual([false, true]);
     } finally {
       await server.close();
+    }
+  });
+
+  it("reports a host as multiplexed after an HTTP/2 connection to it", async () => {
+    vi.stubEnv("NODE_TLS_REJECT_UNAUTHORIZED", "0");
+    const server = createSecureServer({ key, cert }, (_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ status: "success", op_time_us: 1 }));
+    });
+    const sessions = new Set<ServerHttp2Session>();
+    server.on("session", (session) => sessions.add(session));
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    const transport = await directTransport({ resolve: async () => loopback }, { http2: true });
+
+    try {
+      expect(transport.multiplexes("api.metro.test")).toBe(false);
+      await (await send(transport, `https://api.metro.test:${port}/`)).arrayBuffer();
+      expect(transport.multiplexes("api.metro.test")).toBe(true);
+    } finally {
+      for (const session of sessions) session.destroy();
+      await new Promise((resolve) => server.close(resolve));
     }
   });
 

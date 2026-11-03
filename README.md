@@ -460,16 +460,16 @@ options. For a burst of parallel requests, that transport:
   pool of 4 threads, so without the cache the connections of a burst wait in
   turn. A failed connection drops the answer. Set `dnsCache: false` to turn
   the cache off.
-- Offers HTTP/2 to the API host. Set `http2: false` to keep every connection
-  on HTTP/1.1.
+- Offers HTTP/2 to the API host when you set `http2: true`. A host that
+  answers only HTTP/1.1 stays on HTTP/1.1.
 
 Until the first HTTP/2 connection is up, undici opens one connection per
 request, so a cold burst still does one TLS handshake per request. When the API
-host answers HTTP/2, set `maxConnections` to make the burst share a few
-connections:
+host answers HTTP/2, set `http2: true` and `maxConnections` to make the burst
+share a few connections:
 
 ```ts
-const ukc = new UnikraftCloud({ token, maxConnections: 8 });
+const ukc = new UnikraftCloud({ token, http2: true, maxConnections: 8 });
 ```
 
 Do not set `maxConnections` for a host that answers only HTTP/1.1: there, a

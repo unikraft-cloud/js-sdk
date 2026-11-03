@@ -24,12 +24,14 @@ export interface Transport {
   fetch: FetchLike;
   dispatcher: Dispatcher;
   proxied: boolean;
+  /** True when the latest connection to `hostname` speaks HTTP/2. */
+  multiplexes(hostname: string): boolean;
 }
 
 export interface TransportOptions {
   proxyFromEnv: boolean;
   dnsCache: boolean;
-  /** Offer HTTP/2 in the TLS handshake. Defaults to `true`. */
+  /** Offer HTTP/2 in the TLS handshake. Defaults to `false`. */
   http2?: boolean;
   /** The most connections to one origin. Defaults to no limit. */
   maxConnections?: number;
@@ -213,19 +215,26 @@ function connector(
   buildConnector: NonNullable<Undici["buildConnector"]>,
   options: TransportOptions,
   resolve: Resolver | undefined,
+  http2Hosts: Set<string>,
 ): Connector {
   const cache = options.dnsCache ? cachedLookup(resolve) : undefined;
   // undici reads `allowH2` here, not on the Agent, when it gets a connector.
   const connect = buildConnector({
     ...(cache && { lookup: cache.lookup }),
-    allowH2: options.http2 ?? true,
+    allowH2: options.http2 ?? false,
   });
   const sessions = new Map<string, unknown>();
   return (target, callback) => {
     const socket = connect(target, (error, connected) => {
-      // The host can move to a new address. A failed connection is the first
-      // sign of that, so the next connection resolves the host again.
-      if (error) cache?.forget(target.hostname);
+      if (error) {
+        // The host can move to a new address. A failed connection is the first
+        // sign of that, so the next connection resolves the host again.
+        cache?.forget(target.hostname);
+      } else if ((connected as { alpnProtocol?: string }).alpnProtocol === "h2") {
+        http2Hosts.add(target.hostname);
+      } else {
+        http2Hosts.delete(target.hostname);
+      }
       callback(error, connected);
     }) as SessionSocket | undefined;
     if (socket?.encrypted) {
@@ -262,10 +271,12 @@ export async function createTransport(
     return undefined;
   }
 
+  const http2Hosts = new Set<string>();
+  const multiplexes = (hostname: string) => http2Hosts.has(hostname);
   let connect: Connector | undefined;
   if (typeof undici.buildConnector === "function") {
     try {
-      connect = connector(undici.buildConnector, options, deps.resolve);
+      connect = connector(undici.buildConnector, options, deps.resolve, http2Hosts);
     } catch {
       // Continue without the connector, because it only makes requests faster.
     }
@@ -281,7 +292,7 @@ export async function createTransport(
       // requests, for example to a host in NO_PROXY. For a proxied request,
       // the proxy resolves the host.
       const dispatcher = new undici.EnvHttpProxyAgent(connect && { connect });
-      return { fetch: undici.fetch, dispatcher, proxied: true };
+      return { fetch: undici.fetch, dispatcher, proxied: true, multiplexes };
     } catch (cause) {
       warnProxy("failed to construct undici's EnvHttpProxyAgent.", cause);
       return undefined;
@@ -296,7 +307,7 @@ export async function createTransport(
       connect,
       ...(options.maxConnections !== undefined && { connections: options.maxConnections }),
     });
-    return { fetch: undici.fetch, dispatcher, proxied: false };
+    return { fetch: undici.fetch, dispatcher, proxied: false, multiplexes };
   } catch {
     return undefined;
   }
@@ -312,7 +323,7 @@ export function sharedTransport(options: TransportOptions): Promise<Transport | 
   const key = [
     options.proxyFromEnv,
     options.dnsCache,
-    options.http2 ?? true,
+    options.http2 ?? false,
     options.maxConnections ?? "",
   ].join("/");
   let transport = shared.get(key);

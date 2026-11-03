@@ -90,18 +90,20 @@ export interface ApiClientConfig {
    */
   dnsCache?: boolean;
   /**
-   * Offer HTTP/2 to the API host on Node. A burst then shares a few
-   * connections instead of a TLS handshake per request, when the host
-   * answers HTTP/2. Needs the undici transport (see `globalFetch`). Defaults to
-   * `true`; set `false` to keep every connection on HTTP/1.1.
+   * Offer HTTP/2 to the API host on Node, in the TLS handshake. With
+   * `maxConnections`, a host that answers HTTP/2 then carries a burst on a few
+   * connections instead of a TLS handshake per request. A host that answers
+   * only HTTP/1.1 stays on HTTP/1.1. Needs the undici transport (see
+   * `globalFetch`). Defaults to `false`.
    */
   http2?: boolean;
   /**
    * The most connections the undici transport opens to one API host. Until
    * the first HTTP/2 connection is up, undici opens one connection per
    * request, so a cold burst of 100 does 100 TLS handshakes without a limit.
-   * Set it, for example to 8, only when the host answers HTTP/2: over
-   * HTTP/1.1, a limit of n lets only n requests run at the same time.
+   * Set it, for example to 8, with `http2: true` and only when the host
+   * answers HTTP/2: over HTTP/1.1, a limit of n lets only n requests run at
+   * the same time.
    * Defaults to no limit. Does not apply through a proxy.
    */
   maxConnections?: number;
@@ -296,7 +298,7 @@ export class ApiClient {
     this.proxyFromEnv = config.proxyFromEnv ?? true;
     this.#globalFetch = config.globalFetch ?? false;
     this.#dnsCache = config.dnsCache ?? true;
-    this.#http2 = config.http2 ?? true;
+    this.#http2 = config.http2 ?? false;
     const max = config.maxConnections;
     if (max !== undefined && !(Number.isInteger(max) && max > 0)) {
       throw new UnikraftCloudError(`maxConnections must be a positive integer, not ${max}.`, {
@@ -330,7 +332,7 @@ export class ApiClient {
     args: RequestArgs,
     options: CallOptions,
     accept: string,
-  ): Promise<{ response: Response; url: string }> {
+  ): Promise<{ response: Response; url: string; released: () => Promise<void> }> {
     const base = stripTrailingSlashes(options.baseUrl ?? this.baseUrl);
     const url = base + args.path + encodeQuery(args.query);
 
@@ -365,8 +367,13 @@ export class ApiClient {
       init.dispatcher = transport.dispatcher;
     }
 
+    // HTTP/2 carries every request on one connection and puts no socket back
+    // in a pool, so the wait of socketRelease() only delays the next request.
+    const released = () =>
+      transport?.multiplexes(new URL(url).hostname) ? Promise.resolve() : socketRelease();
+
     try {
-      return { response: await fetchImpl(url, init), url };
+      return { response: await fetchImpl(url, init), url, released };
     } catch (cause) {
       const via = transport?.proxied
         ? " (routed through the proxy from your HTTP_PROXY/HTTPS_PROXY environment; check the proxy is reachable and its CA is trusted via NODE_EXTRA_CA_CERTS)"
@@ -382,10 +389,10 @@ export class ApiClient {
    * Perform a request and return the parsed JSON envelope typed as `T`.
    */
   async request<T>(args: RequestArgs, options: CallOptions = {}): Promise<T> {
-    const { response, url } = await this.#send(args, options, "application/json");
+    const { response, url, released } = await this.#send(args, options, "application/json");
 
     const text = await response.text();
-    await socketRelease();
+    await released();
     let parsed: unknown;
     if (text.length > 0) {
       try {
@@ -434,7 +441,7 @@ export class ApiClient {
    * (unlike {@link ApiClient.stream}, which is named for its SSE delivery).
    */
   async bytes(args: RequestArgs, options: CallOptions = {}): Promise<Uint8Array> {
-    const { response } = await this.#send(args, options, "application/octet-stream");
+    const { response, released } = await this.#send(args, options, "application/octet-stream");
 
     if (!response.ok) {
       // A failure is still enveloped JSON (and may be an empty body, e.g. the
@@ -459,7 +466,7 @@ export class ApiClient {
     }
 
     const bytes = new Uint8Array(await response.arrayBuffer());
-    await socketRelease();
+    await released();
     return bytes;
   }
 
