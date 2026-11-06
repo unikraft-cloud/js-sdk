@@ -70,11 +70,17 @@ export class Command {
     }
   }
 
-  /** One wait request. Whether the command exited within `seconds`. */
+  /**
+   * One wait request. Whether the command exited within `seconds`. The request
+   * goes to the timed route, because a plugin before 1.3.0 bounds a wait only
+   * there and holds the plain route until the command exits, whatever the body
+   * says. A sandbox keeps the plugin it was created with, so the plain route is
+   * safe only once no sandbox on an older plugin remains.
+   */
   async #waitSlice(seconds: number, call: ReturnType<typeof callOptions>): Promise<boolean> {
     try {
       unwrap(
-        await this.sandbox.api.commands.waitForCommand(this.uuid, {
+        await this.sandbox.api.commands.waitForCommandWithTimeout(this.uuid, {
           body: { timeout_s: seconds },
           ...call,
         }),

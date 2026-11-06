@@ -42,7 +42,7 @@ function mock(extra?: (url: string, init: any) => Response | undefined) {
       // The plugin answers 408 when `timeout_s` elapses. A test that waits
       // needs the clock to move with it, which `fakePlugin` does; this answer
       // alone makes `Command.wait` ask again at once.
-      if (url.endsWith("/wait")) return error(408, "Timed out");
+      if (url.endsWith("/wait_timeout")) return error(408, "Timed out");
       if (url.includes("/commands/c1") && init.method === "DELETE") return json(null);
       if (url.endsWith("/commands/c1"))
         return json({ uuid: "c1", cmdline: "x", cwd: null, env: null, exitcode: null });
@@ -113,9 +113,15 @@ function fakePlugin({
       hold(body.req_timeout_s);
       return json({ ...state(), logs: logs() });
     }
-    if (url.endsWith("/wait")) {
+    if (url.endsWith("/wait_timeout")) {
       hold(body.timeout_s);
       return exited() ? json(null) : error(408, "Timed out");
+    }
+    // A plugin before 1.3.0 holds the plain route until the command exits and
+    // reads no body, so a slice sent there does not come back in time.
+    if (url.endsWith("/wait")) {
+      if (exitsAt !== undefined) vi.setSystemTime(exitsAt);
+      return json(null);
     }
     if (url.endsWith("/logs")) return json(logs());
     if (url.endsWith("/commands/c1") && init.method === "GET") return json(state());
