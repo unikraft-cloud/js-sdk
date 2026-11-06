@@ -369,8 +369,13 @@ export class ApiClient {
 
     // HTTP/2 carries every request on one connection and puts no socket back
     // in a pool, so the wait of socketRelease() only delays the next request.
+    // A caller's own fetch gets no wait either: the SDK does not know whether
+    // it pools sockets, and a test's fake timers, installed before this module
+    // loaded, would hold the wait until the test moves the clock.
     const released = () =>
-      transport?.multiplexes(new URL(url).hostname) ? Promise.resolve() : socketRelease();
+      this.#hasCustomFetch || transport?.multiplexes(new URL(url).hostname)
+        ? Promise.resolve()
+        : socketRelease();
 
     try {
       return { response: await fetchImpl(url, init), url, released };
