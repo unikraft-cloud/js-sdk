@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026, Unikraft GmbH.
 
-import { createServer } from "node:http";
+import { createServer, request as httpRequest } from "node:http";
 import { createSecureServer, type ServerHttp2Session } from "node:http2";
 import { createServer as createTlsServer } from "node:https";
 import type { AddressInfo } from "node:net";
@@ -113,6 +113,47 @@ async function listenTls(): Promise<{
 
 const send = (transport: Transport, url: string) =>
   transport.fetch(url, { dispatcher: transport.dispatcher } as RequestInit);
+
+/**
+ * A forward proxy for plain HTTP: it repeats each request to the port in its
+ * absolute URL, on the loopback, because the test hosts resolve nowhere.
+ */
+async function listenProxy(): Promise<{
+  port: number;
+  requests: string[];
+  close: () => Promise<void>;
+}> {
+  const requests: string[] = [];
+  const server = createServer((request, response) => {
+    const url = new URL(request.url ?? "");
+    requests.push(url.href);
+    const upstream = httpRequest(
+      {
+        host: "127.0.0.1",
+        port: url.port,
+        path: url.pathname + url.search,
+        method: request.method,
+        headers: request.headers,
+      },
+      (answer) => {
+        response.writeHead(answer.statusCode ?? 502, answer.headers);
+        answer.pipe(response);
+      },
+    );
+    request.pipe(upstream);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  return {
+    port,
+    requests,
+    close: () =>
+      new Promise((resolve) => {
+        server.closeAllConnections();
+        server.close(() => resolve());
+      }),
+  };
+}
 
 describe("cachedLookup", () => {
   it.each([
@@ -262,6 +303,47 @@ describe("createTransport", () => {
     }
   });
 
+  it("sends a request through the proxy that HTTP_PROXY names", async () => {
+    const server = await listen();
+    const proxy = await listenProxy();
+    vi.stubEnv("HTTP_PROXY", `http://127.0.0.1:${proxy.port}`);
+    const resolve = vi.fn<Resolver>(async () => loopback);
+    const transport = await directTransport({ resolve });
+    const url = `http://api.metro.test:${server.port}/`;
+
+    try {
+      expect(transport.proxied).toBe(true);
+      await expect(send(transport, url)).resolves.toMatchObject({ status: 200 });
+      expect(proxy.requests).toEqual([url]);
+      // The proxy resolves the host, so the cache sees nothing.
+      expect(resolve).not.toHaveBeenCalled();
+    } finally {
+      await proxy.close();
+      await server.close();
+    }
+  });
+
+  it("sends a request to a host in NO_PROXY through the cached direct connector", async () => {
+    const server = await listen();
+    const proxy = await listenProxy();
+    vi.stubEnv("HTTP_PROXY", `http://127.0.0.1:${proxy.port}`);
+    vi.stubEnv("NO_PROXY", "api.metro.test");
+    const resolve = vi.fn<Resolver>(async () => loopback);
+    const transport = await directTransport({ resolve });
+    const url = `http://api.metro.test:${server.port}/`;
+
+    try {
+      expect(transport.proxied).toBe(true);
+      await Promise.all([send(transport, url), send(transport, url)]);
+      expect(proxy.requests).toEqual([]);
+      expect(server.connections()).toBe(2);
+      expect(resolve).toHaveBeenCalledOnce();
+    } finally {
+      await proxy.close();
+      await server.close();
+    }
+  });
+
   it("leaves the requests to the global fetch when undici is not installed", async () => {
     const importUndici = () => Promise.reject(new Error("Cannot find package 'undici'"));
 
@@ -272,6 +354,26 @@ describe("createTransport", () => {
 });
 
 describe("UnikraftCloud", () => {
+  it("answers through a custom fetch while fake timers hold setImmediate", async () => {
+    // Fake timers that come before the import replace the `setImmediate` the
+    // module takes, so a request through the SDK's own transport would wait
+    // for the clock. A caller's own fetch must not.
+    vi.useFakeTimers();
+    vi.resetModules();
+    try {
+      const { UnikraftCloud: Fresh } = await import("../src/index.js");
+      const fetch = vi.fn(async () => Response.json({ status: "success", op_time_us: 1 }));
+      const ukc = new Fresh({ token: "t", metro: "fra", fetch });
+
+      await expect(ukc.api.platform.instances.getInstances({})).resolves.toEqual({
+        status: "success",
+        op_time_us: 1,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it.each([
     { via: "undici by default", config: {}, globalFetchCalls: 0 },
     { via: "undici when dnsCache is false", config: { dnsCache: false }, globalFetchCalls: 0 },
