@@ -440,16 +440,55 @@ const ukc = new UnikraftCloud({
 
 ## Runtime support
 
-The SDK needs Node.js 22.12 or later, and ships only ESM. From that version
-Node.js can `require()` an ESM package, so CommonJS code can load it too.
+The SDK needs Node.js 22.19 or later, and ships only ESM. Node.js can
+`require()` an ESM package, so CommonJS code can load it too.
 
-`fetch` is used from the global scope, where Node.js supplies it. To use a
-different runtime, or to customise the transport, pass your own:
+In browsers and Deno, the SDK uses the global `fetch`. To use a different
+runtime, or to customise the transport, pass your own:
 
 ```ts
 import { UnikraftCloud } from "@unikraft/cloud";
 const ukc = new UnikraftCloud({ token, fetch: myFetch });
 ```
+
+On Node.js, the SDK sends requests through undici's own `fetch` and an `Agent`
+that it configures, because the global `fetch` of Node.js takes no such
+options. For a burst of parallel requests, that transport:
+
+- Keeps the DNS answer of each API host for 5 minutes. Node.js resolves the
+  host of each new connection with `dns.lookup`, which runs on the libuv thread
+  pool of 4 threads, so without the cache the connections of a burst wait in
+  turn. A failed connection drops the answer. Set `dnsCache: false` to turn
+  the cache off.
+- Offers HTTP/2 to the API host when you set `http2: true`. A host that
+  answers only HTTP/1.1 stays on HTTP/1.1.
+
+Until the first HTTP/2 connection is up, undici opens one connection per
+request, so a cold burst still does one TLS handshake per request. When the API
+host answers HTTP/2, set `http2: true` and `maxConnections` to make the burst
+share a few connections:
+
+```ts
+const ukc = new UnikraftCloud({ token, http2: true, maxConnections: 8 });
+```
+
+Do not set `maxConnections` for a host that answers only HTTP/1.1: there, a
+limit of 8 lets only 8 requests run at the same time.
+
+### Tests and mocks
+
+On Node.js, the SDK does not send its requests through `globalThis.fetch` or
+the global undici dispatcher. So a mock that replaces `globalThis.fetch`
+(`vi.stubGlobal`, MSW, nock) or an undici `MockAgent` does not see them, and the
+requests go to the real API. In tests, pass your mock as `fetch`, or set
+`globalFetch: true`:
+
+```ts
+const ukc = new UnikraftCloud({ token, globalFetch: true });
+```
+
+`globalFetch` turns off the DNS cache, HTTP/2, `maxConnections`, and the proxy
+from the environment.
 
 ## Debugging with a proxy (MITM)
 
@@ -459,7 +498,6 @@ route traffic through a man-in-the-middle proxy such as
 change:
 
 ```sh
-npm install undici                 # optional peer dependency, enables proxy support
 export HTTPS_PROXY=http://127.0.0.1:8080
 export NODE_EXTRA_CA_CERTS=~/.mitmproxy/mitmproxy-ca-cert.pem   # trust the proxy CA
 node your-script.js
@@ -467,9 +505,8 @@ node your-script.js
 
 `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY` are all recognised, in
 upper- or lower-case. Node's global `fetch` ignores these by itself, so the SDK
-applies them via undici's `EnvHttpProxyAgent`, imported lazily only when a proxy
-variable is set. If `undici` is not installed, requests proceed unproxied and a
-one-time warning is logged.
+applies them via undici's `EnvHttpProxyAgent`. If `undici` does not load,
+requests proceed unproxied and a one-time warning is logged.
 
 Opt out per client with `new UnikraftCloud({ proxyFromEnv: false })`. Proxy
 support is Node-only; browsers and Deno ignore these variables.
