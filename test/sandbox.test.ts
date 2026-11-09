@@ -74,15 +74,15 @@ function error(status: number, message: string) {
  * moves the clock forward by the time the plugin would have held it, so a wait
  * costs the time it asks for and no more.
  *
- * `rom: "ignores"` is a plugin that does not know `req_timeout_s`, and starts
- * the command at once, and `rom: "refuses"` is one that answers 400 to it.
+ * `rom: "ignores"` is a plugin from before `req_timeout_s`, which drops the
+ * keys it does not know and starts the command at once.
  */
 function fakePlugin({
   exitsAfterS,
   rom = "blocks",
 }: {
   exitsAfterS: number;
-  rom?: "blocks" | "ignores" | "refuses";
+  rom?: "blocks" | "ignores";
 }) {
   let exitsAt: number | undefined;
   const exited = () => exitsAt !== undefined && Date.now() >= exitsAt;
@@ -105,9 +105,6 @@ function fakePlugin({
     if (!url.includes("/plugins/")) return undefined;
     const body = init.body ? JSON.parse(init.body) : undefined;
     if (url.endsWith("/commands") && init.method === "POST") {
-      if (body.req_timeout_s !== undefined && rom === "refuses") {
-        return error(400, "unknown field: req_timeout_s");
-      }
       exitsAt = Date.now() + exitsAfterS * 1000;
       if (body.req_timeout_s === undefined || rom === "ignores") return json(state());
       hold(body.req_timeout_s);
@@ -466,42 +463,22 @@ test("6b. `keep` leaves the record: no `forget` on the start and no delete after
   expect(calls.some((c) => c.method === "DELETE")).toBe(false);
 });
 
-test.each([
-  {
-    rom: "refuses" as const,
-    // The refusal costs one request, once: the second `exec` starts plain.
-    first: ["POST", "POST", "POST", "GET", "GET", "DELETE"],
-    second: ["POST", "POST", "GET", "GET", "DELETE"],
-  },
-  {
-    rom: "ignores" as const,
-    // The answer names the command but carries no output, so `exec` continues
-    // from the command it did start, and asks again next time.
-    first: ["POST", "POST", "GET", "GET", "DELETE"],
-    second: ["POST", "POST", "GET", "GET", "DELETE"],
-  },
-])(
-  "6c. a plugin that $rom `req_timeout_s` gets the multi-request path",
-  async ({ rom, first, second }) => {
-    vi.useFakeTimers();
-    onTestFinished(() => {
-      vi.useRealTimers();
-    });
-    const { calls, fetchImpl } = fakePlugin({ exitsAfterS: 1, rom });
-    const ukc = new UnikraftCloud({ token: "t", metro: "fra", fetch: fetchImpl });
-    const sb = await ukc.metro("fra").sandboxes.create({ image: "img" });
+test("6c. a plugin that ignores `req_timeout_s` gets the multi-request path", async () => {
+  vi.useFakeTimers();
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+  const { calls, fetchImpl } = fakePlugin({ exitsAfterS: 1, rom: "ignores" });
+  const ukc = new UnikraftCloud({ token: "t", metro: "fra", fetch: fetchImpl });
+  const sb = await ukc.metro("fra").sandboxes.create({ image: "img" });
 
-    calls.length = 0;
-    expect(await sb.exec("x")).toMatchObject({ stdout: "out", exitcode: 0 });
-    expect(calls.map((c) => c.method)).toEqual(first);
-    expect(calls[0]?.body.req_timeout_s).toBe(MAX_WAIT_SLICE_S);
-
-    calls.length = 0;
-    expect(await sb.exec("x")).toMatchObject({ stdout: "out", exitcode: 0 });
-    expect(calls.map((c) => c.method)).toEqual(second);
-    expect(calls[0]?.body.req_timeout_s).toBe(rom === "refuses" ? undefined : MAX_WAIT_SLICE_S);
-  },
-);
+  calls.length = 0;
+  expect(await sb.exec("x")).toMatchObject({ stdout: "out", exitcode: 0 });
+  // The answer names the command but carries no output, so `exec` continues
+  // from the command it did start.
+  expect(calls.map((c) => c.method)).toEqual(["POST", "POST", "GET", "GET", "DELETE"]);
+  expect(calls[0]?.body.req_timeout_s).toBe(MAX_WAIT_SLICE_S);
+});
 
 test("7. headers reach the create call", async () => {
   const { calls, fetchImpl } = mock();

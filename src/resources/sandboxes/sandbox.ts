@@ -331,9 +331,9 @@ export class Sandbox implements AsyncDisposable {
    * and `exitcode: null`, and the command is left running and addressable as
    * `sandbox.command(uuid)`.
    *
-   * A sandbox plugin from before `req_timeout_s` refuses the one-request start.
-   * The sandbox then starts the command without it, waits, and reads the exit
-   * code and the logs, as five requests, and does so for every later `exec`.
+   * A sandbox plugin from before `req_timeout_s` ignores it, and starts the
+   * command at once. `exec` then waits, and reads the exit code and the logs,
+   * as five requests.
    *
    * @example
    * const { stdout, exitcode } = await sandbox.exec("echo hello");
@@ -349,16 +349,7 @@ export class Sandbox implements AsyncDisposable {
       ...(env === undefined ? {} : { env }),
     };
 
-    let started: sandboxModels.RunCommandData | undefined;
-    let refused = false;
-    if (this.#blockingStart) {
-      try {
-        started = await this.#startBlocking(request, deadline, keep ?? false, call);
-      } catch (err) {
-        if (!isBlockingStartRefused(err)) throw err;
-        refused = true;
-      }
-    }
+    const started = await this.#startBlocking(request, deadline, keep ?? false, call);
 
     // The one-request path answered. The record is already forgotten when the
     // command exited, and a timeout that is also the caller's deadline leaves
@@ -379,9 +370,6 @@ export class Sandbox implements AsyncDisposable {
       started === undefined
         ? await this.#startPlain(request, call)
         : new Command(this, started.uuid);
-    // Only a plain start that the plugin accepted proves that the refusal was
-    // about `req_timeout_s`, and not about the command itself.
-    if (refused) this.#blockingStart = false;
 
     await command.wait({
       ...(deadline === undefined ? {} : { timeoutSeconds: secondsUntil(deadline) }),
@@ -400,13 +388,6 @@ export class Sandbox implements AsyncDisposable {
       exitcode: state.exitcode,
     };
   }
-
-  /**
-   * Whether `exec` asks the plugin to hold the start request until the command
-   * exits. It stops asking once the plugin has refused `req_timeout_s`, so a
-   * sandbox on an older plugin pays the refusal once.
-   */
-  #blockingStart = true;
 
   /**
    * Start a command and hold the request until it exits or the first wait slice
@@ -850,17 +831,4 @@ function anySignal(...signals: Array<AbortSignal | undefined>): AbortSignal | un
   const given = signals.filter((signal): signal is AbortSignal => signal !== undefined);
   if (given.length < 2) return given[0];
   return AbortSignal.any(given);
-}
-
-/**
- * Whether a start that asked the plugin to hold the request was refused
- * because the plugin does not know `req_timeout_s`. A sandbox plugin from
- * before the field answers 400 to it. The other causes of a 400 on a start are
- * out of reach from `exec`: the command line is a string, not a vector, no
- * terminal is asked for, and the slice stays within the plugin's bounds. The
- * plain start that follows settles it either way: a command that is itself
- * refused is refused again there, and throws from there.
- */
-function isBlockingStartRefused(err: unknown): boolean {
-  return err instanceof UnikraftCloudError && err.kind === "http" && err.status === 400;
 }
