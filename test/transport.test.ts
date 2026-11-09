@@ -344,8 +344,15 @@ describe("createTransport", () => {
     }
   });
 
-  it("leaves the requests to the global fetch when undici is not installed", async () => {
-    const importUndici = () => Promise.reject(new Error("Cannot find package 'undici'"));
+  it.each([
+    {
+      when: "undici is not installed",
+      importUndici: () => Promise.reject(new Error("Cannot find package 'undici'")),
+      deno: false,
+    },
+    { when: "the runtime is Deno", importUndici: () => import("undici"), deno: true },
+  ])("leaves the requests to the global fetch when $when", async ({ importUndici, deno }) => {
+    if (deno) vi.stubGlobal("Deno", {});
 
     await expect(
       createTransport({ proxyFromEnv: true, dnsCache: true }, { importUndici }),

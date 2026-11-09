@@ -116,6 +116,16 @@ function warnProxy(reason: string, cause?: unknown): void {
   );
 }
 
+// Deno also sets `process.versions.node`, but on Deno the SDK uses the `fetch`
+// of Deno, as the README says.
+function isNode(): boolean {
+  return (
+    typeof process !== "undefined" &&
+    typeof process.versions?.node === "string" &&
+    !("Deno" in globalThis)
+  );
+}
+
 /** True when any HTTP proxy environment variable is set. */
 function hasProxyEnv(): boolean {
   if (typeof process === "undefined" || !process.env) return false;
@@ -143,7 +153,7 @@ function loadUndici(): Promise<unknown> {
 // burst of creates pays the load in each create. So the load starts when this
 // module loads, before the first request. A failed load is reported to
 // createTransport, which decides what to do without undici.
-if (typeof process !== "undefined" && typeof process.versions?.node === "string") {
+if (isNode()) {
   loadUndici().catch(() => {});
 }
 
@@ -245,10 +255,11 @@ function connector(
 }
 
 /**
- * Returns undefined when `undici` does not load, or does not have a part that
- * this transport needs. The global `fetch` then carries the requests. Never
- * throws, because the global `fetch` works without the transport. Callers go
- * through {@link sharedTransport}, which builds it once per process.
+ * Returns undefined outside Node, or when `undici` does not load, or does not
+ * have a part that this transport needs. The global `fetch` then carries the
+ * requests. Never throws, because the global `fetch` works without the
+ * transport. Callers go through {@link sharedTransport}, which builds it once
+ * per process.
  *
  * The dispatcher and fetch come from the SAME undici module. A dispatcher must
  * only be used with its own version's `fetch`: mixing a standalone-undici
@@ -259,6 +270,7 @@ export async function createTransport(
   options: TransportOptions,
   deps: TransportDeps = {},
 ): Promise<Transport | undefined> {
+  if (!isNode()) return undefined;
   const proxy = options.proxyFromEnv && hasProxyEnv();
 
   let undici: Undici;
