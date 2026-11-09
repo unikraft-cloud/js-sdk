@@ -5,6 +5,7 @@
 // that groups them behind one transport config. Everything here returns the
 // response envelope exactly as the OpenAPI specification describes it.
 
+import { AuditApi } from "./audit.gen.js";
 import { AutoscaleApi } from "./autoscale.gen.js";
 import { CertificatesApi } from "./certificates.gen.js";
 import { ImagesApi } from "./images.gen.js";
@@ -49,6 +50,8 @@ export class PlatformApi {
   readonly users: UsersApi;
   /** Metro node information. */
   readonly node: NodeApi;
+  /** Audit events, as a live stream. */
+  readonly audit: AuditApi;
 
   constructor(config: ApiClientConfig) {
     this.instances = new InstancesApi(config);
@@ -59,6 +62,7 @@ export class PlatformApi {
     this.images = new ImagesApi(config);
     this.users = new UsersApi(config);
     this.node = new NodeApi(config);
+    this.audit = new AuditApi(config);
   }
 }
 
