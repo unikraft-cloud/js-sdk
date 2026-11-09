@@ -2,7 +2,7 @@
 // Copyright (c) 2026, Unikraft GmbH.
 
 import { createServer, request as httpRequest } from "node:http";
-import { createSecureServer, type ServerHttp2Session } from "node:http2";
+import { createSecureServer } from "node:http2";
 import { createServer as createTlsServer } from "node:https";
 import type { AddressInfo } from "node:net";
 import type { TLSSocket } from "node:tls";
@@ -22,16 +22,18 @@ import {
 import { UnikraftCloud } from "../src/index.js";
 import { cert, key } from "./fixtures/tls.js";
 
-// A proxy variable from the developer's shell would send these requests to
-// the proxy, which does not resolve them through the cache.
+// Proxy variables from the developer's shell would change the route of these
+// requests. undici reads `no_proxy` before `NO_PROXY`, so a `no_proxy` from
+// the shell would also hide the `NO_PROXY` that a test sets.
 beforeEach(() => {
-  for (const name of ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"]) {
+  for (const name of ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"]) {
     vi.stubEnv(name, undefined);
     vi.stubEnv(name.toLowerCase(), undefined);
   }
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
@@ -252,25 +254,6 @@ describe("createTransport", () => {
     }
   });
 
-  it.each([
-    { http2: undefined, allowH2: false },
-    { http2: true, allowH2: true },
-  ])(
-    "passes allowH2: $allowH2 to the connector when http2 is $http2",
-    async ({ http2, allowH2 }) => {
-      const buildConnector = vi.fn(() => () => undefined);
-      const importUndici = async () => ({
-        buildConnector,
-        fetch: globalThis.fetch,
-        Agent: class {},
-      });
-
-      await createTransport({ proxyFromEnv: false, dnsCache: true, http2 }, { importUndici });
-
-      expect(buildConnector).toHaveBeenCalledWith(expect.objectContaining({ allowH2 }));
-    },
-  );
-
   it("resumes the TLS session of a host after a garbage collection", async () => {
     // The certificate of the fixture is self-signed, so no CA can verify it.
     vi.stubEnv("NODE_TLS_REJECT_UNAUTHORIZED", "0");
@@ -289,27 +272,33 @@ describe("createTransport", () => {
     }
   });
 
-  it("reports a host as multiplexed after an HTTP/2 connection to it", async () => {
-    vi.stubEnv("NODE_TLS_REJECT_UNAUTHORIZED", "0");
-    const server = createSecureServer({ key, cert }, (_request, response) => {
-      response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ status: "success", op_time_us: 1 }));
-    });
-    const sessions = new Set<ServerHttp2Session>();
-    server.on("session", (session) => sessions.add(session));
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    const { port } = server.address() as AddressInfo;
-    const transport = await directTransport({ resolve: async () => loopback }, { http2: true });
+  it.each([
+    { http2: undefined, multiplexed: false },
+    { http2: true, multiplexed: true },
+  ])(
+    "speaks HTTP/2 to a host that offers it only when http2 is $http2",
+    async ({ http2, multiplexed }) => {
+      vi.stubEnv("NODE_TLS_REJECT_UNAUTHORIZED", "0");
+      // allowHTTP1 lets the server answer a client that does not offer HTTP/2.
+      const server = createSecureServer({ key, cert, allowHTTP1: true }, (_request, response) => {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ status: "success", op_time_us: 1 }));
+      });
+      const sockets = new Set<TLSSocket>();
+      server.on("secureConnection", (socket) => sockets.add(socket));
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const { port } = server.address() as AddressInfo;
+      const transport = await directTransport({ resolve: async () => loopback }, { http2 });
 
-    try {
-      expect(transport.multiplexes("api.metro.test")).toBe(false);
-      await (await send(transport, `https://api.metro.test:${port}/`)).arrayBuffer();
-      expect(transport.multiplexes("api.metro.test")).toBe(true);
-    } finally {
-      for (const session of sessions) session.destroy();
-      await new Promise((resolve) => server.close(resolve));
-    }
-  });
+      try {
+        await (await send(transport, `https://api.metro.test:${port}/`)).arrayBuffer();
+        expect(transport.multiplexes("api.metro.test")).toBe(multiplexed);
+      } finally {
+        for (const socket of sockets) socket.destroy();
+        await new Promise((resolve) => server.close(resolve));
+      }
+    },
+  );
 
   it("sends a request through the proxy that HTTP_PROXY names", async () => {
     const server = await listen();
@@ -375,18 +364,21 @@ describe("UnikraftCloud", () => {
     // for the clock. A caller's own fetch must not.
     vi.useFakeTimers();
     vi.resetModules();
-    try {
-      const { UnikraftCloud: Fresh } = await import("../src/index.js");
-      const fetch = vi.fn(async () => Response.json({ status: "success", op_time_us: 1 }));
-      const ukc = new Fresh({ token: "t", metro: "fra", fetch });
+    const { UnikraftCloud: Fresh } = await import("../src/index.js");
+    const fetch = vi.fn(async () => Response.json({ status: "success", op_time_us: 1 }));
+    const ukc = new Fresh({ token: "t", metro: "fra", fetch });
 
-      await expect(ukc.api.platform.instances.getInstances({})).resolves.toEqual({
-        status: "success",
-        op_time_us: 1,
-      });
-    } finally {
-      vi.useRealTimers();
-    }
+    await expect(ukc.api.platform.instances.getInstances({})).resolves.toEqual({
+      status: "success",
+      op_time_us: 1,
+    });
+  });
+
+  // undici reads a limit of 0 as no limit.
+  it.each([0, -1, 1.5])("rejects a maxConnections of %s", (maxConnections) => {
+    expect(() => new UnikraftCloud({ token: "t", metro: "fra", maxConnections })).toThrow(
+      expect.objectContaining({ kind: "config", message: expect.stringMatching(/maxConnections/) }),
+    );
   });
 
   it.each([
