@@ -422,6 +422,13 @@ test.each([
     ],
     exitcode: 0,
   },
+  {
+    what: "gets no time at all",
+    exitsAfterS: 600,
+    opts: { timeoutSeconds: 0 },
+    requests: [["POST"], ["POST", 0], ["GET"], ["GET"]],
+    exitcode: null,
+  },
 ])(
   "6. `exec` holds the plugin for at most one slice per request: a command that $what",
   async ({ exitsAfterS, opts, requests, exitcode }) => {
@@ -440,10 +447,14 @@ test.each([
     expect(
       calls.map((c) => [c.method, ...(held(c.body) === undefined ? [] : [held(c.body)])]),
     ).toEqual(requests);
-    // `forget` rides on every start. The plugin does nothing with it on a
-    // timeout, so the record of a timed-out command survives, as `requests`
-    // shows: no `DELETE` follows an `exitcode: null`.
-    expect(calls[0]?.body.forget).toBe(true);
+    // Every start closes stdin, the plain one too. `forget` rides on every
+    // start that holds the request, and only there, because the plugin answers
+    // 400 to it on a plain start. It does nothing on a timeout, so the record
+    // of a timed-out command survives, as `requests` shows: no `DELETE` follows
+    // an `exitcode: null`.
+    const start = calls[0]?.body;
+    expect(start?.stdin_eof).toBe(true);
+    expect(start?.forget).toBe(held(start) === undefined ? undefined : true);
   },
 );
 

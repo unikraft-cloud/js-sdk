@@ -331,9 +331,15 @@ export class Sandbox implements AsyncDisposable {
    * and `exitcode: null`, and the command is left running and addressable as
    * `sandbox.command(uuid)`.
    *
-   * A sandbox plugin from before `req_timeout_s` ignores it, and starts the
-   * command at once. `exec` then waits, and reads the exit code and the logs,
-   * as five requests.
+   * The command gets no standard input: a read gets end of file at once,
+   * because nothing can write to it before `exec` returns. To feed input to a
+   * command, use {@link Sandbox.start} and {@link Command.stdin}.
+   *
+   * A sandbox plugin from before `req_timeout_s` ignores it and `stdin_eof`,
+   * and starts the command at once. `exec` then waits, and reads the exit code
+   * and the logs, as five requests. Standard input stays open there, so a
+   * command that reads it does not exit, and `exec` returns only when
+   * `timeoutSeconds` runs out.
    *
    * @example
    * const { stdout, exitcode } = await sandbox.exec("echo hello");
@@ -347,6 +353,10 @@ export class Sandbox implements AsyncDisposable {
       cmd,
       ...(cwd === undefined ? {} : { cwd }),
       ...(env === undefined ? {} : { env }),
+      // The plugin closes standard input by default only on a start that holds
+      // the request. The plain start, which `timeoutSeconds: 0` takes, needs
+      // the flag too.
+      stdin_eof: true,
     };
 
     const started = await this.#startBlocking(request, deadline, keep ?? false, call);
