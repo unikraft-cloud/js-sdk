@@ -90,7 +90,7 @@ export interface UnikraftCloudConfig {
    * Set it, for example to 8, with `http2: true` and only when the host
    * answers HTTP/2: over HTTP/1.1, a limit of n lets only n requests run at
    * the same time.
-   * Defaults to no limit. Does not apply through a proxy.
+   * Defaults to no limit.
    */
   maxConnections?: number;
 }

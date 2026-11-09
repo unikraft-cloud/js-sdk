@@ -228,7 +228,15 @@ describe("createTransport", () => {
     expect(resolve).toHaveBeenCalledTimes(2);
   });
 
-  it("opens no more than maxConnections connections to a host", async () => {
+  it.each([
+    { route: "with no proxy", env: {} },
+    // Port 9 is the discard port, so a request sent to the proxy fails.
+    {
+      route: "in NO_PROXY while HTTP_PROXY is set",
+      env: { HTTP_PROXY: "http://127.0.0.1:9", NO_PROXY: "127.0.0.1" },
+    },
+  ])("opens no more than maxConnections connections to a host $route", async ({ env }) => {
+    for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value);
     const server = await listen({ keepAlive: true });
     const transport = await directTransport({}, { maxConnections: 2 });
 

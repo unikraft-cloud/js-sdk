@@ -87,7 +87,7 @@ type Connector = (
 interface Undici {
   fetch?: FetchLike;
   Agent?: new (options: { connect: Connector; connections?: number }) => Dispatcher;
-  EnvHttpProxyAgent?: new (options?: { connect: Connector }) => Dispatcher;
+  EnvHttpProxyAgent?: new (options?: { connect?: Connector; connections?: number }) => Dispatcher;
   buildConnector?: (options: { lookup?: LookupFunction; allowH2?: boolean }) => Connector;
 }
 
@@ -302,8 +302,12 @@ export async function createTransport(
     try {
       // EnvHttpProxyAgent gives `connect` only to its agent for direct
       // requests, for example to a host in NO_PROXY. For a proxied request,
-      // the proxy resolves the host.
-      const dispatcher = new undici.EnvHttpProxyAgent(connect && { connect });
+      // the proxy resolves the host. It gives `connections` to both agents,
+      // so the cap also applies to the tunnels through the proxy.
+      const dispatcher = new undici.EnvHttpProxyAgent({
+        ...(connect && { connect }),
+        ...(options.maxConnections !== undefined && { connections: options.maxConnections }),
+      });
       return { fetch: undici.fetch, dispatcher, proxied: true, multiplexes };
     } catch (cause) {
       warnProxy("failed to construct undici's EnvHttpProxyAgent.", cause);
