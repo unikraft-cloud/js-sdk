@@ -207,12 +207,14 @@ describe("cachedLookup", () => {
 });
 
 describe("createTransport", () => {
-  it("resolves a host once for parallel requests to it", async () => {
+  it("resolves a host once for an early lookup and parallel requests to it", async () => {
     const server = await listen();
     const resolve = vi.fn<Resolver>(async () => loopback);
     const transport = await directTransport({ resolve });
 
     try {
+      expect(transport.resolveEarly).toBeTypeOf("function");
+      transport.resolveEarly?.("api.metro.test");
       const responses = await Promise.all(
         Array.from({ length: 20 }, () => send(transport, `http://api.metro.test:${server.port}/`)),
       );

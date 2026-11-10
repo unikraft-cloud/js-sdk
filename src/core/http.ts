@@ -254,6 +254,11 @@ function socketRelease(): Promise<void> {
   return new Promise((resolve) => nativeSetImmediate(resolve));
 }
 
+/** The host name of a base URL, without the IPv6 brackets. */
+function hostOf(base: string): string {
+  return new URL(base).hostname.replace(/^\[(.*)\]$/, "$1");
+}
+
 /** Serialise a query object into a URL search string (form/explode style). */
 function encodeQuery(query: Record<string, QueryValue> | undefined): string {
   if (!query) return "";
@@ -362,6 +367,7 @@ export class ApiClient {
     }
 
     const transport = await this.#transport();
+    transport?.resolveEarly?.(hostOf(base));
 
     // Only the pool of the SDK's own transport needs the wait, and an HTTP/2
     // connection puts no socket back in it.

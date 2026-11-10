@@ -460,8 +460,9 @@ requests, that transport:
 - Keeps the DNS answer of each API host for 5 minutes. Node.js resolves the
   host of each new connection with `dns.lookup`, which runs on the libuv thread
   pool of 4 threads, so without the cache the connections of a burst wait in
-  turn. A failed connection drops the answer. Set `dnsCache: false` to turn
-  the cache off.
+  turn. A failed connection drops the answer. The lookup starts when the SDK
+  sets up the first request, so it runs while the burst sets up the other
+  requests. Set `dnsCache: false` to turn the cache off.
 - Offers HTTP/2 to the API host when you set `http2: true`. A host that
   answers only HTTP/1.1 stays on HTTP/1.1.
 

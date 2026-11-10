@@ -33,6 +33,11 @@ export interface Transport {
   proxied: boolean;
   /** True when the latest connection to `hostname` speaks HTTP/2. */
   multiplexes(hostname: string): boolean;
+  /**
+   * Starts the DNS lookup of a host into the cache, if the cache has no
+   * answer. Absent when the transport does not use the cache.
+   */
+  resolveEarly?: (hostname: string) => void;
 }
 
 export interface TransportOptions {
@@ -156,6 +161,26 @@ function loadUndici(): Promise<unknown> {
   return undiciModule;
 }
 
+let dnsLookup: Resolver | undefined;
+let dnsModule: Promise<Resolver> | undefined;
+
+// A dynamic import resolves only after the microtasks that are queued, so a
+// lookup that awaits it in a burst starts after the setup of every request.
+// The module therefore loads with this one, and a lookup calls it at once.
+function loadDns(): Promise<Resolver> {
+  dnsModule ??= importOptional("node:dns").then((dns) => {
+    const { promises } = dns as { promises: { lookup: Resolver } };
+    dnsLookup = promises.lookup.bind(promises);
+    return dnsLookup;
+  });
+  return dnsModule;
+}
+
+/** Resolves a host through `dns.lookup`, which reads /etc/hosts before DNS. */
+async function nodeResolve(...args: Parameters<Resolver>): Promise<LookupAddress[]> {
+  return (dnsLookup ?? (await loadDns()))(...args);
+}
+
 // Node needs tens of milliseconds of CPU to load undici. If the first request
 // starts the load, every request sent in the same tick waits for it, and a
 // burst of creates pays the load in each create. So the load starts when this
@@ -163,12 +188,7 @@ function loadUndici(): Promise<unknown> {
 // createTransport, which decides what to do without undici.
 if (isNode()) {
   loadUndici().catch(() => {});
-}
-
-/** Resolves a host through `dns.lookup`, which reads /etc/hosts before DNS. */
-async function nodeResolve(...args: Parameters<Resolver>): Promise<LookupAddress[]> {
-  const dns = (await importOptional("node:dns")) as { promises: { lookup: Resolver } };
-  return dns.promises.lookup(...args);
+  loadDns().catch(() => {});
 }
 
 /**
@@ -232,10 +252,9 @@ interface SessionSocket {
 function connector(
   buildConnector: NonNullable<Undici["buildConnector"]>,
   options: TransportOptions,
-  resolve: Resolver | undefined,
+  cache: CachedLookup | undefined,
   http2Hosts: Set<string>,
 ): Connector {
-  const cache = options.dnsCache ? cachedLookup(resolve) : undefined;
   // undici reads `allowH2` here, not on the Agent, when it gets a connector.
   const connect = buildConnector({
     ...(cache && { lookup: cache.lookup }),
@@ -294,9 +313,16 @@ export async function createTransport(
   const http2Hosts = new Set<string>();
   const multiplexes = (hostname: string) => http2Hosts.has(hostname);
   let connect: Connector | undefined;
+  let resolveEarly: ((hostname: string) => void) | undefined;
   if (typeof undici.buildConnector === "function") {
     try {
-      connect = connector(undici.buildConnector, options, deps.resolve, http2Hosts);
+      const cache = options.dnsCache ? cachedLookup(deps.resolve) : undefined;
+      connect = connector(undici.buildConnector, options, cache, http2Hosts);
+      // undici asks for the address only when a connection starts, which in a
+      // burst is after the setup of every request sent in the same tick. The
+      // lookup goes to the libuv thread pool and to the network, so it runs
+      // while that setup runs.
+      if (cache) resolveEarly = (hostname) => cache.lookup(hostname, {}, () => {});
     } catch {
       // Continue without the connector, because it only makes requests faster.
     }
@@ -312,7 +338,9 @@ export async function createTransport(
       // EnvHttpProxyAgent gives `connect` only to its agent for direct
       // requests, for example to a host in NO_PROXY. For a proxied request,
       // the proxy resolves the host. It gives `connections` to both agents,
-      // so the cap also applies to the tunnels through the proxy.
+      // so the cap also applies to the tunnels through the proxy. The
+      // transport starts no early lookup here: most requests go to the proxy,
+      // and the network behind a proxy often has no DNS for the API host.
       const dispatcher = new undici.EnvHttpProxyAgent({
         ...(connect && { connect }),
         ...(options.maxConnections !== undefined && { connections: options.maxConnections }),
@@ -332,7 +360,7 @@ export async function createTransport(
       connect,
       ...(options.maxConnections !== undefined && { connections: options.maxConnections }),
     });
-    return { fetch: undici.fetch, request, dispatcher, proxied: false, multiplexes };
+    return { fetch: undici.fetch, request, dispatcher, proxied: false, multiplexes, resolveEarly };
   } catch {
     return undefined;
   }
