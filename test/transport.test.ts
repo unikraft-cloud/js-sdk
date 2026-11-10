@@ -49,9 +49,14 @@ function ask(lookup: LookupFunction, hostname: string, all = true): Promise<unkn
 async function listen({ keepAlive = false } = {}): Promise<{
   port: number;
   connections: () => number;
+  fetchModes: (string | undefined)[];
   close: () => Promise<void>;
 }> {
-  const server = createServer((_request, response) => {
+  // `fetch` sends a `sec-fetch-mode` header on each request, and undici's
+  // `request()` sends none, so the header tells the two paths apart.
+  const fetchModes: (string | undefined)[] = [];
+  const server = createServer((request, response) => {
+    fetchModes.push(request.headers["sec-fetch-mode"] as string | undefined);
     // Without keep-alive, each request opens a new connection, and each new
     // connection looks up the host.
     response.writeHead(200, {
@@ -67,6 +72,7 @@ async function listen({ keepAlive = false } = {}): Promise<{
   return {
     port,
     connections: () => connections,
+    fetchModes,
     close: () =>
       new Promise((resolve) => {
         server.closeAllConnections();
@@ -372,6 +378,7 @@ describe("UnikraftCloud", () => {
       status: "success",
       op_time_us: 1,
     });
+    expect(fetch).toHaveBeenCalledOnce();
   });
 
   // undici reads a limit of 0 as no limit.
@@ -379,6 +386,52 @@ describe("UnikraftCloud", () => {
     expect(() => new UnikraftCloud({ token: "t", metro: "fra", maxConnections })).toThrow(
       expect.objectContaining({ kind: "config", message: expect.stringMatching(/maxConnections/) }),
     );
+  });
+
+  it.each([
+    { via: "undici's request()", config: {} },
+    {
+      via: "a custom fetch",
+      config: { fetch: (url: string, init?: RequestInit) => globalThis.fetch(url, init) },
+    },
+  ])("reads a JSON answer, an error answer and a byte body through $via", async ({ config }) => {
+    const server = createServer((request, response) => {
+      if (request.url === "/missing") {
+        response.writeHead(404, { "content-type": "application/json" });
+        response.end(JSON.stringify({ status: "error", message: "no such instance" }));
+      } else if (request.url === "/bytes") {
+        response.writeHead(200, { "content-type": "application/octet-stream" });
+        response.end(Buffer.from([0, 1, 255]));
+      } else {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ status: "success", op_time_us: 1 }));
+      }
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    const api = new UnikraftCloud({
+      token: "t",
+      baseUrl: `http://127.0.0.1:${port}`,
+      ...config,
+    }).api.platform.instances;
+
+    try {
+      await expect(api.request({ method: "GET", path: "/ok" })).resolves.toEqual({
+        status: "success",
+        op_time_us: 1,
+      });
+      await expect(api.request({ method: "GET", path: "/missing" })).rejects.toMatchObject({
+        kind: "http",
+        status: 404,
+        message: "no such instance",
+      });
+      await expect(api.bytes({ method: "GET", path: "/bytes" })).resolves.toEqual(
+        new Uint8Array([0, 1, 255]),
+      );
+    } finally {
+      server.closeAllConnections();
+      await new Promise((resolve) => server.close(resolve));
+    }
   });
 
   it.each([
@@ -416,6 +469,8 @@ describe("UnikraftCloud", () => {
       await ukc.api.platform.instances.getInstances({});
       await ukc.api.platform.instances.getInstances({});
       expect(server.connections()).toBe(1);
+      // No `sec-fetch-mode` header: both went through undici's request(), not fetch.
+      expect(server.fetchModes).toEqual([undefined, undefined]);
     } finally {
       await server.close();
     }

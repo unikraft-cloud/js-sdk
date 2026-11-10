@@ -55,6 +55,27 @@ export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>
 /** `fetch` init plus the undici-only `dispatcher` extension. */
 type RequestInitWithDispatcher = RequestInit & { dispatcher?: Dispatcher };
 
+/** The parts of a response that {@link ApiClient.request} and {@link ApiClient.bytes} read. */
+interface BufferedResponse {
+  ok: boolean;
+  status: number;
+  statusText: string;
+  text(): Promise<string>;
+  arrayBuffer(): Promise<ArrayBuffer>;
+}
+
+/** A request that {@link ApiClient} built and has not sent yet. */
+interface Prepared {
+  url: string;
+  init: RequestInitWithDispatcher & {
+    method: string;
+    headers: Record<string, string>;
+    body?: string;
+  };
+  transport: Transport | undefined;
+  released: () => Promise<void>;
+}
+
 /** Configuration for the plumbing {@link ApiClient}. */
 export interface ApiClientConfig {
   /** Fully-qualified API base URL, e.g. `https://api.fra.unikraft.cloud`. */
@@ -318,16 +339,10 @@ export class ApiClient {
   }
 
   /**
-   * Perform the authenticated fetch shared by {@link ApiClient.request} and
-   * {@link ApiClient.stream}, returning the raw response alongside the resolved
-   * URL (used in error messages). Throws on transport failures only; the caller
-   * decides how to interpret the status and body.
+   * Build the URL and the `fetch` init shared by every request, resolve the
+   * transport that carries it, and say how the caller waits for the socket.
    */
-  async #send(
-    args: RequestArgs,
-    options: CallOptions,
-    accept: string,
-  ): Promise<{ response: Response; url: string; released: () => Promise<void> }> {
+  async #prepare(args: RequestArgs, options: CallOptions, accept: string): Promise<Prepared> {
     const base = stripTrailingSlashes(options.baseUrl ?? this.baseUrl);
     const url = base + args.path + encodeQuery(args.query);
 
@@ -346,19 +361,7 @@ export class ApiClient {
       headers["content-type"] = "application/json";
     }
 
-    const init: RequestInitWithDispatcher = {
-      method,
-      headers,
-      body: bodyInit,
-      signal: options.signal,
-    };
-
     const transport = await this.#transport();
-    let fetchImpl = this.fetchImpl;
-    if (transport) {
-      fetchImpl = transport.fetch;
-      init.dispatcher = transport.dispatcher;
-    }
 
     // Only the pool of the SDK's own transport needs the wait, and an HTTP/2
     // connection puts no socket back in it.
@@ -367,16 +370,93 @@ export class ApiClient {
         ? socketRelease()
         : Promise.resolve();
 
+    return {
+      url,
+      init: { method, headers, body: bodyInit, signal: options.signal },
+      transport,
+      released,
+    };
+  }
+
+  #networkError(url: string, transport: Transport | undefined, cause: unknown): UnikraftCloudError {
+    const via = transport?.proxied
+      ? " (routed through the proxy from your HTTP_PROXY/HTTPS_PROXY environment; check the proxy is reachable and its CA is trusted via NODE_EXTRA_CA_CERTS)"
+      : "";
+    return new UnikraftCloudError(`Request to ${url} failed${via}: ${describeCause(cause)}`, {
+      kind: "network",
+      cause,
+    });
+  }
+
+  /**
+   * Perform the authenticated fetch for {@link ApiClient.stream}, returning
+   * the raw response alongside the resolved URL (used in error messages).
+   * Throws on transport failures only; the caller decides how to interpret the
+   * status and body.
+   */
+  async #send(
+    args: RequestArgs,
+    options: CallOptions,
+    accept: string,
+  ): Promise<{ response: Response; url: string; released: () => Promise<void> }> {
+    return this.#fetch(await this.#prepare(args, options, accept));
+  }
+
+  async #fetch({ url, init, transport, released }: Prepared): Promise<{
+    response: Response;
+    url: string;
+    released: () => Promise<void>;
+  }> {
+    // The dispatcher works only with the fetch of its own undici module, so a
+    // transport replaces the configured or global fetch too.
+    let fetchImpl = this.fetchImpl;
+    if (transport) {
+      fetchImpl = transport.fetch;
+      init.dispatcher = transport.dispatcher;
+    }
     try {
       return { response: await fetchImpl(url, init), url, released };
     } catch (cause) {
-      const via = transport?.proxied
-        ? " (routed through the proxy from your HTTP_PROXY/HTTPS_PROXY environment; check the proxy is reachable and its CA is trusted via NODE_EXTRA_CA_CERTS)"
-        : "";
-      throw new UnikraftCloudError(`Request to ${url} failed${via}: ${describeCause(cause)}`, {
-        kind: "network",
-        cause,
+      throw this.#networkError(url, transport, cause);
+    }
+  }
+
+  /**
+   * As `#send`, for a response that the caller reads whole.
+   * On the undici transport this goes through `request()`, which costs the
+   * main thread less than `fetch` for each request: no WHATWG `Request`,
+   * `Response` or body stream. `request()` follows no redirect; the API sends
+   * none.
+   */
+  async #sendBuffered(
+    args: RequestArgs,
+    options: CallOptions,
+    accept: string,
+  ): Promise<{ response: BufferedResponse; url: string; released: () => Promise<void> }> {
+    const prepared = await this.#prepare(args, options, accept);
+    const { url, init, transport, released } = prepared;
+    if (!transport?.request) return this.#fetch(prepared);
+    try {
+      const { statusCode, statusText, body } = await transport.request(url, {
+        method: init.method,
+        headers: init.headers,
+        ...(init.body !== undefined && { body: init.body }),
+        ...(init.signal && { signal: init.signal }),
+        dispatcher: transport.dispatcher,
       });
+      return {
+        response: {
+          ok: statusCode >= 200 && statusCode < 300,
+          status: statusCode,
+          statusText: statusText ?? "",
+          text: () => body.text(),
+          arrayBuffer: () => body.arrayBuffer(),
+        },
+        url,
+        released,
+      };
+    } catch (cause) {
+      throw this.#networkError(url, transport, cause);
     }
   }
 
@@ -384,7 +464,7 @@ export class ApiClient {
    * Perform a request and return the parsed JSON envelope typed as `T`.
    */
   async request<T>(args: RequestArgs, options: CallOptions = {}): Promise<T> {
-    const { response, url, released } = await this.#send(args, options, "application/json");
+    const { response, url, released } = await this.#sendBuffered(args, options, "application/json");
 
     const text = await response.text();
     await released();
@@ -436,7 +516,11 @@ export class ApiClient {
    * (unlike {@link ApiClient.stream}, which is named for its SSE delivery).
    */
   async bytes(args: RequestArgs, options: CallOptions = {}): Promise<Uint8Array> {
-    const { response, released } = await this.#send(args, options, "application/octet-stream");
+    const { response, released } = await this.#sendBuffered(
+      args,
+      options,
+      "application/octet-stream",
+    );
 
     if (!response.ok) {
       // A failure is still enveloped JSON (and may be an empty body, e.g. the

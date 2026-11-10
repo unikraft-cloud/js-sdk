@@ -451,9 +451,11 @@ import { UnikraftCloud } from "@unikraft/cloud";
 const ukc = new UnikraftCloud({ token, fetch: myFetch });
 ```
 
-On Node.js, the SDK sends requests through undici's own `fetch` and an `Agent`
-that it configures, because the global `fetch` of Node.js takes no such
-options. For a burst of parallel requests, that transport:
+On Node.js, the SDK sends requests through undici and an `Agent` that it
+configures, because the global `fetch` of Node.js takes no such options. It
+uses undici's `request()`, which costs less CPU for each request than `fetch`,
+and uses undici's `fetch` only for an event stream. For a burst of parallel
+requests, that transport:
 
 - Keeps the DNS answer of each API host for 5 minutes. Node.js resolves the
   host of each new connection with `dns.lookup`, which runs on the libuv thread

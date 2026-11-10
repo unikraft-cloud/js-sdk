@@ -8,9 +8,27 @@ export interface Dispatcher {
   dispatch(...args: never[]): boolean;
 }
 
-/** A version-matched `fetch` and `dispatcher` pair from one undici module. */
+/** undici's `request()`, which skips the WHATWG streams and objects of `fetch`. */
+export type RequestFn = (
+  url: string,
+  options: {
+    method: string;
+    headers: Record<string, string>;
+    body?: string;
+    signal?: AbortSignal;
+    dispatcher: Dispatcher;
+  },
+) => Promise<{
+  statusCode: number;
+  statusText?: string;
+  body: { text(): Promise<string>; arrayBuffer(): Promise<ArrayBuffer> };
+}>;
+
+/** A version-matched `fetch`, `request` and `dispatcher` from one undici module. */
 export interface Transport {
   fetch: FetchLike;
+  /** Absent when the installed undici has no `request()`. */
+  request?: RequestFn;
   dispatcher: Dispatcher;
   proxied: boolean;
   /** True when the latest connection to `hostname` speaks HTTP/2. */
@@ -75,6 +93,7 @@ type Connector = (
 /** The parts of the `undici` module that this transport uses. */
 interface Undici {
   fetch?: FetchLike;
+  request?: RequestFn;
   Agent?: new (options: { connect: Connector; connections?: number }) => Dispatcher;
   EnvHttpProxyAgent?: new (options?: { connect?: Connector; connections?: number }) => Dispatcher;
   buildConnector?: (options: { lookup?: LookupFunction; allowH2?: boolean }) => Connector;
@@ -282,6 +301,7 @@ export async function createTransport(
       // Continue without the connector, because it only makes requests faster.
     }
   }
+  const request = typeof undici.request === "function" ? undici.request : undefined;
 
   if (proxy) {
     if (typeof undici.EnvHttpProxyAgent !== "function" || typeof undici.fetch !== "function") {
@@ -297,7 +317,7 @@ export async function createTransport(
         ...(connect && { connect }),
         ...(options.maxConnections !== undefined && { connections: options.maxConnections }),
       });
-      return { fetch: undici.fetch, dispatcher, proxied: true, multiplexes };
+      return { fetch: undici.fetch, request, dispatcher, proxied: true, multiplexes };
     } catch (cause) {
       warnProxy("failed to construct undici's EnvHttpProxyAgent.", cause);
       return undefined;
@@ -312,7 +332,7 @@ export async function createTransport(
       connect,
       ...(options.maxConnections !== undefined && { connections: options.maxConnections }),
     });
-    return { fetch: undici.fetch, dispatcher, proxied: false, multiplexes };
+    return { fetch: undici.fetch, request, dispatcher, proxied: false, multiplexes };
   } catch {
     return undefined;
   }
