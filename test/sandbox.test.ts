@@ -510,6 +510,23 @@ test("6c. a plugin that ignores `req_timeout_s` gets the multi-request path", as
   expect(calls[0]?.body.req_timeout_s).toBe(MAX_WAIT_SLICE_S);
 });
 
+test.each([
+  { plugin: "1.4.0", answer: { stdout_first: 5, stderr_first: 2 }, first: [5, 2] },
+  { plugin: "1.3.0", answer: {}, first: [0, 0] },
+])("15. `logs` says where the output on plugin $plugin starts", async ({ answer, first }) => {
+  const { fetchImpl } = mock((url) =>
+    url.endsWith("/commands/c1/logs")
+      ? json({ stdout: "b3V0", stderr: "", stdout_available: 8, stderr_available: 2, ...answer })
+      : undefined,
+  );
+  const ukc = new UnikraftCloud({ token: "t", metro: "fra", fetch: fetchImpl });
+  const sb = await ukc.metro("fra").sandboxes.create({ image: "img" });
+
+  const logs = await sb.command("c1").logs();
+
+  expect([logs.stdout_first, logs.stderr_first]).toEqual(first);
+});
+
 test("7. headers reach the create call", async () => {
   const { calls, fetchImpl } = mock();
   const ukc = new UnikraftCloud({ token: "t", metro: "fra", fetch: fetchImpl });

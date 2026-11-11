@@ -173,11 +173,15 @@ export interface ExecResult extends Pick<sandboxModels.GetCommandData, "uuid" | 
 }
 
 /**
- * A command's output: both streams decoded, and the total size of each, which a
- * {@link Command.logsRaw} range can then address.
+ * A command's output: both streams decoded, the total size of each, and the
+ * first byte the plugin still holds of each. A {@link Command.logsRaw} range
+ * can address the bytes from `stdout_first` up to `stdout_available`.
  */
 export interface CommandLogs
-  extends Pick<sandboxModels.CommandLogsData, "stdout_available" | "stderr_available"> {
+  extends Pick<
+    sandboxModels.CommandLogsData,
+    "stdout_available" | "stderr_available" | "stdout_first" | "stderr_first"
+  > {
   /** The standard output stream, decoded from base64. */
   stdout: string;
   /** The standard error stream, decoded from base64. */
@@ -203,6 +207,12 @@ export interface LogsRawOptions extends SandboxRequestOptions {
   /** Maximum number of bytes to read. */
   limit?: number;
 }
+
+/**
+ * Options for {@link Command.releaseLogs}: for each stream, the offset below
+ * which the plugin releases it, as the plugin takes it.
+ */
+export type ReleaseLogsOptions = SandboxRequestOptions & sandboxModels.CommandLogsReleaseRequest;
 
 /** Options for {@link Command.stdin}. */
 export interface StdinOptions extends SandboxRequestOptions {

@@ -13,6 +13,7 @@ import type { Sandbox } from "./sandbox.js";
 import type {
   CommandLogs,
   LogsRawOptions,
+  ReleaseLogsOptions,
   SandboxRequestOptions,
   StdinOptions,
   WaitCommandOptions,
@@ -42,6 +43,10 @@ export class Command {
   /**
    * Read the command's command line, working directory and `exitcode`, which is
    * `null` while it runs. The only operation that reports the exit code.
+   *
+   * `capped` is `true` while the command waits for a client to release its
+   * output (see {@link Command.releaseLogs}). A sandbox plugin before 1.4.0
+   * does not send it.
    */
   async inspect(opts: SandboxRequestOptions = {}): Promise<sandboxModels.GetCommandData> {
     const res = await this.sandbox.api.commands.getCommandByUuid(this.uuid, callOptions(opts));
@@ -96,7 +101,15 @@ export class Command {
     }
   }
 
-  /** Both output streams, decoded. */
+  /**
+   * Both output streams, decoded, from the first byte the plugin still holds
+   * for each. That byte is `stdout_first` (and `stderr_first`), and it is not 0
+   * once some output was released (see {@link Command.releaseLogs}).
+   *
+   * A log on a volume can outgrow the memory for output. The plugin then sends
+   * it one page at a time, and `stdout_available` past what came back shows
+   * that. {@link Command.logsRaw} reads the rest.
+   */
   async logs(opts: SandboxRequestOptions = {}): Promise<CommandLogs> {
     const res = await this.sandbox.api.commands.getCommandLogs(this.uuid, callOptions(opts));
     const data = unwrap(res);
@@ -105,6 +118,10 @@ export class Command {
       stderr: decodeText(data.stderr),
       stdout_available: data.stdout_available,
       stderr_available: data.stderr_available,
+      // A sandbox plugin before 1.4.0 sends neither field. It cannot release
+      // output, so its streams always start at byte 0.
+      stdout_first: data.stdout_first ?? 0,
+      stderr_first: data.stderr_first ?? 0,
     };
   }
 
@@ -114,6 +131,9 @@ export class Command {
    * @remarks
    * The range goes in a `Range` header. The plugin also models it as a body on
    * the JSON log `GET`, which `fetch` forbids and drops silently.
+   *
+   * Offsets are absolute, also after a release. A range that starts below a
+   * released byte gets a 416 answer.
    *
    * @example
    * const tail = await command.logsRaw("stdout", { offset: -4096 });
@@ -131,6 +151,38 @@ export class Command {
       ...(range === undefined ? {} : { Range: range }),
       ...callOptions(rest),
     });
+  }
+
+  /**
+   * Release each output stream below the given byte, because the caller has
+   * read that part. A command that waits for a release (`capped` in
+   * {@link Command.inspect}) then continues. A stream left out stays as it is.
+   *
+   * Released bytes are gone: {@link Command.logs} starts after them, and a
+   * {@link Command.logsRaw} range into them gets a 416 answer. An offset at or
+   * below an earlier release changes nothing, so a retry is safe. Once the
+   * command has exited and its log is on a volume, a release changes nothing.
+   *
+   * Needs a sandbox plugin from 1.4.0 on. An older plugin answers 404.
+   *
+   * @example
+   * // Read what the command wrote so far, then release it.
+   * let offset = 0;
+   * const chunk = await command.logsRaw("stdout", { offset });
+   * offset += chunk.length;
+   * await command.releaseLogs({ stdout: offset });
+   */
+  async releaseLogs(opts: ReleaseLogsOptions): Promise<void> {
+    const { stdout, stderr, ...rest } = opts;
+    unwrap(
+      await this.sandbox.api.commands.releaseCommandLogs(this.uuid, {
+        body: {
+          ...(stdout === undefined ? {} : { stdout }),
+          ...(stderr === undefined ? {} : { stderr }),
+        },
+        ...callOptions(rest),
+      }),
+    );
   }
 
   /**

@@ -368,6 +368,7 @@ export {
   type ListSandboxesOptions,
   type LogsRawOptions,
   type ParentsOptions,
+  type ReleaseLogsOptions,
   Sandbox,
   type SandboxCallOptions,
   Sandboxes,
