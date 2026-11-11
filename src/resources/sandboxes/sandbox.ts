@@ -12,7 +12,6 @@
 // so they share a module rather than a cycle.
 
 import { SandboxPluginApi, type models as sandboxModels } from "@unikraft/cloud-plugin-sandbox-api";
-import { decodeText } from "../../core/base64.js";
 import { readEnv } from "../../core/env.js";
 import { ApiClient, type CallOptions, UnikraftCloudError } from "../../core/http.js";
 import type { Metro, MetroEndpoint, MetroScope } from "../../core/metro.js";
@@ -49,6 +48,7 @@ import {
   withoutClientConfig,
   withSandboxPlugin,
 } from "./options.js";
+import { CollectedOutput } from "./output.js";
 import type {
   ConnectSandboxOptions,
   CreateSandboxOptions,
@@ -344,7 +344,7 @@ export class Sandbox implements AsyncDisposable {
    * const { stdout } = await sandbox.exec("ls", { cwd: "/tmp" });
    */
   async exec(cmd: string, opts: ExecOptions = {}): Promise<ExecResult> {
-    const { keep, timeoutSeconds, cwd, env, ...rest } = opts;
+    const { keep = false, timeoutSeconds, cwd, env, ...rest } = opts;
     const call = callOptions(rest);
     const deadline = timeoutSeconds === undefined ? undefined : Date.now() + timeoutSeconds * 1000;
     const request: sandboxModels.RunCommandRequest = {
@@ -357,27 +357,27 @@ export class Sandbox implements AsyncDisposable {
       stdin_eof: true,
     };
 
-    const started = await this.#startBlocking(request, deadline, keep ?? false, call);
-
-    // The one-request path answered. The record is already forgotten when the
-    // command exited, and a timeout that is also the caller's deadline leaves
-    // nothing more to ask.
-    if (started?.logs !== undefined) {
-      const timedOut = started.exitcode === null;
-      if (!timedOut || (deadline !== undefined && secondsUntil(deadline) <= 0)) {
-        return {
-          uuid: started.uuid,
-          stdout: decodeText(started.logs.stdout),
-          stderr: decodeText(started.logs.stderr),
-          exitcode: started.exitcode,
-        };
-      }
-    }
-
+    const started = await this.#startBlocking(request, deadline, keep, call);
     const command =
       started === undefined
         ? await this.#startPlain(request, call)
         : new Command(this, started.uuid);
+    const output = new CollectedOutput(command);
+
+    // The one-request path answered. A command that exited is complete, and a
+    // timeout that is also the caller's deadline leaves nothing more to ask.
+    if (started?.logs !== undefined) {
+      const { cut } = await output.collect(started.logs, call);
+      if (started.exitcode !== null) {
+        // `forget` keeps the record when the answer left output out, so that
+        // the rest can be read, and `collect` read it.
+        if (cut && !keep) await command.delete(call);
+        return output.result(started.exitcode);
+      }
+      if (deadline !== undefined && secondsUntil(deadline) <= 0) {
+        return output.result(null);
+      }
+    }
 
     await command.wait({
       ...(deadline === undefined ? {} : { timeoutSeconds: secondsUntil(deadline) }),
@@ -385,16 +385,13 @@ export class Sandbox implements AsyncDisposable {
     });
     // Two reads of unrelated state, so they go together: one round trip
     // instead of two, on the path a caller times.
-    const [state, logs] = await Promise.all([command.inspect(call), command.logs(call)]);
-    const finished = state.exitcode !== null;
-    if (!keep && finished) await command.delete(call);
-
-    return {
-      uuid: command.uuid,
-      stdout: logs.stdout,
-      stderr: logs.stderr,
-      exitcode: state.exitcode,
-    };
+    const [state, logs] = await Promise.all([
+      command.inspect(call),
+      this.api.commands.getCommandLogs(command.uuid, call),
+    ]);
+    await output.collect(unwrap(logs), call);
+    if (!keep && state.exitcode !== null) await command.delete(call);
+    return output.result(state.exitcode);
   }
 
   /**
