@@ -48,7 +48,7 @@ import {
   withoutClientConfig,
   withSandboxPlugin,
 } from "./options.js";
-import { CollectedOutput } from "./output.js";
+import { CollectedOutput, nextWait } from "./output.js";
 import type {
   ConnectSandboxOptions,
   CreateSandboxOptions,
@@ -322,8 +322,16 @@ export class Sandbox implements AsyncDisposable {
    * a command that exits within {@link MAX_WAIT_SLICE_S} seconds: the start
    * request holds the plugin until the command exits, carries its exit code
    * and output back, and forgets the record. A longer command continues in
-   * {@link Command.wait}, then costs the exit code and the logs together, and
-   * the delete.
+   * waits of at most {@link MAX_WAIT_SLICE_S} seconds, then costs the exit code
+   * and the logs together, and the delete.
+   *
+   * A sandbox plugin holds only so much unread output for each command (16 MiB
+   * at most), and a command whose unread output fills that share waits until a
+   * client releases some. On a plugin from 1.4.0 on, `exec` reads the output
+   * of a longer command after each wait and releases it, so the command
+   * continues. Each such round costs a release, the wait, and a read of the
+   * command's state and output together. On an older plugin such a command
+   * does not exit, and `exec` returns only when `timeoutSeconds` runs out.
    *
    * A `timeoutSeconds` that runs out is not an error: you get the output so far
    * and `exitcode: null`, and the command is left running and addressable as
@@ -357,6 +365,7 @@ export class Sandbox implements AsyncDisposable {
       stdin_eof: true,
     };
 
+    const startedAt = Date.now();
     const started = await this.#startBlocking(request, deadline, keep, call);
     const command =
       started === undefined
@@ -366,8 +375,9 @@ export class Sandbox implements AsyncDisposable {
 
     // The one-request path answered. A command that exited is complete, and a
     // timeout that is also the caller's deadline leaves nothing more to ask.
+    let wait = MAX_WAIT_SLICE_S;
     if (started?.logs !== undefined) {
-      const { cut } = await output.collect(started.logs, call);
+      const { bytes, cut } = await output.collect(started.logs, call);
       if (started.exitcode !== null) {
         // `forget` keeps the record when the answer left output out, so that
         // the rest can be read, and `collect` read it.
@@ -377,12 +387,21 @@ export class Sandbox implements AsyncDisposable {
       if (deadline !== undefined && secondsUntil(deadline) <= 0) {
         return output.result(null);
       }
+      const seconds = (Date.now() - startedAt) / 1000;
+      wait = nextWait(MAX_WAIT_SLICE_S, started.capped, bytes, seconds);
     }
 
-    await command.wait({
-      ...(deadline === undefined ? {} : { timeoutSeconds: secondsUntil(deadline) }),
-      ...call,
-    });
+    // Only a plugin from 1.4.0 on says where a stream starts, and only such a
+    // plugin can release output. `keep` asks for all the output in the record,
+    // so `exec` does not release it then.
+    if (!keep && started?.logs?.stdout_first !== undefined) {
+      await this.#follow(output, command, wait, deadline, call);
+    } else {
+      await command.wait({
+        ...(deadline === undefined ? {} : { timeoutSeconds: secondsUntil(deadline) }),
+        ...call,
+      });
+    }
     // Two reads of unrelated state, so they go together: one round trip
     // instead of two, on the path a caller times.
     const [state, logs] = await Promise.all([
@@ -392,6 +411,34 @@ export class Sandbox implements AsyncDisposable {
     await output.collect(unwrap(logs), call);
     if (!keep && state.exitcode !== null) await command.delete(call);
     return output.result(state.exitcode);
+  }
+
+  /**
+   * Wait for a command and release its output after each read, so that the
+   * command does not stop at its output limit. Returns when the command exits
+   * or the deadline passes, before the last read, which `exec` makes.
+   */
+  async #follow(
+    output: CollectedOutput,
+    command: Command,
+    wait: number,
+    deadline: number | undefined,
+    call: CallOptions,
+  ): Promise<void> {
+    let readAt = Date.now();
+    for (;;) {
+      await output.release(call);
+      const seconds = deadline === undefined ? wait : Math.min(wait, secondsUntil(deadline));
+      if (await command.waitSlice(seconds, call)) return;
+      if (deadline !== undefined && secondsUntil(deadline) <= 0) return;
+      const [state, logs] = await Promise.all([
+        command.inspect(call),
+        this.api.commands.getCommandLogs(command.uuid, call),
+      ]);
+      const { bytes } = await output.collect(unwrap(logs), call);
+      wait = nextWait(wait, state.capped, bytes, (Date.now() - readAt) / 1000);
+      readAt = Date.now();
+    }
   }
 
   /**

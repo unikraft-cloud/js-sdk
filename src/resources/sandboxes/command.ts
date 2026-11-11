@@ -59,6 +59,11 @@ export class Command {
    * {@link MAX_WAIT_SLICE_S} seconds, because the gateway cuts a longer one.
    * Each request counts the time it takes against `timeoutSeconds`.
    *
+   * A command that waits for a client to release its output does not exit
+   * while this method waits. Read the output and release it with
+   * {@link Command.releaseLogs}, or run the command with {@link Sandbox.exec},
+   * which does both.
+   *
    * @example
    * await command.wait();                       // however long it takes
    * await command.wait({ timeoutSeconds: 5 });  // then return regardless
@@ -69,7 +74,7 @@ export class Command {
     const deadline = timeoutSeconds === undefined ? undefined : Date.now() + timeoutSeconds * 1000;
     for (;;) {
       const remaining = deadline === undefined ? MAX_WAIT_SLICE_S : secondsUntil(deadline);
-      const exited = await this.#waitSlice(Math.min(MAX_WAIT_SLICE_S, remaining), call);
+      const exited = await this.waitSlice(Math.min(MAX_WAIT_SLICE_S, remaining), call);
       if (exited) return;
       if (deadline !== undefined && secondsUntil(deadline) <= 0) return;
     }
@@ -81,8 +86,10 @@ export class Command {
    * there and holds the plain route until the command exits, whatever the body
    * says. A sandbox keeps the plugin it was created with, so the plain route is
    * safe only once no sandbox on an older plugin remains.
+   *
+   * @internal Used by {@link Command.wait} and {@link Sandbox.exec}.
    */
-  async #waitSlice(seconds: number, call: ReturnType<typeof callOptions>): Promise<boolean> {
+  async waitSlice(seconds: number, call: ReturnType<typeof callOptions>): Promise<boolean> {
     try {
       unwrap(
         await this.sandbox.api.commands.waitForCommandWithTimeout(this.uuid, {

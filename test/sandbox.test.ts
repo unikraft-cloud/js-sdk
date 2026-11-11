@@ -572,12 +572,15 @@ test.each([
   },
 );
 
-test("6b. `keep` leaves the record: no `forget` on the start and no delete after", async () => {
+test.each([
+  { plugin: "1.3.0", fake: () => fakePlugin({ exitsAfterS: 100 }) },
+  { plugin: "1.4.0", fake: () => releasingPlugin({ bytes: 100, bytesPerS: 1 }) },
+])("6b. `keep` leaves the record and all its output on plugin $plugin", async ({ fake }) => {
   vi.useFakeTimers();
   onTestFinished(() => {
     vi.useRealTimers();
   });
-  const { calls, fetchImpl } = fakePlugin({ exitsAfterS: 100 });
+  const { calls, fetchImpl } = fake();
   const ukc = new UnikraftCloud({ token: "t", metro: "fra", fetch: fetchImpl });
   const sb = await ukc.metro("fra").sandboxes.create({ image: "img" });
   calls.length = 0;
@@ -586,6 +589,7 @@ test("6b. `keep` leaves the record: no `forget` on the start and no delete after
 
   expect(calls[0]?.body).not.toHaveProperty("forget");
   expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+  expect(calls.some((c) => c.url.endsWith("/logs/release"))).toBe(false);
 });
 
 test("6c. a plugin that ignores `req_timeout_s` gets the multi-request path", async () => {
@@ -607,6 +611,10 @@ test("6c. a plugin that ignores `req_timeout_s` gets the multi-request path", as
 
 test.each([
   {
+    what: "fills its share of memory many times over",
+    plugin: { bytes: 1024 * 1024, bytesPerS: 64 * 1024, ceiling: 64 * 1024 },
+  },
+  {
     what: "writes more than one page to a volume before the start answers",
     plugin: { bytes: 256 * 1024, bytesPerS: 64 * 1024, page: 64 * 1024 },
   },
@@ -624,6 +632,8 @@ test.each([
   const sb = await ukc.metro("fra").sandboxes.create({ image: "img" });
   calls.length = 0;
 
+  // The timeout ends a wait for output that nobody releases, which would
+  // otherwise last forever.
   const res = await sb.exec("x", { timeoutSeconds: 600 });
 
   expect(res.exitcode).toBe(0);

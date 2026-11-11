@@ -1,17 +1,41 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026, Unikraft GmbH.
 //
-// How `exec` collects the output of one command across several reads.
+// How `exec` collects the output of one command across several reads. A
+// sandbox plugin holds only so much unread output for a command, and from
+// 1.4.0 on a client can release what it has read. A command whose unread
+// output fills its share waits in its next write until a client releases some.
 
 import type { models as sandboxModels } from "@unikraft/cloud-plugin-sandbox-api";
 import { fromBase64 } from "../../core/base64.js";
 import { type CallOptions, UnikraftCloudError } from "../../core/http.js";
 import type { Command } from "./command.js";
+import { MAX_WAIT_SLICE_S } from "./options.js";
 import type { ExecResult } from "./types.js";
 
 type Stream = sandboxModels.CommandLogStream;
 
 const STREAMS: readonly Stream[] = ["stdout", "stderr"];
+
+/**
+ * How much output a command may write between two reads of `exec`, in bytes:
+ * half of the 16 MiB a sandbox plugin holds for one command at most, so that
+ * the command does not fill its share while `exec` waits.
+ */
+export const READ_EVERY_BYTES = 8 * 1024 * 1024;
+
+/**
+ * How long `exec` waits for a command to exit before it reads the output
+ * again, in seconds. A command that is held at its output limit gets a read at
+ * once. Otherwise the wait doubles, from 1 s up to {@link MAX_WAIT_SLICE_S},
+ * but it stays short enough that the command, at the rate it wrote since the
+ * last read, writes less than {@link READ_EVERY_BYTES} before the next one.
+ */
+export function nextWait(previous: number, capped: boolean, bytes: number, seconds: number) {
+  if (capped) return 0;
+  const doubled = Math.min(MAX_WAIT_SLICE_S, Math.max(1, previous * 2));
+  return bytes === 0 ? doubled : Math.min(doubled, (READ_EVERY_BYTES * seconds) / bytes);
+}
 
 /** What one {@link CollectedOutput.collect} added. */
 interface Collected {
@@ -24,12 +48,13 @@ interface Collected {
 /**
  * The output of one command, collected across reads. The plugin addresses a
  * stream by absolute offsets, so each stream keeps the offset of the next byte
- * it needs.
+ * it needs, which is also how far the stream can be released.
  */
 export class CollectedOutput {
   readonly #command: Command;
   readonly #chunks: Record<Stream, Uint8Array[]> = { stdout: [], stderr: [] };
   readonly #next: Record<Stream, number> = { stdout: 0, stderr: 0 };
+  #released: Record<Stream, number> = { stdout: 0, stderr: 0 };
 
   constructor(command: Command) {
     this.#command = command;
@@ -66,6 +91,17 @@ export class CollectedOutput {
       }
     }
     return { bytes, cut };
+  }
+
+  /**
+   * Release what was collected and not released yet, so that a command at its
+   * output limit continues. One request, and none when nothing is new.
+   */
+  async release(call: CallOptions): Promise<void> {
+    if (STREAMS.every((stream) => this.#next[stream] === this.#released[stream])) return;
+    const upTo = { ...this.#next };
+    await this.#command.releaseLogs({ ...upTo, ...call });
+    this.#released = upTo;
   }
 
   /** What `exec` returns: the command, its exit code, and both streams decoded. */

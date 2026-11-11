@@ -151,6 +151,11 @@ export interface ExecOptions extends StartCommandOptions {
   /**
    * Keep the command record afterwards, so its logs can be read again through
    * `sandbox.command(uuid)`. By default `exec` deletes it.
+   *
+   * With `keep`, `exec` also does not release output while it waits, so the
+   * record keeps all of it. A command whose unread output fills its share of
+   * the sandbox's memory then waits until a client releases some (see
+   * {@link Command.releaseLogs}).
    */
   keep?: boolean;
   /** Give up waiting after this many seconds. Decimals are accepted. */
@@ -163,7 +168,9 @@ export interface ExecOptions extends StartCommandOptions {
  *
  * `exitcode` is `null` when `timeoutSeconds` ran out. The command then keeps
  * running, and its record survives whether or not `keep` was given, so `uuid`
- * stays addressable as `sandbox.command(uuid)`.
+ * stays addressable as `sandbox.command(uuid)`. On a sandbox plugin from 1.4.0
+ * on, the record no longer holds the output that `exec` released while it
+ * waited.
  */
 export interface ExecResult extends Pick<sandboxModels.GetCommandData, "uuid" | "exitcode"> {
   /** Everything the command wrote to standard output, decoded from base64. */
