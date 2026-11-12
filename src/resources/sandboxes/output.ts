@@ -28,15 +28,23 @@ export const READ_EVERY_BYTES = 8 * 1024 * 1024;
  * How long `exec` waits for a command to exit before it reads the output
  * again, in seconds.
  *
- * A command at its output limit writes nothing until a release, so it gets
- * the next read at once. A quiet command needs few reads, so the wait doubles
- * after each read, up to {@link MAX_WAIT_SLICE_S}. The rate that the command
- * wrote at since the last read also limits the wait, so that the command
- * writes less than {@link READ_EVERY_BYTES} in it and does not reach its limit
- * while `exec` waits.
+ * A command at its output limit writes nothing until a release. When the last
+ * read got new bytes, `exec` releases them before the next wait, so the
+ * command gets the next read at once. The plugin also puts a command at its
+ * limit when all commands in the sandbox together fill the output budget of
+ * the sandbox, also if this command holds no output. When the last read got no
+ * new bytes, `exec` has nothing to release, and only another client can free
+ * the budget. The command then waits as a quiet command does, so that `exec`
+ * does not send requests without a pause.
+ *
+ * A quiet command needs few reads, so the wait doubles after each read, up to
+ * {@link MAX_WAIT_SLICE_S}. The rate that the command wrote at since the last
+ * read also limits the wait, so that the command writes less than
+ * {@link READ_EVERY_BYTES} in it and does not reach its limit while `exec`
+ * waits.
  */
 export function nextWait(previous: number, capped: boolean, bytes: number, seconds: number) {
-  if (capped) return 0;
+  if (capped && bytes > 0) return 0;
   const doubled = Math.min(MAX_WAIT_SLICE_S, Math.max(1, previous * 2));
   return bytes === 0 ? doubled : Math.min(doubled, (READ_EVERY_BYTES * seconds) / bytes);
 }

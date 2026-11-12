@@ -663,7 +663,22 @@ test("15. `logs` on a plugin before 1.4.0 says that its output starts at byte 0"
 });
 
 test.each([
-  { what: "a command at its output limit", previous: 55, capped: true, bytes: 0, s: 55, wait: 0 },
+  {
+    what: "a command at its output limit",
+    previous: 55,
+    capped: true,
+    bytes: READ_EVERY_BYTES,
+    s: 55,
+    wait: 0,
+  },
+  {
+    what: "a command at the limit of the whole sandbox",
+    previous: 4,
+    capped: true,
+    bytes: 0,
+    s: 4,
+    wait: 8,
+  },
   {
     what: "a quiet command after a read at once",
     previous: 0,
