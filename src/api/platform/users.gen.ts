@@ -32,4 +32,72 @@ export class UsersApi extends ApiClient {
       params,
     );
   }
+
+  /**
+   * Resume User by UUID
+   */
+  resumeUserByUuid(uuid: string, params: CallOptions = {}): Promise<models.ResumeUsersResponse> {
+    return this.request<models.ResumeUsersResponse>(
+      {
+        method: "PUT",
+        path: `/v1/users/${uuid}/resume`,
+      },
+      params,
+    );
+  }
+
+  /**
+   * Resume Users
+   */
+  resumeUsers(
+    params: {
+      body: models.ResumeUsersRequestItem[];
+    } & CallOptions,
+  ): Promise<models.ResumeUsersResponse> {
+    return this.request<models.ResumeUsersResponse>(
+      {
+        method: "PUT",
+        path: `/v1/users/resume`,
+        body: params.body,
+      },
+      params,
+    );
+  }
+
+  /**
+   * Suspend User by UUID
+   */
+  suspendUserByUuid(
+    uuid: string,
+    params: {
+      body?: models.SuspendUserByUUIDRequestBody;
+    } & CallOptions = {},
+  ): Promise<models.SuspendUsersResponse> {
+    return this.request<models.SuspendUsersResponse>(
+      {
+        method: "PUT",
+        path: `/v1/users/${uuid}/suspend`,
+        body: params.body,
+      },
+      params,
+    );
+  }
+
+  /**
+   * Suspend Users
+   */
+  suspendUsers(
+    params: {
+      body: models.SuspendUsersRequestItem[];
+    } & CallOptions,
+  ): Promise<models.SuspendUsersResponse> {
+    return this.request<models.SuspendUsersResponse>(
+      {
+        method: "PUT",
+        path: `/v1/users/suspend`,
+        body: params.body,
+      },
+      params,
+    );
+  }
 }
