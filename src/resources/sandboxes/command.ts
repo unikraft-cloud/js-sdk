@@ -163,7 +163,8 @@ export class Command {
   /**
    * Release each output stream below the given byte, because the caller has
    * read that part. A command that waits for a release (`capped` in
-   * {@link Command.inspect}) then continues. A stream left out stays as it is.
+   * {@link Command.inspect}) then continues. A stream that `opts` leaves out
+   * stays as it is.
    *
    * Released bytes are gone: {@link Command.logs} starts after them, and a
    * {@link Command.logsRaw} range into them gets a 416 answer. An offset at or

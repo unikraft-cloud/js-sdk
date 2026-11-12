@@ -379,8 +379,9 @@ export class Sandbox implements AsyncDisposable {
     if (started?.logs !== undefined) {
       const { bytes, cut } = await output.collect(started.logs, call);
       if (started.exitcode !== null) {
-        // `forget` keeps the record when the answer left output out, so that
-        // the rest can be read, and `collect` read it.
+        // The plugin ignores `forget` when its answer leaves output out, so
+        // that the rest stays readable. `collect` has read the rest, so the
+        // record goes here.
         if (cut && !keep) await command.delete(call);
         return output.result(started.exitcode);
       }
@@ -388,7 +389,7 @@ export class Sandbox implements AsyncDisposable {
         return output.result(null);
       }
       const seconds = (Date.now() - startedAt) / 1000;
-      wait = nextWait(MAX_WAIT_SLICE_S, started.capped, bytes, seconds);
+      wait = nextWait(seconds, started.capped, bytes, seconds);
     }
 
     // Only a plugin from 1.4.0 on says where a stream starts, and only such a

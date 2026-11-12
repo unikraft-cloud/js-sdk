@@ -26,10 +26,14 @@ export const READ_EVERY_BYTES = 8 * 1024 * 1024;
 
 /**
  * How long `exec` waits for a command to exit before it reads the output
- * again, in seconds. A command that is held at its output limit gets a read at
- * once. Otherwise the wait doubles, from 1 s up to {@link MAX_WAIT_SLICE_S},
- * but it stays short enough that the command, at the rate it wrote since the
- * last read, writes less than {@link READ_EVERY_BYTES} before the next one.
+ * again, in seconds.
+ *
+ * A command at its output limit writes nothing until a release, so it gets
+ * the next read at once. A quiet command needs few reads, so the wait doubles
+ * after each read, up to {@link MAX_WAIT_SLICE_S}. The rate that the command
+ * wrote at since the last read also limits the wait, so that the command
+ * writes less than {@link READ_EVERY_BYTES} in it and does not reach its limit
+ * while `exec` waits.
  */
 export function nextWait(previous: number, capped: boolean, bytes: number, seconds: number) {
   if (capped) return 0;
@@ -37,7 +41,6 @@ export function nextWait(previous: number, capped: boolean, bytes: number, secon
   return bytes === 0 ? doubled : Math.min(doubled, (READ_EVERY_BYTES * seconds) / bytes);
 }
 
-/** What one {@link CollectedOutput.collect} added. */
 interface Collected {
   /** The number of new bytes, both streams together. */
   bytes: number;
@@ -104,7 +107,6 @@ export class CollectedOutput {
     this.#released = upTo;
   }
 
-  /** What `exec` returns: the command, its exit code, and both streams decoded. */
   result(exitcode: number | null): ExecResult {
     return {
       uuid: this.#command.uuid,
