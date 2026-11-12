@@ -151,6 +151,11 @@ export interface ExecOptions extends StartCommandOptions {
   /**
    * Keep the command record afterwards, so its logs can be read again through
    * `sandbox.command(uuid)`. By default `exec` deletes it.
+   *
+   * With `keep`, `exec` also does not release output while it waits, so the
+   * record keeps all of it. A command whose unread output fills its share of
+   * the sandbox's memory then waits until a client releases some (see
+   * {@link Command.releaseLogs}).
    */
   keep?: boolean;
   /** Give up waiting after this many seconds. Decimals are accepted. */
@@ -163,7 +168,9 @@ export interface ExecOptions extends StartCommandOptions {
  *
  * `exitcode` is `null` when `timeoutSeconds` ran out. The command then keeps
  * running, and its record survives whether or not `keep` was given, so `uuid`
- * stays addressable as `sandbox.command(uuid)`.
+ * stays addressable as `sandbox.command(uuid)`. On a sandbox plugin from 1.4.0
+ * on, the record no longer holds the output that `exec` released while it
+ * waited.
  */
 export interface ExecResult extends Pick<sandboxModels.GetCommandData, "uuid" | "exitcode"> {
   /** Everything the command wrote to standard output, decoded from base64. */
@@ -173,11 +180,15 @@ export interface ExecResult extends Pick<sandboxModels.GetCommandData, "uuid" | 
 }
 
 /**
- * A command's output: both streams decoded, and the total size of each, which a
- * {@link Command.logsRaw} range can then address.
+ * A command's output: both streams decoded, the total size of each, and the
+ * first byte the plugin still holds of each. A {@link Command.logsRaw} range
+ * can address the bytes from `stdout_first` up to `stdout_available`.
  */
 export interface CommandLogs
-  extends Pick<sandboxModels.CommandLogsData, "stdout_available" | "stderr_available"> {
+  extends Pick<
+    sandboxModels.CommandLogsData,
+    "stdout_available" | "stderr_available" | "stdout_first" | "stderr_first"
+  > {
   /** The standard output stream, decoded from base64. */
   stdout: string;
   /** The standard error stream, decoded from base64. */
@@ -203,6 +214,12 @@ export interface LogsRawOptions extends SandboxRequestOptions {
   /** Maximum number of bytes to read. */
   limit?: number;
 }
+
+/**
+ * Options for {@link Command.releaseLogs}: for each stream, the offset below
+ * which the plugin releases it, as the plugin takes it.
+ */
+export type ReleaseLogsOptions = SandboxRequestOptions & sandboxModels.CommandLogsReleaseRequest;
 
 /** Options for {@link Command.stdin}. */
 export interface StdinOptions extends SandboxRequestOptions {

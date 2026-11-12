@@ -16,6 +16,7 @@ import {
   DEFAULT_PLUGIN_IMAGE,
   MAX_WAIT_SLICE_S,
 } from "../src/resources/sandboxes/options.js";
+import { nextWait, READ_EVERY_BYTES } from "../src/resources/sandboxes/output.js";
 
 function json(data: unknown) {
   return new Response(JSON.stringify({ status: "success", data, op_time_us: 1 }), {
@@ -124,6 +125,109 @@ function fakePlugin({
     if (url.endsWith("/commands/c1") && init.method === "GET") return json(state());
     return undefined;
   });
+}
+
+/** The bytes of a stream whose byte `i` is a letter, so that a read from any offset decodes alone. */
+const letters = (from: number, to: number) =>
+  Uint8Array.from({ length: to - from }, (_, i) => 97 + ((from + i) % 26));
+
+/**
+ * A sandbox plugin from 1.4.0 on that runs one command, `c1`. The command
+ * writes `bytes` bytes to `stream` at `bytesPerS` on the fake clock, and exits
+ * when it has written them all. The other stream stays empty. A request that
+ * holds the plugin moves the clock as `fakePlugin` does.
+ *
+ * Unread output stops at `ceiling`: the command then writes nothing more until
+ * a release. A finite `page` stands for a log on a volume, so no ceiling
+ * applies there, and a JSON read sends at most one page. A raw read sends one
+ * page too while the command runs, and the rest at once after it exits.
+ *
+ * `gone()` says whether the record is gone, through `forget` or a delete.
+ */
+function releasingPlugin({
+  bytes,
+  bytesPerS,
+  ceiling = Number.POSITIVE_INFINITY,
+  page = Number.POSITIVE_INFINITY,
+  stream = "stdout",
+}: {
+  bytes: number;
+  bytesPerS: number;
+  ceiling?: number;
+  page?: number;
+  stream?: "stdout" | "stderr";
+}) {
+  let written = 0;
+  let released = 0;
+  let exited = false;
+  let gone = false;
+  const hold = (seconds: number) => {
+    if (exited) return;
+    const now = Date.now();
+    const room = Math.min(bytes, released + ceiling) - written;
+    const wrote = Math.min(room, Math.floor(bytesPerS * seconds));
+    written += wrote;
+    exited = written === bytes;
+    vi.setSystemTime(exited ? now + (wrote / bytesPerS) * 1000 : now + seconds * 1000);
+  };
+  const state = () => ({
+    uuid: "c1",
+    cmdline: "x",
+    cwd: null,
+    env: null,
+    pty: false,
+    duration_ms: 1,
+    exitcode: exited ? 0 : null,
+    capped: !exited && written - released >= ceiling,
+  });
+  const logs = () => {
+    const held = Buffer.from(letters(released, Math.min(written, released + page)));
+    const full = { text: held.toString("base64"), available: written, first: released };
+    const empty = { text: "", available: 0, first: 0 };
+    const [out, err] = stream === "stdout" ? [full, empty] : [empty, full];
+    return {
+      stdout: out.text,
+      stderr: err.text,
+      stdout_available: out.available,
+      stderr_available: err.available,
+      stdout_first: out.first,
+      stderr_first: err.first,
+    };
+  };
+
+  const fake = mock((url, init) => {
+    if (!url.includes("/plugins/")) return undefined;
+    if (gone && url.includes("/commands/c1")) return error(404, "No such command");
+    const body = init.body ? JSON.parse(init.body) : undefined;
+    if (url.endsWith("/commands") && init.method === "POST") {
+      hold(body.req_timeout_s ?? 0);
+      const answer = logs();
+      gone = exited && body.forget === true && released + page >= written;
+      return json({ ...state(), logs: answer });
+    }
+    if (url.endsWith("/wait_timeout")) {
+      hold(body.timeout_s);
+      return exited ? json(null) : error(408, "Timed out");
+    }
+    if (url.endsWith("/logs/release")) {
+      if (!exited) released = Math.max(released, Math.min(written, body[stream] ?? 0));
+      return json(null);
+    }
+    if (url.endsWith(`/logs/raw/${stream}`)) {
+      const from = Number(/bytes=(\d+)-/.exec(new Headers(init.headers).get("range") ?? "")?.[1]);
+      if (from < released || from >= written) return error(416, "Range not satisfiable");
+      const to = exited ? written : Math.min(written, from + page);
+      return new Response(letters(from, to), { status: 206 });
+    }
+    if (url.endsWith("/logs")) return json(logs());
+    if (url.endsWith("/commands/c1") && init.method === "DELETE") {
+      gone = true;
+      return json(null);
+    }
+    if (url.endsWith("/commands/c1")) return json(state());
+    return undefined;
+  });
+  return { ...fake, gone: () => gone };
 }
 
 test("1. the caller's own sandbox plugin entry is kept, not duplicated", async () => {
@@ -477,12 +581,15 @@ test.each([
   },
 );
 
-test("6b. `keep` leaves the record: no `forget` on the start and no delete after", async () => {
+test.each([
+  { plugin: "1.3.0", fake: () => fakePlugin({ exitsAfterS: 100 }) },
+  { plugin: "1.4.0", fake: () => releasingPlugin({ bytes: 100, bytesPerS: 1 }) },
+])("6b. `keep` leaves the record and all its output on plugin $plugin", async ({ fake }) => {
   vi.useFakeTimers();
   onTestFinished(() => {
     vi.useRealTimers();
   });
-  const { calls, fetchImpl } = fakePlugin({ exitsAfterS: 100 });
+  const { calls, fetchImpl } = fake();
   const ukc = new UnikraftCloud({ token: "t", metro: "fra", fetch: fetchImpl });
   const sb = await ukc.metro("fra").sandboxes.create({ image: "img" });
   calls.length = 0;
@@ -491,6 +598,7 @@ test("6b. `keep` leaves the record: no `forget` on the start and no delete after
 
   expect(calls[0]?.body).not.toHaveProperty("forget");
   expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+  expect(calls.some((c) => c.url.endsWith("/logs/release"))).toBe(false);
 });
 
 test("6c. a plugin that ignores `req_timeout_s` gets the multi-request path", async () => {
@@ -509,6 +617,109 @@ test("6c. a plugin that ignores `req_timeout_s` gets the multi-request path", as
   expect(calls.map((c) => c.method)).toEqual(["POST", "POST", "GET", "GET", "DELETE"]);
   expect(calls[0]?.body.req_timeout_s).toBe(MAX_WAIT_SLICE_S);
 });
+
+test.each([
+  {
+    what: "fills its share of memory many times over",
+    plugin: { bytes: 1024 * 1024, bytesPerS: 64 * 1024, ceiling: 64 * 1024 },
+  },
+  {
+    what: "fills its share of memory many times over on stderr",
+    plugin: {
+      bytes: 1024 * 1024,
+      bytesPerS: 64 * 1024,
+      ceiling: 64 * 1024,
+      stream: "stderr" as const,
+    },
+  },
+  {
+    what: "writes more than one page to a volume before the start answers",
+    plugin: { bytes: 256 * 1024, bytesPerS: 64 * 1024, page: 64 * 1024 },
+  },
+  {
+    what: "writes more than one page to a volume and runs past one slice",
+    plugin: { bytes: 1024 * 1024, bytesPerS: 16 * 1024, page: 64 * 1024 },
+  },
+])("6d. `exec` returns all the output of a command that $what", async ({ plugin }) => {
+  vi.useFakeTimers();
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+  const { calls, fetchImpl, gone } = releasingPlugin(plugin);
+  const ukc = new UnikraftCloud({ token: "t", metro: "fra", fetch: fetchImpl });
+  const sb = await ukc.metro("fra").sandboxes.create({ image: "img" });
+  calls.length = 0;
+
+  // Without a release the command never exits. The timeout makes such a
+  // regression fail on the assertions below, and not hang the suite.
+  const res = await sb.exec("x", { timeoutSeconds: 600 });
+
+  const stream = plugin.stream ?? "stdout";
+  expect(res.exitcode).toBe(0);
+  expect(res[stream]).toHaveLength(plugin.bytes);
+  expect(res[stream]).toBe(new TextDecoder().decode(letters(0, plugin.bytes)));
+  // The plugin ignores `forget` on an answer that leaves output out, so a
+  // record that `exec` does not delete stays in the sandbox.
+  expect(gone()).toBe(true);
+  for (const call of calls) expect(held(call.body) ?? 0).toBeLessThanOrEqual(MAX_WAIT_SLICE_S);
+});
+
+// The 1.4.0 models type both fields as present, so only a runtime test sees
+// that an older plugin leaves them out.
+test("15. `logs` on a plugin before 1.4.0 says that its output starts at byte 0", async () => {
+  const { fetchImpl } = mock((url) =>
+    url.endsWith("/commands/c1/logs")
+      ? json({ stdout: "b3V0", stderr: "", stdout_available: 3, stderr_available: 0 })
+      : undefined,
+  );
+  const ukc = new UnikraftCloud({ token: "t", metro: "fra", fetch: fetchImpl });
+  const sb = await ukc.metro("fra").sandboxes.create({ image: "img" });
+
+  const logs = await sb.command("c1").logs();
+
+  expect([logs.stdout_first, logs.stderr_first]).toEqual([0, 0]);
+});
+
+test.each([
+  {
+    what: "a command at its output limit",
+    previous: 55,
+    capped: true,
+    bytes: READ_EVERY_BYTES,
+    s: 55,
+    wait: 0,
+  },
+  {
+    what: "a command at the limit of the whole sandbox",
+    previous: 4,
+    capped: true,
+    bytes: 0,
+    s: 4,
+    wait: 8,
+  },
+  {
+    what: "a quiet command after a read at once",
+    previous: 0,
+    capped: false,
+    bytes: 0,
+    s: 0,
+    wait: 1,
+  },
+  { what: "a quiet command", previous: 32, capped: false, bytes: 0, s: 32, wait: MAX_WAIT_SLICE_S },
+  {
+    what: "a command that writes fast",
+    previous: 55,
+    capped: false,
+    bytes: 2 * READ_EVERY_BYTES,
+    s: 10,
+    wait: 5,
+  },
+])(
+  "16. `exec` waits $wait s before the next read of $what",
+  ({ previous, capped, bytes, s, wait }) => {
+    expect(nextWait(previous, capped, bytes, s)).toBe(wait);
+  },
+);
 
 test("7. headers reach the create call", async () => {
   const { calls, fetchImpl } = mock();
