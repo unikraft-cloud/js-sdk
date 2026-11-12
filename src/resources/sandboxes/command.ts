@@ -140,7 +140,7 @@ export class Command {
    * the JSON log `GET`, which `fetch` forbids and drops silently.
    *
    * Offsets are absolute, also after a release. A range that starts below a
-   * released byte gets a 416 answer.
+   * released byte, or at the end of the stream, gets a 416 answer.
    *
    * @example
    * const tail = await command.logsRaw("stdout", { offset: -4096 });
