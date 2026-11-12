@@ -133,9 +133,9 @@ const letters = (from: number, to: number) =>
 
 /**
  * A sandbox plugin from 1.4.0 on that runs one command, `c1`. The command
- * writes `bytes` bytes of stdout at `bytesPerS` on the fake clock, and exits
- * when it has written them all. A request that holds the plugin moves the
- * clock as `fakePlugin` does.
+ * writes `bytes` bytes to `stream` at `bytesPerS` on the fake clock, and exits
+ * when it has written them all. The other stream stays empty. A request that
+ * holds the plugin moves the clock as `fakePlugin` does.
  *
  * Unread output stops at `ceiling`: the command then writes nothing more until
  * a release. A finite `page` stands for a log on a volume, so no ceiling
@@ -149,11 +149,13 @@ function releasingPlugin({
   bytesPerS,
   ceiling = Number.POSITIVE_INFINITY,
   page = Number.POSITIVE_INFINITY,
+  stream = "stdout",
 }: {
   bytes: number;
   bytesPerS: number;
   ceiling?: number;
   page?: number;
+  stream?: "stdout" | "stderr";
 }) {
   let written = 0;
   let released = 0;
@@ -178,14 +180,20 @@ function releasingPlugin({
     exitcode: exited ? 0 : null,
     capped: !exited && written - released >= ceiling,
   });
-  const logs = () => ({
-    stdout: Buffer.from(letters(released, Math.min(written, released + page))).toString("base64"),
-    stderr: "",
-    stdout_available: written,
-    stderr_available: 0,
-    stdout_first: released,
-    stderr_first: 0,
-  });
+  const logs = () => {
+    const held = Buffer.from(letters(released, Math.min(written, released + page)));
+    const full = { text: held.toString("base64"), available: written, first: released };
+    const empty = { text: "", available: 0, first: 0 };
+    const [out, err] = stream === "stdout" ? [full, empty] : [empty, full];
+    return {
+      stdout: out.text,
+      stderr: err.text,
+      stdout_available: out.available,
+      stderr_available: err.available,
+      stdout_first: out.first,
+      stderr_first: err.first,
+    };
+  };
 
   const fake = mock((url, init) => {
     if (!url.includes("/plugins/")) return undefined;
@@ -202,10 +210,10 @@ function releasingPlugin({
       return exited ? json(null) : error(408, "Timed out");
     }
     if (url.endsWith("/logs/release")) {
-      if (!exited) released = Math.max(released, Math.min(written, body.stdout ?? 0));
+      if (!exited) released = Math.max(released, Math.min(written, body[stream] ?? 0));
       return json(null);
     }
-    if (url.endsWith("/logs/raw/stdout")) {
+    if (url.endsWith(`/logs/raw/${stream}`)) {
       const from = Number(/bytes=(\d+)-/.exec(new Headers(init.headers).get("range") ?? "")?.[1]);
       if (from < released || from >= written) return error(416, "Range not satisfiable");
       const to = exited ? written : Math.min(written, from + page);
@@ -616,6 +624,15 @@ test.each([
     plugin: { bytes: 1024 * 1024, bytesPerS: 64 * 1024, ceiling: 64 * 1024 },
   },
   {
+    what: "fills its share of memory many times over on stderr",
+    plugin: {
+      bytes: 1024 * 1024,
+      bytesPerS: 64 * 1024,
+      ceiling: 64 * 1024,
+      stream: "stderr" as const,
+    },
+  },
+  {
     what: "writes more than one page to a volume before the start answers",
     plugin: { bytes: 256 * 1024, bytesPerS: 64 * 1024, page: 64 * 1024 },
   },
@@ -637,9 +654,10 @@ test.each([
   // regression fail on the assertions below, and not hang the suite.
   const res = await sb.exec("x", { timeoutSeconds: 600 });
 
+  const stream = plugin.stream ?? "stdout";
   expect(res.exitcode).toBe(0);
-  expect(res.stdout).toHaveLength(plugin.bytes);
-  expect(res.stdout).toBe(new TextDecoder().decode(letters(0, plugin.bytes)));
+  expect(res[stream]).toHaveLength(plugin.bytes);
+  expect(res[stream]).toBe(new TextDecoder().decode(letters(0, plugin.bytes)));
   // The plugin ignores `forget` on an answer that leaves output out, so a
   // record that `exec` does not delete stays in the sandbox.
   expect(gone()).toBe(true);
