@@ -16,6 +16,7 @@ import {
   DEFAULT_PLUGIN_IMAGE,
   MAX_WAIT_SLICE_S,
 } from "../src/resources/sandboxes/options.js";
+import { nextWait, READ_EVERY_BYTES } from "../src/resources/sandboxes/output.js";
 
 function json(data: unknown) {
   return new Response(JSON.stringify({ status: "success", data, op_time_us: 1 }), {
@@ -126,7 +127,7 @@ function fakePlugin({
   });
 }
 
-/** The text of a stream whose byte `i` is a letter, so that any offset decodes alone. */
+/** The bytes of a stream whose byte `i` is a letter, so that a read from any offset decodes alone. */
 const letters = (from: number, to: number) =>
   Uint8Array.from({ length: to - from }, (_, i) => 97 + ((from + i) % 26));
 
@@ -632,8 +633,8 @@ test.each([
   const sb = await ukc.metro("fra").sandboxes.create({ image: "img" });
   calls.length = 0;
 
-  // The timeout ends a wait for output that nobody releases, which would
-  // otherwise last forever.
+  // Without a release the command never exits. The timeout makes such a
+  // regression fail on the assertions below, and not hang the suite.
   const res = await sb.exec("x", { timeoutSeconds: 600 });
 
   expect(res.exitcode).toBe(0);
@@ -645,13 +646,12 @@ test.each([
   for (const call of calls) expect(held(call.body) ?? 0).toBeLessThanOrEqual(MAX_WAIT_SLICE_S);
 });
 
-test.each([
-  { plugin: "1.4.0", answer: { stdout_first: 5, stderr_first: 2 }, first: [5, 2] },
-  { plugin: "1.3.0", answer: {}, first: [0, 0] },
-])("15. `logs` says where the output on plugin $plugin starts", async ({ answer, first }) => {
+// The 1.4.0 models type both fields as present, so only a runtime test sees
+// that an older plugin leaves them out.
+test("15. `logs` on a plugin before 1.4.0 says that its output starts at byte 0", async () => {
   const { fetchImpl } = mock((url) =>
     url.endsWith("/commands/c1/logs")
-      ? json({ stdout: "b3V0", stderr: "", stdout_available: 8, stderr_available: 2, ...answer })
+      ? json({ stdout: "b3V0", stderr: "", stdout_available: 3, stderr_available: 0 })
       : undefined,
   );
   const ukc = new UnikraftCloud({ token: "t", metro: "fra", fetch: fetchImpl });
@@ -659,8 +659,34 @@ test.each([
 
   const logs = await sb.command("c1").logs();
 
-  expect([logs.stdout_first, logs.stderr_first]).toEqual(first);
+  expect([logs.stdout_first, logs.stderr_first]).toEqual([0, 0]);
 });
+
+test.each([
+  { what: "a command at its output limit", previous: 55, capped: true, bytes: 0, s: 55, wait: 0 },
+  {
+    what: "a quiet command after a read at once",
+    previous: 0,
+    capped: false,
+    bytes: 0,
+    s: 0,
+    wait: 1,
+  },
+  { what: "a quiet command", previous: 32, capped: false, bytes: 0, s: 32, wait: MAX_WAIT_SLICE_S },
+  {
+    what: "a command that writes fast",
+    previous: 55,
+    capped: false,
+    bytes: 2 * READ_EVERY_BYTES,
+    s: 10,
+    wait: 5,
+  },
+])(
+  "16. `exec` waits $wait s before the next read of $what",
+  ({ previous, capped, bytes, s, wait }) => {
+    expect(nextWait(previous, capped, bytes, s)).toBe(wait);
+  },
+);
 
 test("7. headers reach the create call", async () => {
   const { calls, fetchImpl } = mock();
