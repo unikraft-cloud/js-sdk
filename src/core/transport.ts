@@ -1,16 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026, Unikraft GmbH.
-//
-// On Node, the SDK sends its requests through the `fetch` and an `Agent` of
-// the undici package. A dispatcher works only with the `fetch` of its own
-// undici version (see createTransport), and Node does not export the undici
-// that it bundles, so the SDK cannot set the DNS lookup, HTTP/2, or the
-// connection cap on the global `fetch`.
-//
-// The `Agent` caches DNS answers. Node's `fetch` resolves the host of each new
-// connection with `dns.lookup` on the libuv thread pool of 4 threads, so a
-// burst opens its connections only as fast as that pool resolves the same
-// name.
 
 import type { FetchLike } from "./http.js";
 

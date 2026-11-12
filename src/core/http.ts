@@ -61,7 +61,14 @@ export interface ApiClientConfig {
   baseUrl: string;
   /** Bearer token used for authentication. */
   token?: string;
-  /** Custom `fetch` implementation (defaults to the global `fetch`). */
+  /**
+   * Custom `fetch` implementation. Without it, the SDK uses its own undici
+   * transport on Node and the global `fetch` elsewhere. A custom `fetch` turns
+   * off the DNS cache, HTTP/2, `maxConnections`, and the proxy from the
+   * environment. The transport bypasses `globalThis.fetch` and the global
+   * undici dispatcher, so a test that mocks either (`vi.stubGlobal`, MSW, nock,
+   * `MockAgent`) passes `(url, init) => globalThis.fetch(url, init)`.
+   */
   fetch?: FetchLike;
   /** Default headers sent with every request. */
   headers?: Record<string, string>;
@@ -74,15 +81,6 @@ export interface ApiClientConfig {
    */
   proxyFromEnv?: boolean;
   /**
-   * Send every request through `globalThis.fetch` and the global undici
-   * dispatcher, not through the SDK's own undici transport. Set it in tests
-   * whose mock replaces `globalThis.fetch` (`vi.stubGlobal`, MSW, nock) or
-   * sets an undici `MockAgent`, because the SDK transport bypasses both. It
-   * turns off the DNS cache, HTTP/2, `maxConnections`, and the proxy from the
-   * environment. A custom `fetch` has the same effect. Defaults to `false`.
-   */
-  globalFetch?: boolean;
-  /**
    * Cache the DNS answer of each API host on Node. Then the new connections of
    * a burst share one `dns.lookup`, and do not wait in turn for the libuv
    * thread pool. An answer stays for 5 minutes, and a failed connection drops
@@ -93,8 +91,7 @@ export interface ApiClientConfig {
    * Offer HTTP/2 to the API host on Node, in the TLS handshake. With
    * `maxConnections`, a host that answers HTTP/2 then carries a burst on a few
    * connections instead of a TLS handshake per request. A host that answers
-   * only HTTP/1.1 stays on HTTP/1.1. Needs the undici transport (see
-   * `globalFetch`). Defaults to `false`.
+   * only HTTP/1.1 stays on HTTP/1.1. Defaults to `false`.
    */
   http2?: boolean;
   /**
@@ -272,7 +269,6 @@ export class ApiClient {
   protected readonly fetchImpl: FetchLike;
   protected readonly defaultHeaders: Record<string, string>;
   protected readonly proxyFromEnv: boolean;
-  readonly #globalFetch: boolean;
   readonly #dnsCache: boolean;
   readonly #http2: boolean;
   readonly #maxConnections?: number;
@@ -296,7 +292,6 @@ export class ApiClient {
     this.defaultHeaders = { ...config.headers };
     if (config.userAgent) this.defaultHeaders["User-Agent"] = config.userAgent;
     this.proxyFromEnv = config.proxyFromEnv ?? true;
-    this.#globalFetch = config.globalFetch ?? false;
     this.#dnsCache = config.dnsCache ?? true;
     this.#http2 = config.http2 ?? false;
     const max = config.maxConnections;
@@ -313,7 +308,7 @@ export class ApiClient {
    * not work with a foreign fetch, so it gets none.
    */
   #transport(): Promise<Transport | undefined> {
-    if (this.#hasCustomFetch || this.#globalFetch) return Promise.resolve(undefined);
+    if (this.#hasCustomFetch) return Promise.resolve(undefined);
     return sharedTransport({
       proxyFromEnv: this.proxyFromEnv,
       dnsCache: this.#dnsCache,
@@ -358,8 +353,6 @@ export class ApiClient {
       signal: options.signal,
     };
 
-    // The dispatcher works only with the fetch of its own undici module, so a
-    // transport replaces the configured or global fetch too.
     const transport = await this.#transport();
     let fetchImpl = this.fetchImpl;
     if (transport) {
@@ -367,15 +360,12 @@ export class ApiClient {
       init.dispatcher = transport.dispatcher;
     }
 
-    // HTTP/2 carries every request on one connection and puts no socket back
-    // in a pool, so the wait of socketRelease() only delays the next request.
-    // A caller's own fetch gets no wait either: the SDK does not know whether
-    // it pools sockets, and a test's fake timers, installed before this module
-    // loaded, would hold the wait until the test moves the clock.
+    // Only the pool of the SDK's own transport needs the wait, and an HTTP/2
+    // connection puts no socket back in it.
     const released = () =>
-      this.#hasCustomFetch || transport?.multiplexes(new URL(url).hostname)
-        ? Promise.resolve()
-        : socketRelease();
+      transport && !transport.multiplexes(new URL(url).hostname)
+        ? socketRelease()
+        : Promise.resolve();
 
     try {
       return { response: await fetchImpl(url, init), url, released };

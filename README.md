@@ -480,15 +480,15 @@ limit of 8 lets only 8 requests run at the same time.
 On Node.js, the SDK does not send its requests through `globalThis.fetch` or
 the global undici dispatcher. So a mock that replaces `globalThis.fetch`
 (`vi.stubGlobal`, MSW, nock) or an undici `MockAgent` does not see them, and the
-requests go to the real API. In tests, pass your mock as `fetch`, or set
-`globalFetch: true`:
+requests go to the real API. In tests, pass your mock as `fetch`, or pass a
+`fetch` that calls the global one when the request goes out:
 
 ```ts
-const ukc = new UnikraftCloud({ token, globalFetch: true });
+const ukc = new UnikraftCloud({ token, fetch: (url, init) => globalThis.fetch(url, init) });
 ```
 
-`globalFetch` turns off the DNS cache, HTTP/2, `maxConnections`, and the proxy
-from the environment.
+A custom `fetch` turns off the DNS cache, HTTP/2, `maxConnections`, and the
+proxy from the environment.
 
 ## Debugging with a proxy (MITM)
 

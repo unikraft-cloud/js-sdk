@@ -211,7 +211,6 @@ const CLIENT_ONLY_OPTIONS = {
   fetch: true,
   userAgent: true,
   proxyFromEnv: true,
-  globalFetch: true,
   dnsCache: true,
   http2: true,
   maxConnections: true,
