@@ -14,7 +14,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { Sandbox, Sandboxes, UnikraftCloudError } from "../../src/index.js";
 import { liveConfig } from "./live.js";
 
-const { token, metro, image, rom } = liveConfig();
+const { token, metro, image, pluginImage } = liveConfig();
 
 describe("a live sandbox", () => {
   // One machine for the whole file, because a boot is expensive and no test
@@ -23,7 +23,7 @@ describe("a live sandbox", () => {
 
   beforeAll(async () => {
     console.info(`booting ${image} in ${metro}`);
-    sandbox = await Sandbox.create({ image, rom }, { token, metro });
+    sandbox = await Sandbox.create({ image, pluginImage }, { token, metro });
     console.info(`sandbox ${sandbox.uuid} answers at ${sandbox.baseUrl}`);
   });
 
@@ -44,10 +44,21 @@ describe("a live sandbox", () => {
 
   test("a failed command reports its exit code instead of throwing", async () => {
     // The plugin answers 200 for a command that ran and failed, so the exit
-    // code has to survive `exec`'s five requests rather than become an error.
+    // code has to survive `exec`'s requests rather than become an error.
     const { exitcode } = await sandbox.exec('sh -c "exit 3"');
 
     expect(exitcode).toBe(3);
+  });
+
+  test("a command that outlives `timeoutSeconds` returns `exitcode: null` and keeps running", async () => {
+    const { uuid, exitcode } = await sandbox.exec("sleep 30", { timeoutSeconds: 1 });
+
+    expect(exitcode).toBeNull();
+    // The record survives the timeout, so the command can still be reached,
+    // and stopped, through its UUID.
+    const command = sandbox.command(uuid);
+    expect((await command.inspect()).exitcode).toBeNull();
+    await command.signal("KILL");
   });
 
   test.each([
@@ -84,7 +95,7 @@ test("an `await using` scope deletes the sandbox on the way out", async () => {
 
   // Its own machine, because the assertion is that the machine is gone.
   {
-    await using sandbox = await Sandbox.create({ image, rom }, { token, metro });
+    await using sandbox = await Sandbox.create({ image, pluginImage }, { token, metro });
     uuid = sandbox.uuid;
     expect((await sandbox.instance).state).toBe("running");
   }

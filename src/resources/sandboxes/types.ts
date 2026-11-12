@@ -4,7 +4,7 @@
 // A `Sandboxes` type takes the per-call options, and the matching `Sandbox`
 // entry point takes those plus the configuration a client is built from.
 
-import type * as sandboxModels from "@unikraft/cloud-plugin-sandbox-api/models";
+import type { models as sandboxModels } from "@unikraft/cloud-plugin-sandbox-api";
 import type * as models from "../../api/platform/models.gen.js";
 import type { CallOptions } from "../../core/http.js";
 import type { MetroScope } from "../../core/metro.js";
@@ -34,9 +34,16 @@ export type SandboxSpec = Omit<
   "autostart" | "timeout_s" | "wait_timeout_ms" | "replicas"
 > & {
   /**
-   * The plugin's ROM. Defaults to {@link DEFAULT_PLUGIN_ROM}. Shorthand for one
-   * entry in `plugins`; attach the plugin there instead when you also need its
-   * `config`, and then omit `rom`.
+   * The plugin's image. Defaults to {@link DEFAULT_PLUGIN_IMAGE}. Shorthand for
+   * one entry in `plugins`; attach the plugin there instead when you also need
+   * its `config`, and then omit `pluginImage`.
+   */
+  pluginImage?: string | models.ImageSpec;
+  /**
+   * The plugin's image, under its former name.
+   *
+   * @deprecated The platform renamed a plugin's `rom` to `image`. Use
+   * `pluginImage` instead. Passing both is an error.
    */
   rom?: string | models.ImageSpec;
   /**
