@@ -3,7 +3,7 @@
 
 import { Api } from "./api/index.js";
 import { readEnv } from "./core/env.js";
-import type { ApiClientConfig, FetchLike } from "./core/http.js";
+import type { ApiClientConfig } from "./core/http.js";
 import {
   CONTROLPLANE_BASE_URL,
   DEFAULT_METRO,
@@ -24,7 +24,11 @@ import { Volumes } from "./resources/volumes.js";
 const USER_AGENT = "@unikraft/cloud";
 
 /** Configuration for the top-level {@link UnikraftCloud} client. */
-export interface UnikraftCloudConfig {
+export interface UnikraftCloudConfig
+  extends Pick<
+    ApiClientConfig,
+    "fetch" | "proxyFromEnv" | "dnsCache" | "http2" | "maxConnections"
+  > {
   /**
    * Bearer token used for authentication. Falls back to the `UKC_TOKEN`
    * environment variables when omitted.
@@ -47,18 +51,10 @@ export interface UnikraftCloudConfig {
   baseUrl?: string;
   /** Override the control-plane API base URL. */
   controlPlaneUrl?: string;
-  /** Custom `fetch` implementation (defaults to the global `fetch`). */
-  fetch?: FetchLike;
   /** Extra headers sent with every request. */
   headers?: Record<string, string>;
   /** Override the default User-Agent. */
   userAgent?: string;
-  /**
-   * Honour the `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` environment variables (any
-   * case) on Node, routing requests through the proxy (requires the optional
-   * `undici` dependency). Defaults to `true`; set `false` to opt out.
-   */
-  proxyFromEnv?: boolean;
 }
 
 /**
@@ -132,6 +128,9 @@ function buildSession(config: UnikraftCloudConfig): Session {
     headers: config.headers,
     userAgent: config.userAgent ?? USER_AGENT,
     proxyFromEnv: config.proxyFromEnv,
+    dnsCache: config.dnsCache,
+    http2: config.http2,
+    maxConnections: config.maxConnections,
   };
 
   // A named base URL (explicitly, or as the `metro`) is the only endpoint there
@@ -359,6 +358,7 @@ export {
   type CreateSandboxOptions,
   DEFAULT_AUTOKILL_MS,
   DEFAULT_BOOT_TIMEOUT_S,
+  DEFAULT_PLUGIN_IMAGE,
   DEFAULT_PLUGIN_NAME,
   DEFAULT_PLUGIN_ROM,
   type ExecOptions,

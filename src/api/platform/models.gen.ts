@@ -4,6 +4,199 @@
 // specification. These mirror the wire format exactly.
 
 /**
+ * The operation an event belongs to.
+ *
+ * Events sharing an `operation` describe one overarching action, which is what
+ * makes a state transition attributable to the thing that caused it rather
+ * than
+ * only observable after the fact.
+ */
+
+export interface AuditAttribution {
+  /**
+   * UUID shared by every event belonging to the same operation.
+   */
+  operation?: string;
+  /**
+   * What was performed on the object.
+   */
+  kind?: AuditOperationKind;
+  /**
+   * Whether this event was raised by the operation or observed after it.
+   */
+  trigger: AuditTrigger;
+  /**
+   * What caused the operation.
+   */
+  origin: AuditOrigin;
+  /**
+   * The user that caused the operation, when one did.
+   */
+  user?: string;
+}
+
+/**
+ * One audit event.
+ */
+
+export interface AuditEvent {
+  /**
+   * The type of event.
+   */
+  type: AuditEventType;
+  /**
+   * When the event was raised.
+   */
+  timestamp: string;
+  /**
+   * The object the event is about. Absent on `gap`, which names no object.
+   */
+  object?: AuditObject;
+  /**
+   * The operation the event belongs to.
+   */
+  attribution?: AuditAttribution;
+  /**
+   * The event payload. Its fields depend on `type`.
+   */
+  data?: AuditEventData;
+  /**
+   * How many events were lost. Only on `gap`.
+   */
+  dropped?: number;
+}
+
+/**
+ * The payload of an audit event.
+ *
+ * Which fields are present depends on the event type:
+ *
+ * - `vm.state_change`
+ * - `vm.start_failed`
+ */
+
+export interface AuditEventData {
+  /**
+   * The state before the transition.
+   */
+  prev?: string;
+  /**
+   * The state after the transition.
+   */
+  "new"?: string;
+  /**
+   * The state the instance was left in after a failed start.
+   */
+  state?: string;
+  /**
+   * The error that failed the start, as an errno name such as `EDQUOT`.
+   */
+  error?: string;
+  /**
+   * Why the instance stopped.
+   */
+  stop?: AuditStop;
+}
+
+/**
+ * The type of an audit event.
+ *
+ * An enum rather than an open union because this is also a query parameter,
+ * and
+ * an open union generates as an interface that a client cannot serialise into
+ * a
+ * filter. Further event types are added here; a Go client decodes one it does
+ * not know as its plain string value rather than failing.
+ */
+
+export type AuditEventType = "vm.state_change" | "vm.start_failed" | "gap";
+
+/**
+ * The object an audit event is about.
+ */
+
+export interface AuditObject {
+  /**
+   * The kind of object.
+   */
+  type: AuditObjectType;
+  /**
+   * The object's UUID.
+   */
+  uuid: string;
+  /**
+   * The UUID of the user the object belongs to.
+   */
+  owner?: string;
+  /**
+   * The tags set on the object.
+   */
+  tags?: string[];
+}
+
+/**
+ * The kind of object an audit event is about.
+ *
+ * Open: the controller emits the ukpd object prefixes, and events for further
+ * object kinds are added without a breaking change.
+ */
+
+export type AuditObjectType = "i" | "v" | string;
+
+/**
+ * What an operation was performed on the object.
+ *
+ * Open: the set depends on the object type, and instances carry
+ * `start`, `stop`, `drain`, `suspend` and `restart`.
+ */
+
+export type AuditOperationKind = "start" | "stop" | "drain" | "suspend" | "restart" | string;
+
+/**
+ * What caused the operation.
+ */
+
+export type AuditOrigin =
+  | "unknown"
+  | "api"
+  | "guest"
+  | "proxy"
+  | "autoscale"
+  | "scale-to-zero"
+  | "scheduled-op"
+  | "restart"
+  | "update"
+  | "system"
+  | "network"
+  | "autokill"
+  | "mtss";
+
+/**
+ * Why an instance stopped.
+ */
+
+export interface AuditStop {
+  /**
+   * The origins that contributed to the stop.
+   */
+  reason?: string[];
+  /**
+   * The kernel stop code.
+   */
+  code?: number;
+  /**
+   * The stop cause.
+   */
+  cause?: string;
+}
+
+/**
+ * Whether the event was raised by the operation or observed as a result of it.
+ */
+
+export type AuditTrigger = "requested" | "observed";
+
+/**
  * AdjustmentType defines the type of adjustment to be made in an autoscaling
  * step policy.
  */
@@ -180,6 +373,11 @@ export interface CreateAutoscaleConfigurationPolicyResponsePolicy {
    */
   name: string;
   /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
+  /**
    * The status of the response.
    */
   status: ResponseStatus;
@@ -268,6 +466,11 @@ export interface CreateAutoscaleConfigurationsResponseConfigurationsResponse {
    * The human-readable name of the resource.
    */
   name: string;
+  /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
   /**
    * The status of the response.
    */
@@ -388,6 +591,11 @@ export interface DeleteAutoscaleConfigurationsResponseServiceGroup {
    * The human-readable name of the resource.
    */
   name: string;
+  /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
   /**
    * The status of the response.
    */
@@ -527,6 +735,11 @@ export interface GetAutoscaleConfigurationsResponseServiceGroup {
    */
   name: string;
   /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
+  /**
    * If the autoscale configuration is enabled.
    */
   enabled: boolean;
@@ -613,6 +826,11 @@ export interface ServiceGroupTemplate {
    * The name of the template used for the autoscale configuration.
    */
   name: string;
+  /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
 }
 
 /**
@@ -649,6 +867,11 @@ export interface Certificate {
    */
   name: string;
   /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
+  /**
    * The time the certificate was created.
    */
   created_at: string;
@@ -657,6 +880,7 @@ export interface Certificate {
    *
    * This is typically the primary domain name that the certificate is issued
    * for. It represents the main identity that the certificate validates.
+   * Reported without the trailing period required on creation.
    */
   common_name: string;
   /**
@@ -720,7 +944,7 @@ export interface Certificate {
   /**
    * Service groups using this certificate.
    */
-  service_groups?: ID[];
+  service_groups?: ResourceID[];
 }
 
 /**
@@ -763,14 +987,15 @@ export interface CertificateValidation {
 
 export interface CreateCertificateRequest {
   /**
-   * The name of the certificate.
-   *
-   * This is a human-readable name that can be used to identify the certificate.
-   * The name must be unique within the context of your account. If no name is
-   * specified, a random name is generated for you. The name can also be used
-   * to identify the certificate in API calls.
+   * The name of the resource. If not provided, a random name is generated.
+   * The name must be unique within the context of your account.
    */
   name?: string;
+  /**
+   * The name of the node to place the resource on. If not provided, the
+   * platform picks one. Only accepted on metros that span multiple nodes.
+   */
+  node?: string;
   /**
    * The common name (CN) of the certificate.
    *
@@ -780,8 +1005,9 @@ export interface CreateCertificateRequest {
   /**
    * The common name (CN) of the certificate.
    *
-   * This must be a fully-qualified domain name (FQDN). Exactly one of `cn`
-   * or `common_name` must be specified.
+   * This must be a fully-qualified domain name (FQDN) ending with a period
+   * `.`, e.g. `funky-town.com.`. Exactly one of `cn` or `common_name` must be
+   * specified.
    */
   common_name?: string;
   /**
@@ -891,6 +1117,11 @@ export interface DeleteCertificatesResponseDeletedCertificate {
    * The human-readable name of the resource.
    */
   name: string;
+  /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
 }
 
 /**
@@ -1012,21 +1243,6 @@ export interface UpdateCertificatesResponseData {
 }
 
 /**
- * Common identity fields for a resource.
- */
-
-export interface ID {
-  /**
-   * The UUID of the resource.
-   */
-  uuid: string;
-  /**
-   * The human-readable name of the resource.
-   */
-  name: string;
-}
-
-/**
  * Encoding type for inline file data.
  */
 
@@ -1077,6 +1293,26 @@ export type PaginationOrder = "asc" | "desc";
  */
 
 export type PaginationSortBy = "create_time";
+
+/**
+ * Identity fields for a resource, including the node it is placed on.
+ */
+
+export interface ResourceID {
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+  /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
+}
 
 /**
  * The error response message for an API request.
@@ -1157,6 +1393,19 @@ export interface GetImagesResponseData {
 
 export interface Image {
   /**
+   * The UUID of the image. Not returned by the image store.
+   */
+  uuid?: string;
+  /**
+   * The name of the image, if it has one.
+   */
+  name?: string;
+  /**
+   * The current state of the image (e.g. `ready`). Not returned by the image
+   * store.
+   */
+  state?: string;
+  /**
    * The image URL.
    */
   url: string;
@@ -1194,6 +1443,24 @@ export interface Image {
    * permissions; omitted otherwise, including when the image is not pinned.
    */
   persistent?: boolean;
+  /**
+   * Automatic unpin-on-idle configuration of the image. Only populated for
+   * callers with image manager permissions, on a pinned image that has an
+   * autokill time.
+   */
+  autokill?: ImageAutokill;
+}
+
+/**
+ * Automatic unpin-on-idle configuration of a pinned image. Only populated
+ * for callers with image manager permissions.
+ */
+
+export interface ImageAutokill {
+  /**
+   * The image is unpinned after this many milliseconds of inactivity.
+   */
+  time_ms: number;
 }
 
 /**
@@ -1337,15 +1604,20 @@ export interface PinImagesResponseImage {
 }
 
 /**
- * The request item for unpinning a single image.
+ * The request item for unpinning a single image. Select the image by exactly
+ * one of `uuid` or `url`.
  */
 
 export interface UnpinImageRequestItem {
   /**
-   * The UUID of the image to unpin. Only UUID is supported; name, URL,
-   * tag, and digest are not.
+   * The UUID of the image to unpin.
    */
-  uuid: string;
+  uuid?: string;
+  /**
+   * The URL of the image to unpin, by tag or by digest. A URL without a
+   * digest selects the image the tag currently resolves to on the node.
+   */
+  url?: string;
 }
 
 /**
@@ -1415,6 +1687,156 @@ export interface UnpinImagesResponseImage {
 }
 
 /**
+ * The response message for aborting the migration of one or more
+ * instance(s) given their UUID(s) or name(s).
+ */
+
+export interface AbortInstanceMigrationsResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: AbortInstanceMigrationsResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface AbortInstanceMigrationsResponseData {
+  instances?: AbortInstanceMigrationsResponseItem[];
+}
+
+/**
+ * Per-item result for an abort migrations operation.
+ */
+
+export interface AbortInstanceMigrationsResponseItem {
+  /**
+   * Indicates whether the operation was successful for this item.
+   */
+  status?: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+}
+
+/**
+ * Parameters for accepting a migration on the destination node.
+ */
+
+export interface AcceptInstanceMigrationsRequestItem {
+  /**
+   * The UUID of the instance the token is valid for. If omitted, the token
+   * is valid for any instance.
+   */
+  uuid?: string;
+  /**
+   * The lifetime of the token until its first use in seconds, at most 3600.
+   * Uses the default of the node if 0 or omitted.
+   */
+  ttl_s?: number;
+}
+
+/**
+ * The response message for accepting migrations.
+ */
+
+export interface AcceptInstanceMigrationsResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: AcceptInstanceMigrationsResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface AcceptInstanceMigrationsResponseData {
+  instances?: AcceptInstanceMigrationsResponseItem[];
+}
+
+/**
+ * Per-item result for an accept migrations operation.
+ */
+
+export interface AcceptInstanceMigrationsResponseItem {
+  /**
+   * Indicates whether the operation was successful for this item.
+   */
+  status?: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the instance the token is valid for, if one was given.
+   */
+  uuid?: string;
+  /**
+   * The migration URL of this node, to pass to the migrate request.
+   */
+  url: string;
+  /**
+   * The token for the migration, to pass to the migrate request.
+   */
+  token: string;
+  /**
+   * The lifetime of the token until its first use in seconds.
+   */
+  ttl_s: number;
+}
+
+/**
  * Automatic delete-on-idle configuration for the checkpoint instance.
  */
 
@@ -1441,6 +1863,11 @@ export interface CheckpointHistoryEntry {
    */
   name: string;
   /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
+  /**
    * The time the checkpoint was created.
    */
   created_at: string;
@@ -1459,6 +1886,11 @@ export interface CreateCheckpointInstancesRequestItem {
    * The name of the checkpoint. If not provided, a name will be generated.
    */
   name?: string;
+  /**
+   * The name of the node to place the checkpoint on. Must be the node of the
+   * source instance. Only accepted on metros that span multiple nodes.
+   */
+  node?: string;
   /**
    * Timeout in seconds to wait for the checkpoint to be created.
    * No wait performed for a value of 0.
@@ -1528,6 +1960,11 @@ export interface CreateCheckpointInstancesResponseCheckpointInstance {
    */
   name: string;
   /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
+  /**
    * The current state of the checkpoint.
    */
   state: InstanceState;
@@ -1550,12 +1987,15 @@ export interface CreateCheckpointInstancesResponseData {
 
 export interface CreateInstanceRequest {
   /**
-   * The name of the instance.
-   *
-   * If not provided, a random name will be generated. The name must be
-   * unique.
+   * The name of the resource. If not provided, a random name is generated.
+   * The name must be unique within the context of your account.
    */
   name?: string;
+  /**
+   * The name of the node to place the resource on. If not provided, the
+   * platform picks one. Only accepted on metros that span multiple nodes.
+   */
+  node?: string;
   /**
    * The image to use for the instance.
    *
@@ -1576,6 +2016,24 @@ export interface CreateInstanceRequest {
    * Memory in MB to allocate for the instance. Default is 128.
    */
   memory_mb?: number;
+  /**
+   * Lower bound in MB for memory vertical scaling. Setting this or
+   * `max_memory_mb` enables memory vertical scaling, which is only supported
+   * by microVM instances. The instance boots with this amount of memory, and
+   * `memory_mb` selects the initial allocation within the bounds, defaulting
+   * to `min_memory_mb`. Must be lower than `max_memory_mb`, and within the
+   * user's memory limits. Cannot be used with templates that have a
+   * snapshot, `branch_from` or `checkpoint`.
+   */
+  min_memory_mb?: number;
+  /**
+   * Upper bound in MB for memory vertical scaling. Setting this or
+   * `min_memory_mb` enables memory vertical scaling. Defaults to the user's
+   * maximum memory limit. Must be higher than `min_memory_mb` by at least
+   * the platform's memory block size. Cannot be used with templates that
+   * have a snapshot, `branch_from` or `checkpoint`.
+   */
+  max_memory_mb?: number;
   /**
    * The service group configuration when creating an instance.
    *
@@ -1622,6 +2080,23 @@ export interface CreateInstanceRequest {
    * Number of vCPUs to allocate for the instance. Defaults to 1.
    */
   vcpus?: number;
+  /**
+   * Lower bound for vCPU vertical scaling. Setting this or `max_vcpus`
+   * enables vCPU vertical scaling, which is only supported by microVM
+   * instances. The instance boots with this number of vCPUs, and `vcpus`
+   * selects the initial allocation within the bounds, defaulting to
+   * `min_vcpus`. Must be lower than `max_vcpus`, and within the user's vCPU
+   * limits. Cannot be used with templates that have a snapshot,
+   * `branch_from` or `checkpoint`.
+   */
+  min_vcpus?: number;
+  /**
+   * Upper bound for vCPU vertical scaling. Setting this or `min_vcpus`
+   * enables vCPU vertical scaling. Defaults to the user's maximum vCPU
+   * limit. Must be higher than `min_vcpus`. Cannot be used with templates
+   * that have a snapshot, `branch_from` or `checkpoint`.
+   */
+  max_vcpus?: number;
   /**
    * Deprecated: Use `timeout_s` instead. Timeout in milliseconds to
    * wait for all new instances to reach running state. Requires
@@ -1841,6 +2316,11 @@ export interface CreateInstanceRequestNetworkInterface {
    */
   ip?: string;
   /**
+   * The interface MAC address. Provide it together with tap_name. Must be
+   * a unicast address outside the platform's address pool.
+   */
+  mac?: string;
+  /**
    * Whether the guest configures the interface itself. Defaults to true.
    */
   autoconfig?: boolean;
@@ -1866,19 +2346,35 @@ export interface CreateInstanceRequestPlugin {
    */
   name: string;
   /**
-   * The plugin's ROM image. The platform loads the image, mounts it at
+   * The plugin's image. The platform loads the image, mounts it at
    * `/uk/plugins/<plugin_name>`, and runs its `init` program when the plugin
    * starts. Accepts either a plain image reference string
    * (`"user/myplugin:latest"`) or an object carrying additional pull
    * configuration (`{"url": "user/myplugin:latest", "pull_policy": "always"}`).
+   * Exactly one of `image` and `rom` must be set.
    */
-  rom: string | ImageSpec;
+  image?: string | ImageSpec;
+  /**
+   * The plugin's image, under its former name. The platform still accepts
+   * it and adds a deprecation warning to the response. Exactly one of
+   * `image` and `rom` must be set.
+   *
+   * Deprecated: Use `image` instead.
+   */
+  rom?: string | ImageSpec;
   /**
    * Arbitrary JSON configuration that the platform passes to the plugin's
    * `init` program on `STDIN`. Any JSON value works, including a string, a
    * number, or an object.
    */
   config?: unknown;
+  /**
+   * How requests to the plugin endpoint are authenticated. Without it, the
+   * platform API token of a user with access to the instance (`userdb`) is
+   * required. The platform checks the token and strips it before forwarding
+   * the request to the plugin.
+   */
+  authorization?: PluginAuthorization;
 }
 
 /**
@@ -2081,8 +2577,15 @@ export interface CreateTemplateInstancesRequestItem {
   name?: string;
   /**
    * Timeout in seconds to wait for the template instances to be created.
-   * A value of -1 means to wait indefinitely until the instance reaches the
-   * desired state. No wait performed for a value of 0.
+   * No wait is performed for a value of 0, which is the default. The wait is
+   * capped at the platform's maximum API timeout (60 seconds by default);
+   * larger values are rejected, and a value of -1 waits for that maximum. If
+   * several instances are converted in one request, the shortest positive
+   * timeout applies to all of them.
+   *
+   * Reaching the timeout is not an HTTP error: the response carries the
+   * message `Operation timed out`, and each instance that has not become a
+   * template yet is reported with its current `state` and an `error` status.
    */
   timeout_s?: number;
   /**
@@ -2152,6 +2655,11 @@ export interface CreateTemplateInstancesResponseTemplateInstance {
    */
   name: string;
   /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
+  /**
    * The current state of the instance.
    */
   state: InstanceState;
@@ -2210,6 +2718,11 @@ export interface DeleteCheckpointInstancesResponseCheckpointInstance {
    * The human-readable name of the resource.
    */
   name: string;
+  /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
 }
 
 /**
@@ -2330,6 +2843,11 @@ export interface DeleteInstancesResponseInstance {
    */
   name: string;
   /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
+  /**
    * The previous state of the instance before it was deleted.
    */
   previous_state: string;
@@ -2396,6 +2914,11 @@ export interface DeleteTemplateInstancesResponseTemplateInstance {
    * The human-readable name of the resource.
    */
   name: string;
+  /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
 }
 
 /**
@@ -2462,6 +2985,11 @@ export interface GetCheckpointHistoryResponseInstanceHistory {
    * The human-readable name of the resource.
    */
   name: string;
+  /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
   /**
    * The checkpoint history entries.
    */
@@ -2620,6 +3148,11 @@ export interface GetInstancesLogsResponseLoggedInstance {
    */
   name: string;
   /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
+  /**
    * Base64 encoded log output of the instance.
    */
   output: string;
@@ -2710,6 +3243,11 @@ export interface GetInstancesMetricsResponseInstanceMetrics {
    * The human-readable name of the resource.
    */
   name: string;
+  /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
   /**
    * Resident set size of the VMM in bytes.
    *
@@ -2905,6 +3443,11 @@ export interface Instance {
    */
   name: string;
   /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
+  /**
    * The time the instance was created.
    */
   created_at: string;
@@ -2931,11 +3474,41 @@ export interface Instance {
    */
   memory_mb: number;
   /**
+   * The amount of memory in megabytes the instance boots with. Only present
+   * if memory vertical scaling is enabled for the instance.
+   */
+  boot_memory_mb?: number;
+  /**
+   * The lower bound of memory vertical scaling in megabytes. Only present if
+   * memory vertical scaling is enabled for the instance.
+   */
+  min_memory_mb?: number;
+  /**
+   * The upper bound of memory vertical scaling in megabytes. Only present if
+   * memory vertical scaling is enabled for the instance.
+   */
+  max_memory_mb?: number;
+  /**
    * The number of vCPUs allocated for the instance. This is the total
    * number of virtual CPUs that are available to the instance for its
    * operations.
    */
   vcpus: number;
+  /**
+   * The number of vCPUs the instance boots with. Only present if vCPU
+   * vertical scaling is enabled for the instance.
+   */
+  boot_vcpus?: number;
+  /**
+   * The lower bound of vCPU vertical scaling. Only present if vCPU vertical
+   * scaling is enabled for the instance.
+   */
+  min_vcpus?: number;
+  /**
+   * The upper bound of vCPU vertical scaling. Only present if vCPU vertical
+   * scaling is enabled for the instance.
+   */
+  max_vcpus?: number;
   /**
    * The arguments passed to the instance when it was started. This is a
    * list of command-line arguments that were provided to the instance at
@@ -2987,6 +3560,23 @@ export interface Instance {
    */
   retained_until?: string;
   /**
+   * The time taken for the start prerequisites to be fulfilled, measured in
+   * microseconds from when the instance start was requested. Prerequisites
+   * are the resources the instance needs before its VM can be launched: the
+   * kernel and image being available locally, volumes being mounted, and a
+   * template being ready to resume from.
+   * Not used for template instances.
+   */
+  start_prereq_time_us?: number;
+  /**
+   * (Developer-only). The time taken between the start being requested and
+   * the moment the VMM (Virtual Machine Monitor) process is spawned, measured
+   * in microseconds. This field is primarily used for debugging and
+   * performance analysis purposes.
+   * Not used for template instances.
+   */
+  vmm_prestart_time_us?: number;
+  /**
    * (Developer-only). The time taken between the main controller and the
    * beginning of execution of the VMM (Virtual Machine Monitor) measured in
    * microseconds. This field is primarily used for debugging and performance
@@ -3033,9 +3623,17 @@ export interface Instance {
    */
   net_time_us?: number;
   /**
-   * Template creation time in microseconds.
+   * The time taken for the instance to reach the template state, measured in
+   * microseconds from when the template was requested.
+   * Only used for template instances.
    */
   template_time_us?: number;
+  /**
+   * The time taken for the instance to reach the checkpoint state, measured
+   * in microseconds from when the checkpoint was requested.
+   * Only used for checkpoint instances.
+   */
+  checkpoint_time_us?: number;
   /**
    * The instance stop reason.
    *
@@ -3246,6 +3844,11 @@ export interface Instance {
    */
   schedules?: Schedule[];
   /**
+   * The migration of the instance, if it migrates or waits to migrate. Only
+   * present for users with the `migration` permission.
+   */
+  migration?: InstanceMigration;
+  /**
    * Automatic delete-on-idle/request-limit configuration.
    * Not used for template instances.
    */
@@ -3286,6 +3889,10 @@ export interface Instance {
    */
   type: InstanceType;
   /**
+   * The source this instance was cloned from, while the source exists.
+   */
+  clone_source?: InstanceCloneSource;
+  /**
    * GPUs attached to the instance. Only present for instances of type
    * `full`.
    */
@@ -3311,6 +3918,25 @@ export interface InstanceAutokill {
 }
 
 /**
+ * The instance, template, or checkpoint that an instance was cloned from.
+ */
+
+export interface InstanceCloneSource {
+  /**
+   * The UUID of the source.
+   */
+  uuid: string;
+  /**
+   * The name of the source.
+   */
+  name?: string;
+  /**
+   * The name of the node the source is placed on.
+   */
+  node?: string;
+}
+
+/**
  * Features are specific configurations or capabilities that can be enabled for
  * the instance.
  *
@@ -3320,10 +3946,14 @@ export interface InstanceAutokill {
  * |--------------------|-------------|
  * | `delete-on-stop`   | The instance will be deleted when it is stopped. This
  * is useful for instances that are not needed after they are stopped, such as
- * temporary or ephemeral instances. |
+ * temporary or ephemeral instances. Cannot be combined with a `restart_policy`
+ * other than `never`. |
+ * | `nested-virt`      | Expose virtualization extensions to the guest, so
+ * that it can run virtual machines of its own. Requires the `nested_virt`
+ * permission. |
  */
 
-export type InstanceFeature = "delete-on-stop";
+export type InstanceFeature = "delete-on-stop" | "nested-virt";
 
 /**
  * A GPU attached to the instance.
@@ -3342,11 +3972,69 @@ export interface InstanceGpu {
 }
 
 /**
+ * The migration of an instance.
+ */
+
+export interface InstanceMigration {
+  /**
+   * Whether the instance is the copy of an incoming migration. Only present
+   * on the destination node.
+   */
+  incoming?: boolean;
+  /**
+   * The migration URL of the destination. Only present on the source node.
+   */
+  destination?: string;
+  /**
+   * The phase of the migration.
+   */
+  state: InstanceMigrationState;
+  /**
+   * The size of the files the migration copies in bytes, including the holes
+   * of sparse files. Only present once the migration knows the files.
+   */
+  total_bytes?: number;
+  /**
+   * The bytes of these files that have been copied. Only present together
+   * with total_bytes.
+   */
+  copied_bytes?: number;
+}
+
+/**
+ * The phase of the migration of an instance.
+ *
+ * | Phase        | Description |
+ * |--------------|-------------|
+ * | `waiting`    | The instance is starting, stopping or draining, and the
+ * migration waits until it has started or stopped. |
+ * | `queued`     | The migration waits for a transfer slot on the source node.
+ * The instance can still be started, stopped and changed. |
+ * | `copying`    | The instance and the files of its volumes are copied to the
+ * destination. |
+ * | `syncing`    | The running instance is transferred to the destination. |
+ * | `committing` | The migration is being committed. |
+ * | `aborting`   | The migration is being aborted. |
+ */
+
+export type InstanceMigrationState =
+  | "waiting"
+  | "queued"
+  | "copying"
+  | "syncing"
+  | "committing"
+  | "aborting";
+
+/**
  * A network interface attached to an instance.
  */
 
 export interface InstanceNetworkInterface {
   uuid: string;
+  /**
+   * The name of the node the network interface is placed on.
+   */
+  node?: string;
   /**
    * The private IP address of the network interface. This is the internal IP
    * address that is used for communication between instances within the same
@@ -3394,10 +4082,40 @@ export interface InstanceNetworkInterfaceRelay {
    */
   name: string;
   /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
+  /**
+   * The instance the relay interface is attached to. Omitted if the interface
+   * is not attached to an instance.
+   */
+  instance?: InstanceNetworkInterfaceRelayInstance;
+  /**
    * Whether DNS traffic is relayed through this interface.
    * Defaults to true.
    */
   relay_dns: boolean;
+}
+
+/**
+ * The instance that a relay interface is attached to.
+ */
+
+export interface InstanceNetworkInterfaceRelayInstance {
+  /**
+   * UUID of the instance the relay interface is attached to.
+   */
+  uuid: string;
+  /**
+   * Name of the instance the relay interface is attached to.
+   */
+  name: string;
+  /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
 }
 
 /**
@@ -3449,18 +4167,42 @@ export interface InstancePlugin {
    */
   name: string;
   /**
-   * The plugin's ROM image, given as an image reference string such as
+   * The plugin's image, given as an image reference string such as
    * `user/myplugin:latest`. The platform loads the image, mounts it at
    * `/uk/plugins/<plugin_name>`, and runs its `init` program when the
    * plugin starts.
    */
-  rom: string;
+  image: string;
   /**
    * Arbitrary JSON configuration that the platform passes to the plugin's
    * `init` program on `STDIN`. Any JSON value works, including a string, a
    * number, or an object.
    */
   config?: unknown;
+  /**
+   * The port on the instance's address on which the plugin's API listens.
+   * The platform picks it when the plugin is applied, so it lets a caller
+   * that can reach the instance directly talk to the plugin without going
+   * through the platform API.
+   */
+  api_port?: number;
+  /**
+   * The plugin's authorization method. Only present when it is not the
+   * default (`userdb`).
+   */
+  authorization?: InstancePluginAuthorization;
+}
+
+/**
+ * The authorization method of a plugin, as reported in the instance status.
+ * The token is never returned.
+ */
+
+export interface InstancePluginAuthorization {
+  /**
+   * The authorization method.
+   */
+  type: PluginAuthorizationType;
 }
 
 /**
@@ -3610,6 +4352,11 @@ export interface InstanceServiceGroup {
    */
   name: string;
   /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
+  /**
    * The domain configuration for the service group.
    */
   domains?: ServiceGroupInstanceDomain[];
@@ -3679,6 +4426,11 @@ export interface InstanceVolume {
    */
   name: string;
   /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
+  /**
    * The mount point of the volume in the instance. This is the directory in
    * the instance where the volume will be mounted.
    */
@@ -3699,6 +4451,139 @@ export interface ItemAutokill {
    * it is deleted. A value of 0 disables template autokill.
    */
   time_ms?: number;
+}
+
+/**
+ * Parameters for migrating the instance to another node.
+ */
+
+export interface MigrateInstanceByUUIDRequestBody {
+  /**
+   * The destination, as returned by its accept request.
+   */
+  destination: MigrateInstanceDestination;
+  /**
+   * Timeout in seconds to wait for the migration to end. No wait if 0
+   * (default). Use -1 for the largest possible value.
+   *
+   * A migration that waits in the queue or for the instance to start or
+   * stop has not ended. If the timeout expires first, the request fails
+   * with a timeout and the instance reports the state of its migration.
+   * The migration goes on.
+   */
+  timeout_s?: number;
+}
+
+/**
+ * The destination of a migration, as issued by its accept request.
+ */
+
+export interface MigrateInstanceDestination {
+  /**
+   * The migration URL that the destination returned.
+   */
+  url: string;
+  /**
+   * The token that the destination returned.
+   */
+  token: string;
+}
+
+/**
+ * A single request item to migrate an instance.
+ */
+
+export interface MigrateInstancesRequestItem {
+  /**
+   * The UUID of the resource.
+   */
+  uuid?: string;
+  /**
+   * The name of the resource.
+   */
+  name?: string;
+  /**
+   * The destination, as returned by its accept request.
+   */
+  destination: MigrateInstanceDestination;
+  /**
+   * Timeout in seconds to wait for the migration to end. No wait if 0
+   * (default). Use -1 for the largest possible value.
+   *
+   * A migration that waits in the queue or for the instance to start or
+   * stop has not ended. If the timeout expires first, the request fails
+   * with a timeout and the instance reports the state of its migration.
+   * The migration goes on.
+   */
+  timeout_s?: number;
+}
+
+/**
+ * The response message for migrating one or more instance(s) given their
+ * UUID(s) or name(s).
+ */
+
+export interface MigrateInstancesResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: MigrateInstancesResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface MigrateInstancesResponseData {
+  instances?: MigrateInstancesResponseMigratedInstance[];
+}
+
+/**
+ * Per-item result for a migrate instances operation.
+ */
+
+export interface MigrateInstancesResponseMigratedInstance {
+  /**
+   * Indicates whether the operation was successful for this item.
+   */
+  status?: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+  /**
+   * The migration of the instance. Present if the request did not wait,
+   * or if the wait timed out.
+   */
+  migration?: InstanceMigration;
 }
 
 /**
@@ -3749,9 +4634,16 @@ export type MutableTemplateInstanceOperation = "set" | "add" | "del";
 
 /**
  * The mutable properties of a template instance that can be updated.
+ * Setting `image`, `roms`, or `plugins` updates the template in place.
  */
 
-export type MutableTemplateInstanceProperty = "tags" | "delete_lock" | "autokill";
+export type MutableTemplateInstanceProperty =
+  | "tags"
+  | "delete_lock"
+  | "autokill"
+  | "image"
+  | "roms"
+  | "plugins";
 
 /**
  * An object that routes all traffic through another interface.
@@ -3773,6 +4665,28 @@ export interface NetworkInterfaceRelay {
    */
   name?: string;
 }
+
+/**
+ * Authorization for requests to a plugin endpoint.
+ */
+
+export interface PluginAuthorization {
+  /**
+   * The authorization method.
+   */
+  type?: PluginAuthorizationType;
+  /**
+   * The token that requests must present as `Authorization: Bearer <token>`.
+   * Required for, and only allowed with, the `bearer` type.
+   */
+  token?: string;
+}
+
+/**
+ * How requests to a plugin endpoint are authenticated.
+ */
+
+export type PluginAuthorizationType = "userdb" | "bearer";
 
 /**
  * PullPolicy defines when an image should be pulled.
@@ -3819,7 +4733,7 @@ export interface Schedule {
   /**
    * The action to perform at the scheduled time.
    */
-  action: ScheduleAction;
+  action?: ScheduleAction;
   /**
    * The timestamp of when the next scheduled action will occur.
    *
@@ -3830,8 +4744,10 @@ export interface Schedule {
   /**
    * The command to execute when the action is `exec`.
    *
-   * Required when `action` is `SCHEDULE_ACTION_EXEC`, ignored otherwise.
-   * Each element is a separate argument; the first element is the executable.
+   * Required and non-empty when `action` is `exec`, and rejected for any
+   * other action, even when empty. Each element is a separate argument; the
+   * first element is the executable. At most 128 arguments, and the encoded
+   * command must fit in 1024 bytes.
    */
   args?: string[];
 }
@@ -3984,6 +4900,11 @@ export interface StartInstancesResponseStartedInstance {
    */
   name: string;
   /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
+  /**
    * The current state of the instance after this request.
    */
   state: string;
@@ -3999,7 +4920,8 @@ export interface StartInstancesResponseStartedInstance {
 
 export interface StopInstanceByUUIDRequestBody {
   /**
-   * Whether to immediately force stop the instance.
+   * Whether to immediately force stop the instance. Cannot be combined with
+   * a non-zero `drain_timeout_ms`.
    */
   force?: boolean;
   /**
@@ -4009,7 +4931,9 @@ export interface StopInstanceByUUIDRequestBody {
    * phase. The instance is stopped when the last
    * connection has been closed or the timeout expired.
    * The maximum timeout may vary. Use -1 for the
-   * largest possible value. Ignored if force is set.
+   * largest possible value. Must be 0 or omitted if
+   * force is set; any other value, including -1, is
+   * rejected.
    *
    * Note: This endpoint does not block. Use the wait
    * endpoint for the instance to reach the stopped
@@ -4046,7 +4970,8 @@ export interface StopInstancesRequestItem {
    */
   name?: string;
   /**
-   * Whether to immediately force stop the instance.
+   * Whether to immediately force stop the instance. Cannot be combined with
+   * a non-zero `drain_timeout_ms`.
    */
   force?: boolean;
   /**
@@ -4056,7 +4981,9 @@ export interface StopInstancesRequestItem {
    * phase. The instance is stopped when the last
    * connection has been closed or the timeout expired.
    * The maximum timeout may vary. Use -1 for the
-   * largest possible value. Ignored if force is set.
+   * largest possible value. Must be 0 or omitted if
+   * force is set; any other value, including -1, is
+   * rejected.
    *
    * Note: This endpoint does not block. Use the wait
    * endpoint for the instance to reach the stopped
@@ -4140,6 +5067,11 @@ export interface StopInstancesResponseStoppedInstance {
    * The human-readable name of the resource.
    */
   name: string;
+  /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
   /**
    * The current state of the instance.
    */
@@ -4244,6 +5176,11 @@ export interface SuspendInstancesResponseSuspendedInstance {
    * The human-readable name of the resource.
    */
   name: string;
+  /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
   /**
    * The current state of the instance.
    */
@@ -4384,6 +5321,11 @@ export interface UpdateCheckpointInstancesResponseCheckpointInstance {
    */
   name: string;
   /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
+  /**
    * The client-provided ID from the request.
    */
   id?: string;
@@ -4436,8 +5378,10 @@ export interface UpdateInstanceByUUIDRequestBody {
    * - For "hostname": string (valid DNS label)
    * - For "roms": array of ROM objects (with name and image fields) for SET/ADD,
    * or array of ROM names for DEL
-   * - For "plugins": array of plugin objects (with name, rom, and optional
-   * config fields) for SET/ADD
+   * - For "plugins": array of plugin objects (with name, image, and optional
+   * config and
+   * authorization fields) for SET/ADD. The deprecated `rom` field is accepted in
+   * place of `image`.
    * - For "dependencies": array of instance identifiers (name or UUID)
    * - For "sched_priority": SchedPriority enum value ("normal", "medium",
    * "high", "admin")
@@ -4494,8 +5438,10 @@ export interface UpdateInstancesRequestItem {
    * - For "hostname": string (valid DNS label)
    * - For "roms": array of ROM objects (with name and image fields) for SET/ADD,
    * or array of ROM names for DEL
-   * - For "plugins": array of plugin objects (with name, rom, and optional
-   * config fields) for SET/ADD
+   * - For "plugins": array of plugin objects (with name, image, and optional
+   * config and
+   * authorization fields) for SET/ADD. The deprecated `rom` field is accepted in
+   * place of `image`.
    * - For "dependencies": array of instance identifiers (name or UUID)
    * - For "sched_priority": SchedPriority enum value ("normal", "medium",
    * "high", "admin")
@@ -4567,6 +5513,11 @@ export interface UpdateInstancesResponseUpdatedInstance {
    */
   name: string;
   /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
+  /**
    * The client-provided ID from the request.
    */
   id?: string;
@@ -4591,6 +5542,9 @@ export interface UpdateTemplateInstanceByUUIDRequestBody {
    * - For "tags": array of strings
    * - For "delete_lock": boolean
    * - For "autokill": object with time_ms field
+   * - For "image": image reference string or object (SET only)
+   * - For "roms": array of ROM objects (SET only)
+   * - For "plugins": array of plugin objects (SET only)
    */
   value?: unknown;
 }
@@ -4626,6 +5580,9 @@ export interface UpdateTemplateInstancesRequestItem {
    * - For "tags": array of strings
    * - For "delete_lock": boolean
    * - For "autokill": object with time_ms field
+   * - For "image": image reference string or object (SET only)
+   * - For "roms": array of ROM objects (SET only)
+   * - For "plugins": array of plugin objects (SET only)
    */
   value?: unknown;
 }
@@ -4692,6 +5649,11 @@ export interface UpdateTemplateInstancesResponseTemplateInstance {
    */
   name: string;
   /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
+  /**
    * Client-provided operation ID.
    */
   id?: string;
@@ -4705,19 +5667,28 @@ export interface WaitInstanceByUUIDRequestBody {
   /**
    * The desired state to wait for. Default is `running`.
    */
-  state: InstanceState;
+  state?: InstanceState;
   /**
    * Deprecated: Use `timeout_s` instead. Timeout in milliseconds to
    * wait for the instance to reach the desired state. If `timeout_s` is
    * not set, this value is converted by rounding up to the next full
-   * second. A value of -1 means to wait indefinitely.
+   * second. A value of -1 selects the platform's maximum API timeout
+   * (60000 ms by default); larger values are rejected.
    */
   timeout_ms?: number;
   /**
    * Timeout in seconds to wait for the instance to reach the desired
-   * state. If the timeout is reached, the request will fail with an
-   * error. A value of -1 means to wait indefinitely until the instance
-   * reaches the desired state. No wait performed for a value of 0.
+   * state. Every wait is capped at the platform's maximum API timeout
+   * (60 seconds by default); larger values are rejected. A value of 0 or
+   * -1, or omitting the timeout, waits for that maximum; there is no way
+   * to wait indefinitely or to skip the wait. If several instances are
+   * waited for in one request, the shortest positive timeout applies to
+   * all of them.
+   *
+   * Reaching the timeout is not an HTTP error: the response carries the
+   * message `Operation timed out`, and each instance that has not reached
+   * the desired state is reported with its current `state` and an `error`
+   * status.
    */
   timeout_s?: number;
 }
@@ -4743,14 +5714,23 @@ export interface WaitInstancesRequestItem {
    * Deprecated: Use `timeout_s` instead. Timeout in milliseconds to
    * wait for the instance to reach the desired state. If `timeout_s` is
    * not set, this value is converted by rounding up to the next full
-   * second. A value of -1 means to wait indefinitely.
+   * second. A value of -1 selects the platform's maximum API timeout
+   * (60000 ms by default); larger values are rejected.
    */
   timeout_ms?: number;
   /**
    * Timeout in seconds to wait for the instance to reach the desired
-   * state. If the timeout is reached, the request will fail with an
-   * error. A value of -1 means to wait indefinitely until the instance
-   * reaches the desired state. No wait performed for a value of 0.
+   * state. Every wait is capped at the platform's maximum API timeout
+   * (60 seconds by default); larger values are rejected. A value of 0 or
+   * -1, or omitting the timeout, waits for that maximum; there is no way
+   * to wait indefinitely or to skip the wait. If several instances are
+   * waited for in one request, the shortest positive timeout applies to
+   * all of them.
+   *
+   * Reaching the timeout is not an HTTP error: the response carries the
+   * message `Operation timed out`, and each instance that has not reached
+   * the desired state is reported with its current `state` and an `error`
+   * status.
    */
   timeout_s?: number;
 }
@@ -4816,6 +5796,11 @@ export interface WaitInstancesResponseWaitedInstance {
    * The human-readable name of the resource.
    */
   name: string;
+  /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
   /**
    * The current state of the instance.
    */
@@ -4934,12 +5919,15 @@ export type ConnectionHandler = "tls" | "http" | "redirect";
 
 export interface CreateServiceGroupRequest {
   /**
-   * Name of the service group. This is a human-readable name that can be used
-   * to identify the service group. The name must be unique within the context
-   * of your account. If no name is specified, a random name is generated for
-   * you. The name can also be used to identify the service group in API calls.
+   * The name of the resource. If not provided, a random name is generated.
+   * The name must be unique within the context of your account.
    */
   name?: string;
+  /**
+   * The name of the node to place the resource on. If not provided, the
+   * platform picks one. Only accepted on metros that span multiple nodes.
+   */
+  node?: string;
   /**
    * Services to expose. At least one service is required.
    */
@@ -5090,6 +6078,11 @@ export interface DeleteServiceGroupsResponseDeletedServiceGroup {
    * The human-readable name of the resource.
    */
   name: string;
+  /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
   /**
    * The status of the response.
    */
@@ -5256,6 +6249,11 @@ export interface ServiceGroup {
    */
   name: string;
   /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
+  /**
    * The time the service was created.
    */
   created_at: string;
@@ -5343,6 +6341,11 @@ export interface ServiceGroupInstance {
    * The human-readable name of the resource.
    */
   name: string;
+  /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
 }
 
 /**
@@ -5492,6 +6495,11 @@ export interface UpdateServiceGroupsResponseUpdatedServiceGroup {
    * The human-readable name of the resource.
    */
   name: string;
+  /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
   /**
    * The client-provided ID from the request.
    */
@@ -5659,6 +6667,316 @@ export interface QuotasStats {
   total_volume_mb: number;
 }
 
+/**
+ * A single request item to resume a user account.
+ */
+
+export interface ResumeUsersRequestItem {
+  /**
+   * The UUID of the user.
+   */
+  uuid: string;
+}
+
+/**
+ * The response message for resuming one or more user account(s) given their
+ * UUID(s).
+ */
+
+export interface ResumeUsersResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: ResumeUsersResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface ResumeUsersResponseData {
+  users?: ResumeUsersResponseResumedUser[];
+}
+
+/**
+ * An instance that a resume users operation restored.
+ */
+
+export interface ResumeUsersResponseResumedInstance {
+  /**
+   * Indicates whether the operation was successful for this item.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+  /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
+  /**
+   * The current state of the instance.
+   */
+  state: InstanceState;
+  /**
+   * The previous state of the instance before the resume operation was
+   * invoked.
+   */
+  previous_state: InstanceState;
+  /**
+   * What the resume operation did with this instance.
+   */
+  on_resume: UserResumeAction;
+}
+
+/**
+ * Per-item result for a resume users operation.
+ */
+
+export interface ResumeUsersResponseResumedUser {
+  /**
+   * Indicates whether the operation was successful for this item.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+  /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
+  /**
+   * Whether the user account is still suspended after this request, for
+   * example because it was suspended again concurrently.
+   */
+  suspended: boolean;
+  /**
+   * The instances of the user that were restored, as recorded when the user
+   * was suspended. Instances that had nothing to restore are not listed. An
+   * instance that failed to start keeps its record, so a later resume tries
+   * again.
+   */
+  instances?: ResumeUsersResponseResumedInstance[];
+}
+
+/**
+ * Parameters for suspending a user account.
+ */
+
+export interface SuspendUserByUUIDRequestBody {
+  /**
+   * Whether to also bring all instances of the user to rest. Autostart is
+   * disabled, running instances are suspended (or stopped if they cannot be
+   * suspended, or if they only return to standby and are not stateful), and
+   * pending restarts are cancelled. Instances that are draining, stopping, or
+   * in a start-stop cycle finish that transition first. Booting instances are
+   * brought to rest once they are running. Without this flag only the account
+   * is suspended and its instances are left as they are.
+   */
+  suspend_instances?: boolean;
+}
+
+/**
+ * A single request item to suspend a user account.
+ */
+
+export interface SuspendUsersRequestItem {
+  /**
+   * The UUID of the user.
+   */
+  uuid: string;
+  /**
+   * Whether to also bring all instances of the user to rest. Autostart is
+   * disabled, running instances are suspended (or stopped if they cannot be
+   * suspended, or if they only return to standby and are not stateful), and
+   * pending restarts are cancelled. Instances that are draining, stopping, or
+   * in a start-stop cycle finish that transition first. Booting instances are
+   * brought to rest once they are running. Without this flag only the account
+   * is suspended and its instances are left as they are.
+   */
+  suspend_instances?: boolean;
+}
+
+/**
+ * The response message for suspending one or more user account(s) given their
+ * UUID(s).
+ */
+
+export interface SuspendUsersResponse {
+  /**
+   * The status of the response.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information about the status.
+   */
+  message?: string;
+  /**
+   * The response data for this request.
+   */
+  data?: SuspendUsersResponseData;
+  /**
+   * A list of errors which may have occurred during the request.
+   */
+  errors?: ResponseError[];
+  /**
+   * The operation time in microseconds.
+   */
+  op_time_us: number;
+}
+
+/**
+ * The response data for this request.
+ */
+
+export interface SuspendUsersResponseData {
+  users?: SuspendUsersResponseSuspendedUser[];
+}
+
+/**
+ * An instance that a suspend users operation brought to rest.
+ */
+
+export interface SuspendUsersResponseSuspendedInstance {
+  /**
+   * Indicates whether the operation was successful for this item.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+  /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
+  /**
+   * The current state of the instance.
+   */
+  state: InstanceState;
+  /**
+   * The previous state of the instance before the suspend operation was
+   * invoked.
+   */
+  previous_state: InstanceState;
+  /**
+   * What resuming the user will do with this instance. Absent if the
+   * instance was already at rest and resuming the user leaves it unchanged.
+   */
+  on_resume?: UserResumeAction;
+}
+
+/**
+ * Per-item result for a suspend users operation.
+ */
+
+export interface SuspendUsersResponseSuspendedUser {
+  /**
+   * Indicates whether the operation was successful for this item.
+   */
+  status: ResponseStatus;
+  /**
+   * An optional message providing additional information.
+   */
+  message?: string;
+  /**
+   * An optional error code.
+   */
+  error?: number;
+  /**
+   * The UUID of the resource.
+   */
+  uuid: string;
+  /**
+   * The human-readable name of the resource.
+   */
+  name: string;
+  /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
+  /**
+   * Whether the user account is suspended after this request.
+   */
+  suspended: boolean;
+  /**
+   * The instances of the user that were brought to rest. Only present if
+   * `suspend_instances` was set in the request.
+   */
+  instances?: SuspendUsersResponseSuspendedInstance[];
+}
+
+/**
+ * What resuming a user does with an instance that the suspension of the user
+ * brought to rest.
+ *
+ * | Action    | Description |
+ * |-----------|-------------|
+ * | `standby` | Autostart is enabled again. The instance is in standby and
+ * starts on the next incoming request. |
+ * | `start`   | The instance is started. |
+ */
+
+export type UserResumeAction = "standby" | "start";
+
 export interface AttachVolumeByUUIDRequestBody {
   /**
    * UUID or name of the instance to attach the volume to.
@@ -5762,6 +7080,11 @@ export interface AttachVolumesResponseAttachedVolume {
    * The human-readable name of the resource.
    */
   name: string;
+  /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
 }
 
 /**
@@ -5884,6 +7207,11 @@ export interface CloneVolumesResponseVolume {
    */
   name: string;
   /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
+  /**
    * The state of the volume.
    */
   state: VolumeState;
@@ -5953,6 +7281,11 @@ export interface CreateTemplateVolumesResponseTemplateVolume {
    */
   name: string;
   /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
+  /**
    * The state of the volume.
    */
   state: VolumeState;
@@ -5963,7 +7296,16 @@ export interface CreateTemplateVolumesResponseTemplateVolume {
  */
 
 export interface CreateVolumeRequest {
+  /**
+   * The name of the resource. If not provided, a random name is generated.
+   * The name must be unique within the context of your account.
+   */
   name?: string;
+  /**
+   * The name of the node to place the resource on. If not provided, the
+   * platform picks one. Only accepted on metros that span multiple nodes.
+   */
+  node?: string;
   size_mb?: number;
   host_path?: string;
   template?: NameOrUUID;
@@ -6037,6 +7379,11 @@ export interface CreateVolumeResponseVolume {
    */
   name: string;
   /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
+  /**
    * The state of the volume.
    */
   state: VolumeState;
@@ -6103,6 +7450,11 @@ export interface DeleteTemplateVolumesResponseTemplateVolume {
    * The human-readable name of the resource.
    */
   name: string;
+  /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
 }
 
 /**
@@ -6166,6 +7518,11 @@ export interface DeleteVolumesResponseDeletedVolume {
    * The human-readable name of the resource.
    */
   name: string;
+  /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
 }
 
 export interface DetachVolumeByUUIDRequestBody {
@@ -6257,6 +7614,11 @@ export interface DetachVolumesResponseDetachedVolume {
    * The human-readable name of the resource.
    */
   name: string;
+  /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
 }
 
 /**
@@ -6509,6 +7871,11 @@ export interface UpdateTemplateVolumesResponseTemplateVolume {
    */
   name: string;
   /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
+  /**
    * The client-provided ID from the request.
    */
   id?: string;
@@ -6668,6 +8035,11 @@ export interface UpdateVolumesResponseUpdatedVolume {
    */
   name: string;
   /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
+  /**
    * The client-provided ID from the request.
    */
   id?: string;
@@ -6698,6 +8070,11 @@ export interface Volume {
    * The human-readable name of the resource.
    */
   name: string;
+  /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
   /**
    * The time the volume was created.
    */
@@ -6799,6 +8176,10 @@ export interface VolumeInstanceID {
    * you. The name can also be used to identify the instance in API calls.
    */
   name?: string;
+  /**
+   * The name of the node the instance is placed on.
+   */
+  node?: string;
 }
 
 /**
@@ -6814,6 +8195,11 @@ export interface VolumeInstanceMount {
    * The name of the instance that the volume is mounted in.
    */
   name: string;
+  /**
+   * The name of the node the resource is placed on. Only present on metros
+   * that span multiple nodes.
+   */
+  node?: string;
   /**
    * Whether the volume is mounted read-only or read-write.
    */
