@@ -44,10 +44,21 @@ describe("a live sandbox", () => {
 
   test("a failed command reports its exit code instead of throwing", async () => {
     // The plugin answers 200 for a command that ran and failed, so the exit
-    // code has to survive `exec`'s five requests rather than become an error.
+    // code has to survive `exec`'s requests rather than become an error.
     const { exitcode } = await sandbox.exec('sh -c "exit 3"');
 
     expect(exitcode).toBe(3);
+  });
+
+  test("a command that outlives `timeoutSeconds` returns `exitcode: null` and keeps running", async () => {
+    const { uuid, exitcode } = await sandbox.exec("sleep 30", { timeoutSeconds: 1 });
+
+    expect(exitcode).toBeNull();
+    // The record survives the timeout, so the command can still be reached,
+    // and stopped, through its UUID.
+    const command = sandbox.command(uuid);
+    expect((await command.inspect()).exitcode).toBeNull();
+    await command.signal("KILL");
   });
 
   test.each([

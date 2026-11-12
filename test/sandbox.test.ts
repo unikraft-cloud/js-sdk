@@ -14,6 +14,7 @@ import {
   DEFAULT_BOOT_TIMEOUT_S,
   DEFAULT_IMAGE,
   DEFAULT_PLUGIN_IMAGE,
+  MAX_WAIT_SLICE_S,
 } from "../src/resources/sandboxes/options.js";
 
 function json(data: unknown) {
@@ -38,14 +39,10 @@ function mock(extra?: (url: string, init: any) => Response | undefined) {
     if (url.includes("/plugins/")) {
       if (url.endsWith("/commands") && init.method === "POST") return json({ uuid: "c1" });
       if (url.endsWith("/commands")) return json({ commands: [] });
-      if (url.endsWith("/wait")) return json(null);
-      // The plugin answers 408 when `timeout_s` elapses, which test 6 covers.
-      if (url.endsWith("/wait_timeout")) {
-        return new Response(JSON.stringify({ status: "error", message: "Timed out" }), {
-          status: 408,
-          headers: { "content-type": "application/json" },
-        });
-      }
+      // The plugin answers 408 when `timeout_s` elapses. A test that waits
+      // needs the clock to move with it, which `fakePlugin` does; this answer
+      // alone makes `Command.wait` ask again at once.
+      if (url.endsWith("/wait_timeout")) return error(408, "Timed out");
       if (url.includes("/commands/c1") && init.method === "DELETE") return json(null);
       if (url.endsWith("/commands/c1"))
         return json({ uuid: "c1", cmdline: "x", cwd: null, env: null, exitcode: null });
@@ -62,6 +59,71 @@ function mock(extra?: (url: string, init: any) => Response | undefined) {
     });
   }) as any;
   return { calls, fetchImpl };
+}
+
+function error(status: number, message: string) {
+  return new Response(JSON.stringify({ status: "error", message }), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+/**
+ * A sandbox plugin that runs one command, `c1`, which exits `exitsAfterS`
+ * seconds after it starts, on the fake clock. A request that holds the plugin
+ * moves the clock forward by the time the plugin would have held it, so a wait
+ * costs the time it asks for and no more.
+ *
+ * `rom: "ignores"` is a plugin from before `req_timeout_s`, which drops the
+ * keys it does not know and starts the command at once.
+ */
+function fakePlugin({
+  exitsAfterS,
+  rom = "blocks",
+}: {
+  exitsAfterS: number;
+  rom?: "blocks" | "ignores";
+}) {
+  let exitsAt: number | undefined;
+  const exited = () => exitsAt !== undefined && Date.now() >= exitsAt;
+  const hold = (seconds: number) => {
+    const until = Date.now() + seconds * 1000;
+    vi.setSystemTime(exitsAt === undefined ? until : Math.min(until, exitsAt));
+  };
+  const state = () => ({
+    uuid: "c1",
+    cmdline: "x",
+    cwd: null,
+    env: null,
+    pty: false,
+    duration_ms: 1,
+    exitcode: exited() ? 0 : null,
+  });
+  const logs = () => ({ stdout: "b3V0", stderr: "", stdout_available: 3, stderr_available: 0 });
+
+  return mock((url, init) => {
+    if (!url.includes("/plugins/")) return undefined;
+    const body = init.body ? JSON.parse(init.body) : undefined;
+    if (url.endsWith("/commands") && init.method === "POST") {
+      exitsAt = Date.now() + exitsAfterS * 1000;
+      if (body.req_timeout_s === undefined || rom === "ignores") return json(state());
+      hold(body.req_timeout_s);
+      return json({ ...state(), logs: logs() });
+    }
+    if (url.endsWith("/wait_timeout")) {
+      hold(body.timeout_s);
+      return exited() ? json(null) : error(408, "Timed out");
+    }
+    // A plugin before 1.3.0 holds the plain route until the command exits and
+    // reads no body, so a slice sent there does not come back in time.
+    if (url.endsWith("/wait")) {
+      if (exitsAt !== undefined) vi.setSystemTime(exitsAt);
+      return json(null);
+    }
+    if (url.endsWith("/logs")) return json(logs());
+    if (url.endsWith("/commands/c1") && init.method === "GET") return json(state());
+    return undefined;
+  });
 }
 
 test("1. the caller's own sandbox plugin entry is kept, not duplicated", async () => {
@@ -341,15 +403,111 @@ test("5b. a discovered metro's own endpoint is used, not one built from the code
   expect(ukc.metro("fra").endpoint.baseUrl).toBe("https://api.fra-2.internal.example");
 });
 
-test("6. a timed-out command is not deleted", async () => {
-  const { calls, fetchImpl } = mock();
+// The time a request asks the plugin to hold it for, as the plugin reads it.
+const held = (body: any): number | undefined => body?.req_timeout_s ?? body?.timeout_s;
+
+test.each([
+  {
+    what: "exits in the first slice",
+    exitsAfterS: 1,
+    opts: {},
+    requests: [["POST", MAX_WAIT_SLICE_S]],
+    exitcode: 0,
+  },
+  {
+    what: "times out in the first slice",
+    exitsAfterS: 600,
+    opts: { timeoutSeconds: 5 },
+    requests: [["POST", 5]],
+    exitcode: null,
+  },
+  {
+    what: "times out past one slice",
+    exitsAfterS: 600,
+    opts: { timeoutSeconds: 120 },
+    requests: [["POST", 55], ["POST", 55], ["POST", 10], ["GET"], ["GET"]],
+    exitcode: null,
+  },
+  {
+    what: "runs past one slice with no timeout",
+    exitsAfterS: 600,
+    opts: {},
+    requests: [
+      ["POST", 55],
+      ...Array.from({ length: 10 }, () => ["POST", 55]),
+      ["GET"],
+      ["GET"],
+      ["DELETE"],
+    ],
+    exitcode: 0,
+  },
+  {
+    what: "gets no time at all",
+    exitsAfterS: 600,
+    opts: { timeoutSeconds: 0 },
+    requests: [["POST"], ["POST", 0], ["GET"], ["GET"]],
+    exitcode: null,
+  },
+])(
+  "6. `exec` holds the plugin for at most one slice per request: a command that $what",
+  async ({ exitsAfterS, opts, requests, exitcode }) => {
+    vi.useFakeTimers();
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const { calls, fetchImpl } = fakePlugin({ exitsAfterS });
+    const ukc = new UnikraftCloud({ token: "t", metro: "fra", fetch: fetchImpl });
+    const sb = await ukc.metro("fra").sandboxes.create({ image: "img" });
+    calls.length = 0;
+
+    const res = await sb.exec("x", opts);
+
+    expect(res).toMatchObject({ uuid: "c1", stdout: "out", stderr: "", exitcode });
+    expect(
+      calls.map((c) => [c.method, ...(held(c.body) === undefined ? [] : [held(c.body)])]),
+    ).toEqual(requests);
+    // Every start closes stdin, the plain one too. `forget` rides on every
+    // start that holds the request, and only there, because the plugin answers
+    // 400 to it on a plain start. It does nothing on a timeout, so the record
+    // of a timed-out command survives, as `requests` shows: no `DELETE` follows
+    // an `exitcode: null`.
+    const start = calls[0]?.body;
+    expect(start?.stdin_eof).toBe(true);
+    expect(start?.forget).toBe(held(start) === undefined ? undefined : true);
+  },
+);
+
+test("6b. `keep` leaves the record: no `forget` on the start and no delete after", async () => {
+  vi.useFakeTimers();
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+  const { calls, fetchImpl } = fakePlugin({ exitsAfterS: 100 });
   const ukc = new UnikraftCloud({ token: "t", metro: "fra", fetch: fetchImpl });
   const sb = await ukc.metro("fra").sandboxes.create({ image: "img" });
   calls.length = 0;
-  const res = await sb.exec("sleep 100", { timeoutSeconds: 1 });
-  expect(res.exitcode).toBeNull();
-  expect(calls.map((c) => c.method)).toEqual(["POST", "POST", "GET", "GET"]);
+
+  await sb.exec("x", { keep: true });
+
+  expect(calls[0]?.body).not.toHaveProperty("forget");
   expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+});
+
+test("6c. a plugin that ignores `req_timeout_s` gets the multi-request path", async () => {
+  vi.useFakeTimers();
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+  const { calls, fetchImpl } = fakePlugin({ exitsAfterS: 1, rom: "ignores" });
+  const ukc = new UnikraftCloud({ token: "t", metro: "fra", fetch: fetchImpl });
+  const sb = await ukc.metro("fra").sandboxes.create({ image: "img" });
+
+  calls.length = 0;
+  expect(await sb.exec("x")).toMatchObject({ stdout: "out", exitcode: 0 });
+  // The answer names the command but carries no output, so `exec` continues
+  // from the command it did start.
+  expect(calls.map((c) => c.method)).toEqual(["POST", "POST", "GET", "GET", "DELETE"]);
+  expect(calls[0]?.body.req_timeout_s).toBe(MAX_WAIT_SLICE_S);
 });
 
 test("7. headers reach the create call", async () => {
