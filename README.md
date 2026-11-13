@@ -519,6 +519,29 @@ With the option on, some things differ from undici:
 
 The SDK does not use the direct path on Bun.
 
+### Connect before the first request
+
+By default, the SDK connects to an API host at the first request to it, so the
+first request waits for the DNS lookup, the TCP connection and the TLS
+handshake. With `preconnect: true`, the SDK starts this work when you make the
+client:
+
+```ts
+const ukc = new UnikraftCloud({ token, metro: "fra", http2Direct: true, preconnect: true });
+```
+
+The SDK prepares the connection to the metro that the constructor names
+(`metro`, `baseUrl` or `UKC_METRO`), and to each metro of `ukc.metro()`. With
+`http2Direct`, it opens the HTTP/2 session. Without it, it only starts the DNS
+lookup, because undici opens its connections at the first request.
+
+The option never throws. If the connection fails, or the server closes it
+before the first request, the first request opens a new one. An open
+connection does not keep the process alive. A TCP connect that has no answer
+does, so the SDK gives up an early connection that is not up after 1 second
+and that no request uses yet. A DNS lookup that has not answered also keeps
+the process alive, until it answers.
+
 ### A pace for a burst of creates
 
 When a program creates many instances at the same time, the platform starts

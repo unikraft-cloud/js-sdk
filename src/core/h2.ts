@@ -37,6 +37,11 @@ export interface DirectSender {
    * sent, so the caller sends it another way.
    */
   send(url: string, init: DirectInit): Promise<DirectResponse> | undefined;
+  /**
+   * Opens the session to an origin before a request needs it. Returns false,
+   * and opens nothing, when the direct path does not take the origin.
+   */
+  open(origin: string): boolean;
 }
 
 /** The host of the request answers only HTTP/1.1, so the direct path did not send it. */
@@ -62,6 +67,8 @@ export interface DirectOptions {
   answerTimeoutMs?: number;
   /** The time a session with no open stream stays open. */
   idleTimeoutMs?: number;
+  /** The time the TCP connect of a session from `open`, with no request yet, may take. */
+  openTimeoutMs?: number;
 }
 
 // The same limits as undici's defaults, so the option changes the transport,
@@ -69,6 +76,14 @@ export interface DirectOptions {
 export const CONNECT_TIMEOUT_MS = 10_000;
 export const ANSWER_TIMEOUT_MS = 300_000;
 export const IDLE_TIMEOUT_MS = 60_000;
+
+// A TCP connect that waits for an answer keeps the process alive, and an
+// unref of the socket does not change that. So a session that `open` started
+// for a request that may never come gives up its connect after this time,
+// and a process that has no other work ends then. A request that comes
+// earlier gets the full connect timeout. The first request after the limit
+// opens a new session.
+export const OPEN_TIMEOUT_MS = 1_000;
 
 // A refused stream is one that the server did not process, so a retry is safe
 // for every method. A request gets two retries for refusals on an open
@@ -146,6 +161,7 @@ export function createDirectSender(
     connectTimeoutMs = CONNECT_TIMEOUT_MS,
     answerTimeoutMs = ANSWER_TIMEOUT_MS,
     idleTimeoutMs = IDLE_TIMEOUT_MS,
+    openTimeoutMs = OPEN_TIMEOUT_MS,
   }: DirectOptions = {},
 ): DirectSender {
   const { NGHTTP2_CANCEL, NGHTTP2_REFUSED_STREAM } = http2.constants;
@@ -183,7 +199,7 @@ export function createDirectSender(
     sweeper.unref();
   }
 
-  function connect(origin: string): Entry {
+  function connect(origin: string, early: boolean): Entry {
     const { hostname, port } = new URL(origin);
     const host = hostname.replace(/^\[(.*)\]$/, "$1");
     let connected = false;
@@ -242,6 +258,17 @@ export function createDirectSender(
       connectTimeoutMs,
     );
     timer.unref();
+    if (early) {
+      const openTimer = setTimeout(() => {
+        if (socket?.connecting && entry.inFlight === 0) {
+          giveUp(
+            timeoutError(`The early connection to ${origin} did not open in ${openTimeoutMs} ms.`),
+          );
+        }
+      }, openTimeoutMs);
+      openTimer.unref();
+      session.once("close", () => clearTimeout(openTimer));
+    }
 
     // The check must wait for this event. A socket that the SDK destroys in
     // its own "secureConnect" listener, which runs before the one of
@@ -275,10 +302,10 @@ export function createDirectSender(
     return entry;
   }
 
-  function sessionFor(origin: string): Entry {
+  function sessionFor(origin: string, early = false): Entry {
     const found = sessions.get(origin);
     if (found && !found.session.closed && !found.session.destroyed) return found;
-    return connect(origin);
+    return connect(origin, early);
   }
 
   /** The retry counts for a refused stream, or undefined when the request has used its retries. */
@@ -407,6 +434,11 @@ export function createDirectSender(
       const { origin, path } = splitUrl(url);
       if (http1Origins.has(origin)) return undefined;
       return attempt(origin, requestHeaders(path, init), init, { refused: 0, closed: 0 });
+    },
+    open(origin) {
+      if (!origin.startsWith("https://") || http1Origins.has(origin)) return false;
+      sessionFor(origin, true);
+      return true;
     },
   };
 }
