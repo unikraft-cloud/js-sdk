@@ -478,6 +478,103 @@ const ukc = new UnikraftCloud({ token, http2: true, maxConnections: 8 });
 Do not set `maxConnections` for a host that answers only HTTP/1.1: there, a
 limit of 8 lets only 8 requests run at the same time.
 
+### The direct HTTP/2 path
+
+With `http2Direct: true`, the SDK sends the requests that it reads whole
+through the `node:http2` client of Node.js, not through undici. Each API host
+gets one HTTP/2 session, and each request is one stream on it. A burst of
+requests then costs the main thread less CPU, because the SDK makes no undici
+request, body or pool objects for each request.
+
+```ts
+const ukc = new UnikraftCloud({ token, http2Direct: true });
+```
+
+The SDK still uses undici for these requests:
+
+- Requests to a host that answers only HTTP/1.1. The SDK learns this from the
+  TLS handshake, and sends the request through undici.
+- Requests to a base URL that starts with `http:`.
+- All requests when a proxy variable is set (see below).
+- Event streams.
+
+The direct path has the same limits as undici: a connection must open in 10
+seconds, and a request fails after 300 seconds with no data from the server.
+If the server refuses a request before it processes it, the SDK sends the
+request again, at most two times. If the server closes the session before it
+processes a request, for example when it reloads, the SDK sends the request
+again on a new session, also at most two times. The SDK closes a session that
+carries no request for 60 seconds.
+
+With the option on, some things differ from undici:
+
+- The `cause` of a network error carries Node.js error codes, for example
+  `ERR_HTTP2_STREAM_ERROR` or `ETIMEDOUT`, and not the `UND_ERR_*` codes of
+  undici.
+- A tool that traces requests through the diagnostics channels of undici, for
+  example the undici instrumentation of OpenTelemetry, does not see these
+  requests. Node.js publishes them on its `http2.client.stream.*` channels.
+- `maxConnections` does not apply: one session carries all the requests to a
+  host.
+
+The SDK does not use the direct path on Bun.
+
+### Connect before the first request
+
+By default, the SDK connects to an API host at the first request to it, so the
+first request waits for the DNS lookup, the TCP connection and the TLS
+handshake. With `preconnect: true`, the SDK starts this work when you make the
+client:
+
+```ts
+const ukc = new UnikraftCloud({ token, metro: "fra", http2Direct: true, preconnect: true });
+```
+
+The SDK prepares the connection to the metro that the constructor names
+(`metro`, `baseUrl` or `UKC_METRO`), and to each metro of `ukc.metro()`. With
+`http2Direct`, it opens the HTTP/2 session. Without it, it only starts the DNS
+lookup, because undici opens its connections at the first request.
+
+The option never throws. If the connection fails, or the server closes it
+before the first request, the first request opens a new one. An open
+connection does not keep the process alive. A TCP connect that has no answer
+does, so the SDK gives up an early connection that is not up after 1 second
+and that no request uses yet. A DNS lookup that has not answered also keeps
+the process alive, until it answers.
+
+### The HTTP/2 session in a worker thread
+
+With `http2Worker: true`, a worker thread runs the HTTP/2 session of each API
+host. The worker does the TLS and the HTTP/2 work of each request, and the main
+thread only posts the request and reads the answer. The option turns
+`http2Direct` on.
+
+```ts
+const ukc = new UnikraftCloud({ token, metro: "fra", http2Worker: true, preconnect: true });
+```
+
+This takes more work off the main thread than `http2Direct` alone, for a
+thread and more CPU time in the process. The worker needs some tens of
+milliseconds to start. Until its session is up, the main thread sends the
+requests over its own session, so set `preconnect` to start the worker when
+you make the client. If the worker stops, the requests that it carried fail
+with a network error, and the main thread sends the next requests. An idle
+worker does not keep the process alive.
+
+### A pace for a burst of creates
+
+When a program creates many instances at the same time, the platform starts
+them all at the same moment. With `maxCreatesPerMs`, at most that many instance
+creates start in each millisecond, and the others wait in order:
+
+```ts
+const ukc = new UnikraftCloud({ token, http2Direct: true, maxCreatesPerMs: 4 });
+```
+
+With a limit of 4, a burst of 100 creates leaves over about 25 ms. All the
+clients of the process with the same API host share one pace. Other requests,
+for example a command in a sandbox, do not wait.
+
 ### Tests and mocks
 
 On Node.js, the SDK does not send its requests through `globalThis.fetch` or
@@ -490,8 +587,8 @@ requests go to the real API. In tests, pass your mock as `fetch`, or pass a
 const ukc = new UnikraftCloud({ token, fetch: (url, init) => globalThis.fetch(url, init) });
 ```
 
-A custom `fetch` turns off the DNS cache, HTTP/2, `maxConnections`, and the
-proxy from the environment.
+A custom `fetch` turns off the DNS cache, HTTP/2, `maxConnections`,
+`http2Direct`, and the proxy from the environment.
 
 ## Debugging with a proxy (MITM)
 
