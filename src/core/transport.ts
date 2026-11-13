@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026, Unikraft GmbH.
 
+import {
+  createDirectSender,
+  type DirectModules,
+  type DirectOptions,
+  type DirectSender,
+} from "./h2.js";
 import type { FetchLike } from "./http.js";
 
 /** Opaque undici `Dispatcher` handle. */
@@ -38,6 +44,8 @@ export interface Transport {
    * answer. Absent when the transport does not use the cache.
    */
   resolveEarly?: (hostname: string) => void;
+  /** The direct HTTP/2 path. Present only with `http2Direct`, on Node, and with no proxy. */
+  direct?: DirectSender;
 }
 
 export interface TransportOptions {
@@ -47,6 +55,8 @@ export interface TransportOptions {
   http2?: boolean;
   /** The most connections to one origin. Defaults to no limit. */
   maxConnections?: number;
+  /** Send the requests that the SDK reads whole over one `node:http2` session per origin. */
+  http2Direct?: boolean;
 }
 
 /** The boundaries of {@link createTransport}, which a test can replace. */
@@ -55,6 +65,8 @@ export interface TransportDeps {
   importUndici?: () => Promise<unknown>;
   /** Resolves a host on a cache miss. Defaults to `dns.promises.lookup`. */
   resolve?: Resolver;
+  /** The timeouts of the direct HTTP/2 path. Defaults to the values in `h2.ts`. */
+  direct?: Omit<DirectOptions, "cache">;
 }
 
 /** One address of a host, as `dns.lookup` reports it. */
@@ -139,6 +151,12 @@ function isNode(): boolean {
   );
 }
 
+// Bun sets `process.versions.node` too, but its `node:http2` client is not
+// the one that the direct path is built and tested on.
+function isBun(): boolean {
+  return typeof process !== "undefined" && typeof process.versions?.bun === "string";
+}
+
 /** True when any HTTP proxy environment variable is set. */
 function hasProxyEnv(): boolean {
   if (typeof process === "undefined" || !process.env) return false;
@@ -149,7 +167,7 @@ function hasProxyEnv(): boolean {
 }
 
 // A non-literal specifier stops a bundler for browsers or Deno from including
-// `undici` or `node:dns`.
+// `undici` or a Node module.
 function importOptional(specifier: string): Promise<unknown> {
   return import(specifier);
 }
@@ -174,6 +192,20 @@ function loadDns(): Promise<Resolver> {
     return dnsLookup;
   });
   return dnsModule;
+}
+
+let directModules: Promise<DirectModules> | undefined;
+
+// The default export of a built-in module is the object that tracing tools
+// patch, for example `tls.connect`. The named exports of its ESM namespace do
+// not see such a patch, so the direct path calls through the default export.
+const defaultOf = (module: unknown) => (module as { default?: unknown }).default ?? module;
+
+function loadDirectModules(): Promise<DirectModules> {
+  directModules ??= Promise.all(
+    ["node:http2", "node:tls", "node:net"].map((name) => importOptional(name).then(defaultOf)),
+  ).then(([http2, tls, net]) => ({ http2, tls, net }) as DirectModules);
+  return directModules;
 }
 
 /** Resolves a host through `dns.lookup`, which reads /etc/hosts before DNS. */
@@ -314,9 +346,9 @@ export async function createTransport(
   const multiplexes = (hostname: string) => http2Hosts.has(hostname);
   let connect: Connector | undefined;
   let resolveEarly: ((hostname: string) => void) | undefined;
+  const cache = options.dnsCache ? cachedLookup(deps.resolve) : undefined;
   if (typeof undici.buildConnector === "function") {
     try {
-      const cache = options.dnsCache ? cachedLookup(deps.resolve) : undefined;
       connect = connector(undici.buildConnector, options, cache, http2Hosts);
       // undici asks for the address only when a connection starts, which in a
       // burst is after the setup of every request sent in the same tick. The
@@ -355,12 +387,28 @@ export async function createTransport(
   if (!connect || typeof undici.Agent !== "function" || typeof undici.fetch !== "function") {
     return undefined;
   }
+  let direct: DirectSender | undefined;
+  if (options.http2Direct && !isBun()) {
+    try {
+      direct = createDirectSender(await loadDirectModules(), { ...deps.direct, cache });
+    } catch {
+      // Continue on undici, which carries every request without the option.
+    }
+  }
   try {
     const dispatcher = new undici.Agent({
       connect,
       ...(options.maxConnections !== undefined && { connections: options.maxConnections }),
     });
-    return { fetch: undici.fetch, request, dispatcher, proxied: false, multiplexes, resolveEarly };
+    return {
+      fetch: undici.fetch,
+      request,
+      dispatcher,
+      proxied: false,
+      multiplexes,
+      resolveEarly,
+      ...(direct && { direct }),
+    };
   } catch {
     return undefined;
   }
@@ -378,6 +426,7 @@ export function sharedTransport(options: TransportOptions): Promise<Transport | 
     options.dnsCache,
     options.http2 ?? false,
     options.maxConnections ?? "",
+    options.http2Direct ?? false,
   ].join("/");
   let transport = shared.get(key);
   if (!transport) {

@@ -5,6 +5,7 @@
 // A single UnikraftCloudError is defined here so `instanceof` works across
 // every resource of both the platform and control-plane APIs.
 
+import { Http1Host } from "./h2.js";
 import { type Dispatcher, sharedTransport, type Transport } from "./transport.js";
 import { stripTrailingSlashes } from "./url.js";
 
@@ -85,10 +86,10 @@ export interface ApiClientConfig {
   /**
    * Custom `fetch` implementation. Without it, the SDK uses its own undici
    * transport on Node and the global `fetch` elsewhere. A custom `fetch` turns
-   * off the DNS cache, HTTP/2, `maxConnections`, and the proxy from the
-   * environment. The transport bypasses `globalThis.fetch` and the global
-   * undici dispatcher, so a test that mocks either (`vi.stubGlobal`, MSW, nock,
-   * `MockAgent`) passes `(url, init) => globalThis.fetch(url, init)`.
+   * off the DNS cache, HTTP/2, `maxConnections`, `http2Direct`, and the proxy
+   * from the environment. The transport bypasses `globalThis.fetch` and the
+   * global undici dispatcher, so a test that mocks either (`vi.stubGlobal`,
+   * MSW, nock, `MockAgent`) passes `(url, init) => globalThis.fetch(url, init)`.
    */
   fetch?: FetchLike;
   /** Default headers sent with every request. */
@@ -125,6 +126,16 @@ export interface ApiClientConfig {
    * Defaults to no limit.
    */
   maxConnections?: number;
+  /**
+   * On Node, send the requests that the SDK reads whole over Node's own
+   * `node:http2` client: one session to each API host, opened at the first
+   * request, with no undici objects for each request. A burst of requests
+   * then costs the main thread less CPU. The SDK uses undici as before for a
+   * host that answers only HTTP/1.1, an `http:` base URL, a proxy from the
+   * environment, and event streams. `maxConnections` does not apply to the
+   * direct session. Not used on Bun. Defaults to `false`.
+   */
+  http2Direct?: boolean;
 }
 
 /**
@@ -298,6 +309,7 @@ export class ApiClient {
   readonly #dnsCache: boolean;
   readonly #http2: boolean;
   readonly #maxConnections?: number;
+  readonly #http2Direct: boolean;
   // A custom fetch turns the undici transport off; see #transport().
   readonly #hasCustomFetch: boolean;
 
@@ -327,6 +339,7 @@ export class ApiClient {
       });
     }
     this.#maxConnections = max;
+    this.#http2Direct = config.http2Direct ?? false;
   }
 
   /**
@@ -340,6 +353,7 @@ export class ApiClient {
       dnsCache: this.#dnsCache,
       http2: this.#http2,
       maxConnections: this.#maxConnections,
+      http2Direct: this.#http2Direct,
     });
   }
 
@@ -441,6 +455,15 @@ export class ApiClient {
   ): Promise<{ response: BufferedResponse; url: string; released: () => Promise<void> }> {
     const prepared = await this.#prepare(args, options, accept);
     const { url, init, transport, released } = prepared;
+    const direct = transport?.direct?.send(url, init);
+    if (direct) {
+      try {
+        return { response: await direct, url, released: () => Promise.resolve() };
+      } catch (cause) {
+        // A host that answers only HTTP/1.1 got no request, so undici sends it.
+        if (!(cause instanceof Http1Host)) throw this.#networkError(url, transport, cause);
+      }
+    }
     if (!transport?.request) return this.#fetch(prepared);
     try {
       const { statusCode, statusText, body } = await transport.request(url, {
