@@ -46,6 +46,12 @@ export interface Transport {
   resolveEarly?: (hostname: string) => void;
   /** The direct HTTP/2 path. Present only with `http2Direct`, on Node, and with no proxy. */
   direct?: DirectSender;
+  /**
+   * Prepares the connection to an origin before the first request: opens the
+   * direct session, or starts the DNS lookup of the host. Absent when the
+   * transport has nothing to prepare.
+   */
+  open?: (origin: string) => void;
 }
 
 export interface TransportOptions {
@@ -408,6 +414,10 @@ export async function createTransport(
       multiplexes,
       resolveEarly,
       ...(direct && { direct }),
+      open: (origin) => {
+        if (direct?.open(origin)) return;
+        resolveEarly?.(new URL(origin).hostname.replace(/^\[(.*)\]$/, "$1"));
+      },
     };
   } catch {
     return undefined;

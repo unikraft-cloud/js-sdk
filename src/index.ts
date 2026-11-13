@@ -3,7 +3,7 @@
 
 import { Api } from "./api/index.js";
 import { readEnv } from "./core/env.js";
-import type { ApiClientConfig } from "./core/http.js";
+import { type ApiClientConfig, preconnect } from "./core/http.js";
 import {
   CONTROLPLANE_BASE_URL,
   DEFAULT_METRO,
@@ -61,6 +61,19 @@ export interface UnikraftCloudConfig
   headers?: Record<string, string>;
   /** Override the default User-Agent. */
   userAgent?: string;
+  /**
+   * Prepare the connection to the API host of a metro when the client for it
+   * is made, not at its first request: when this constructor names one metro
+   * (`metro`, `baseUrl` or `UKC_METRO`), and in {@link UnikraftCloud.metro}.
+   * With `http2Direct` on Node, the SDK opens the HTTP/2 session, with its TLS
+   * handshake. Otherwise it only starts the DNS lookup of the host. This
+   * never throws: if the connection fails, the first request opens a new one.
+   * An open connection does not keep the process alive. A TCP connect with no
+   * answer does, so the SDK gives up an early connection that is not up after
+   * 1 s and that no request uses yet. A DNS lookup that has not answered also
+   * keeps the process alive. Defaults to `false`.
+   */
+  preconnect?: boolean;
 }
 
 /**
@@ -120,6 +133,7 @@ export class MetroClient extends Scope {
     this.endpoint = endpoint;
     this.api = new Api({ ...session.platform, baseUrl: endpoint.baseUrl }, session.controlPlane);
     this.sandboxes = new Sandboxes(session, endpoint.metro);
+    if (session.preconnect) preconnect({ ...session.platform, baseUrl: endpoint.baseUrl });
   }
 }
 
@@ -159,6 +173,7 @@ function buildSession(config: UnikraftCloudConfig): Session {
     controlPlane,
     defaultMetro,
     pinned: explicitUrl ? { metro: baseUrl, baseUrl } : undefined,
+    preconnect: config.preconnect,
   });
 }
 
@@ -209,6 +224,10 @@ export class UnikraftCloud extends Scope {
     const session = buildSession(config);
     super(session, defaultScope(config));
     this.api = new Api(session.platform, session.controlPlane);
+    // With no metro named, the first request goes to the control plane to
+    // discover the metros, so the client knows of no API host that it uses.
+    const named = config.baseUrl ?? config.metro ?? readEnv("UKC_METRO");
+    if (session.preconnect && named !== undefined) preconnect(session.platform);
   }
 
   /**

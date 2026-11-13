@@ -6,7 +6,12 @@
 // every resource of both the platform and control-plane APIs.
 
 import { Http1Host, splitUrl } from "./h2.js";
-import { type Dispatcher, sharedTransport, type Transport } from "./transport.js";
+import {
+  type Dispatcher,
+  sharedTransport,
+  type Transport,
+  type TransportOptions,
+} from "./transport.js";
 import { stripTrailingSlashes } from "./url.js";
 
 /** A single error entry returned within a response envelope. */
@@ -336,6 +341,36 @@ function createPace(perMs: number): Pace {
   };
 }
 
+function transportOptions(config: ApiClientConfig): TransportOptions {
+  return {
+    proxyFromEnv: config.proxyFromEnv ?? true,
+    dnsCache: config.dnsCache ?? true,
+    http2: config.http2 ?? false,
+    maxConnections: config.maxConnections,
+    http2Direct: config.http2Direct ?? false,
+  };
+}
+
+/**
+ * Opens the connection that the requests of a client with `config` use, to
+ * the origin of its base URL, without a request. With `http2Direct`, this
+ * opens the HTTP/2 session; on undici, it only starts the DNS lookup of the
+ * host. Never throws: a failed connection is left to the first request,
+ * which opens a new one. The connection does not keep the process alive.
+ */
+export function preconnect(config: ApiClientConfig): void {
+  if (typeof config.fetch === "function") return;
+  try {
+    const { origin } = splitUrl(stripTrailingSlashes(config.baseUrl));
+    sharedTransport(transportOptions(config))
+      .then((transport) => transport?.open?.(origin))
+      .catch(() => {});
+  } catch {
+    // A start before the first request only saves time, so its failure is
+    // not the caller's problem.
+  }
+}
+
 function positiveInteger(name: string, value: number | undefined): number | undefined {
   if (value !== undefined && !(Number.isInteger(value) && value > 0)) {
     throw new UnikraftCloudError(`${name} must be a positive integer, not ${value}.`, {
@@ -386,18 +421,14 @@ export class ApiClient {
   protected readonly fetchImpl: FetchLike;
   protected readonly defaultHeaders: Record<string, string>;
   protected readonly proxyFromEnv: boolean;
-  readonly #dnsCache: boolean;
-  readonly #http2: boolean;
-  readonly #maxConnections?: number;
-  readonly #http2Direct: boolean;
+  // Undefined with a custom fetch, which turns the undici transport off; see #transport().
+  readonly #transportOptions?: TransportOptions;
   readonly #maxCreatesPerMs?: number;
-  // A custom fetch turns the undici transport off; see #transport().
-  readonly #hasCustomFetch: boolean;
 
   constructor(config: ApiClientConfig) {
     this.baseUrl = stripTrailingSlashes(config.baseUrl);
     this.token = config.token;
-    this.#hasCustomFetch = typeof config.fetch === "function";
+    const hasCustomFetch = typeof config.fetch === "function";
     const resolvedFetch = config.fetch ?? globalThis.fetch;
     if (typeof resolvedFetch !== "function") {
       throw new UnikraftCloudError(
@@ -407,14 +438,12 @@ export class ApiClient {
     }
     // Bind the global fetch to globalThis (required by browsers and Node); use
     // a caller-supplied fetch as-is so its own `this` binding is preserved.
-    this.fetchImpl = this.#hasCustomFetch ? resolvedFetch : resolvedFetch.bind(globalThis);
+    this.fetchImpl = hasCustomFetch ? resolvedFetch : resolvedFetch.bind(globalThis);
     this.defaultHeaders = { ...config.headers };
     if (config.userAgent) this.defaultHeaders["User-Agent"] = config.userAgent;
     this.proxyFromEnv = config.proxyFromEnv ?? true;
-    this.#dnsCache = config.dnsCache ?? true;
-    this.#http2 = config.http2 ?? false;
-    this.#maxConnections = positiveInteger("maxConnections", config.maxConnections);
-    this.#http2Direct = config.http2Direct ?? false;
+    positiveInteger("maxConnections", config.maxConnections);
+    if (!hasCustomFetch) this.#transportOptions = transportOptions(config);
     this.#maxCreatesPerMs = positiveInteger("maxCreatesPerMs", config.maxCreatesPerMs);
   }
 
@@ -423,14 +452,8 @@ export class ApiClient {
    * not work with a foreign fetch, so it gets none.
    */
   #transport(): Promise<Transport | undefined> {
-    if (this.#hasCustomFetch) return Promise.resolve(undefined);
-    return sharedTransport({
-      proxyFromEnv: this.proxyFromEnv,
-      dnsCache: this.#dnsCache,
-      http2: this.#http2,
-      maxConnections: this.#maxConnections,
-      http2Direct: this.#http2Direct,
-    });
+    if (!this.#transportOptions) return Promise.resolve(undefined);
+    return sharedTransport(this.#transportOptions);
   }
 
   /**

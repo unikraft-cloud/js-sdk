@@ -14,6 +14,7 @@ import { createServer as createHttpsServer } from "node:https";
 import type { AddressInfo } from "node:net";
 import { connect as connectTcp, createServer as createTcpServer, type Socket } from "node:net";
 import type { TLSSocket } from "node:tls";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createTransport,
@@ -37,6 +38,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllEnvs();
 });
 
@@ -367,6 +369,27 @@ describe("http2Direct", () => {
     },
   );
 
+  it("gives up an early session that is still connecting, so that a later request opens a new one", async () => {
+    const server = await listenH2();
+    const resolve = vi
+      .fn<Resolver>()
+      .mockReturnValueOnce(new Promise(() => {}))
+      .mockResolvedValue(loopback);
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    const transport = await directTransport({ resolve, direct: { openTimeoutMs: 50 } });
+    const origin = `https://api.metro.test:${server.port}`;
+
+    try {
+      transport.direct?.open(origin);
+      await vi.advanceTimersByTimeAsync(50);
+      vi.useRealTimers();
+      await expect(sendDirect(transport, `${origin}/`)).resolves.toMatchObject({ status: 200 });
+      expect(resolve).toHaveBeenCalledTimes(2);
+    } finally {
+      await server.close();
+    }
+  });
+
   it("fails a request whose answer does not come in time, and keeps the session for the next", async () => {
     const server = await listenH2((stream, headers, index) => {
       if (index > 0) ok(stream, headers, index);
@@ -422,4 +445,99 @@ describe("http2Direct", () => {
       if (bun) delete (process.versions as Record<string, string>).bun;
     }
   });
+});
+
+/**
+ * Runs `body` in a new Node.js process that has the SDK sources loaded as
+ * `UnikraftCloud`, and resolves with the exit code.
+ */
+function runChild(body: string): Promise<{ code: number | null; stderr: string }> {
+  const index = fileURLToPath(new URL("../src/index.ts", import.meta.url));
+  const hooks = fileURLToPath(new URL("./fixtures/ts-hooks.mjs", import.meta.url));
+  const code = `import { UnikraftCloud } from ${JSON.stringify(index)};\n${body}`;
+  const child = spawn(
+    process.execPath,
+    ["--no-warnings", "--import", hooks, "--input-type=module", "--eval", code],
+    // A child that does not end gets killed, so that a failure reports an
+    // exit code of null and not a timeout of the test. A pending TCP connect
+    // that the SDK does not give up keeps the child alive for minutes, while
+    // the kernel sends the connect again.
+    { env: { ...process.env, NODE_TLS_REJECT_UNAUTHORIZED: "0" }, timeout: 4000 },
+  );
+  let stderr = "";
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk;
+  });
+  return new Promise((resolve) => {
+    child.on("exit", (code) => resolve({ code, stderr }));
+  });
+}
+
+describe("preconnect", () => {
+  it("opens the direct session when the client is made, and the first request uses it", async () => {
+    const server = await listenH2();
+    const ukc = new UnikraftCloud({
+      token: "t",
+      baseUrl: `https://127.0.0.1:${server.port}`,
+      http2Direct: true,
+      preconnect: true,
+    });
+
+    try {
+      await vi.waitFor(() => expect(server.sessions).toHaveLength(1));
+      await ukc.api.platform.instances.request({ method: "GET", path: "/" });
+      expect(server.sessions).toHaveLength(1);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("does not throw for a host that refuses the connection, and the request reports the failure", async () => {
+    const silent = await listenSilent();
+    await silent.close();
+    const ukc = new UnikraftCloud({
+      token: "t",
+      baseUrl: `https://127.0.0.1:${silent.port}`,
+      http2Direct: true,
+      preconnect: true,
+    });
+
+    await expect(
+      ukc.api.platform.instances.request({ method: "GET", path: "/" }),
+    ).rejects.toMatchObject({ kind: "network", message: expect.stringContaining("ECONNREFUSED") });
+  });
+
+  // A refused port: a server that listened and closed again.
+  async function listenClosed() {
+    const server = await listenSilent();
+    await server.close();
+    return { port: server.port, close: async () => {} };
+  }
+
+  it.each([
+    { client: "sends a request and returns", server: () => listenH2(), request: true },
+    {
+      client: "connects to a host that never ends the handshake",
+      server: listenSilent,
+      request: false,
+    },
+    { client: "connects to a port that refuses", server: listenClosed, request: false },
+    { client: "connects to an address that never answers", server: listenStopped, request: false },
+  ])(
+    "lets the process exit by itself when the client $client",
+    async ({ server: listen, request }) => {
+      const server = await listen();
+      const options = `{ token: "t", baseUrl: "https://127.0.0.1:${server.port}", http2Direct: true, preconnect: true }`;
+      const body = request
+        ? `const ukc = new UnikraftCloud(${options});
+         await ukc.api.platform.instances.request({ method: "GET", path: "/" });`
+        : `new UnikraftCloud(${options});`;
+
+      try {
+        await expect(runChild(body)).resolves.toEqual({ code: 0, stderr: "" });
+      } finally {
+        await server.close();
+      }
+    },
+  );
 });
