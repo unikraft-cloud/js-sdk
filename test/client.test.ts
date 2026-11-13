@@ -225,6 +225,29 @@ describe("a client pinned to one metro", () => {
     });
   });
 
+  it("throws when a create that waited for running reports a stopped entry", async () => {
+    // A VM that stops during the boot wait: the envelope says "success", and
+    // only the entry says "error", with no message and no code.
+    const { fetch } = fakeFetch([
+      {
+        body: {
+          status: "success",
+          op_time_us: 1132,
+          data: { instances: [{ status: "error", uuid: "u1", name: "n1", state: "stopped" }] },
+        },
+      },
+    ]);
+    const ukc = new UnikraftCloud({ token: "t", metro: "fra", fetch });
+
+    const err = await ukc
+      .metro("fra")
+      .sandboxes.create({ template: { uuid: "t1" } }, { ready: false, bootTimeoutSeconds: 30 })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(UnikraftCloudError);
+    expect(err).toMatchObject({ kind: "http", status: undefined });
+    expect((err as Error).message).toMatch(/u1, which is "stopped"/);
+  });
+
   it("auto-paginates list() across pages", async () => {
     const first = Array.from({ length: 100 }, (_, n) => ({ uuid: `u${n}`, name: `i${n}` }));
     const second = [{ uuid: "u100", name: "i100" }];
