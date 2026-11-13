@@ -34,6 +34,7 @@ export interface UnikraftCloudConfig
     | "maxConnections"
     | "http2Direct"
     | "maxCreatesPerMs"
+    | "http2Worker"
   > {
   /**
    * Bearer token used for authentication. Falls back to the `UKC_TOKEN`
@@ -153,6 +154,7 @@ function buildSession(config: UnikraftCloudConfig): Session {
     maxConnections: config.maxConnections,
     http2Direct: config.http2Direct,
     maxCreatesPerMs: config.maxCreatesPerMs,
+    http2Worker: config.http2Worker,
   };
 
   // A named base URL (explicitly, or as the `metro`) is the only endpoint there

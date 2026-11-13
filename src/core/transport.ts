@@ -7,6 +7,7 @@ import {
   type DirectOptions,
   type DirectSender,
 } from "./h2.js";
+import { createWorkerSender } from "./h2-worker.js";
 import type { FetchLike } from "./http.js";
 
 /** Opaque undici `Dispatcher` handle. */
@@ -63,6 +64,8 @@ export interface TransportOptions {
   maxConnections?: number;
   /** Send the requests that the SDK reads whole over one `node:http2` session per origin. */
   http2Direct?: boolean;
+  /** Run the session of `http2Direct` in a worker thread. */
+  http2Worker?: boolean;
 }
 
 /** The boundaries of {@link createTransport}, which a test can replace. */
@@ -397,6 +400,12 @@ export async function createTransport(
   if (options.http2Direct && !isBun()) {
     try {
       direct = createDirectSender(await loadDirectModules(), { ...deps.direct, cache });
+      if (options.http2Worker) {
+        const { Worker } = (await importOptional(
+          "node:worker_threads",
+        )) as typeof import("node:worker_threads");
+        direct = createWorkerSender(direct, Worker, { ...deps.direct, cache });
+      }
     } catch {
       // Continue on undici, which carries every request without the option.
     }
@@ -437,6 +446,7 @@ export function sharedTransport(options: TransportOptions): Promise<Transport | 
     options.http2 ?? false,
     options.maxConnections ?? "",
     options.http2Direct ?? false,
+    options.http2Worker ?? false,
   ].join("/");
   let transport = shared.get(key);
   if (!transport) {
