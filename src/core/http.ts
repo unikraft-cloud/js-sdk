@@ -391,11 +391,6 @@ function positiveInteger(name: string, value: number | undefined): number | unde
   return value;
 }
 
-/** The host name of a base URL, without the IPv6 brackets. */
-function hostOf(base: string): string {
-  return new URL(base).hostname.replace(/^\[(.*)\]$/, "$1");
-}
-
 /** Serialise a query object into a URL search string (form/explode style). */
 function encodeQuery(query: Record<string, QueryValue> | undefined): string {
   if (!query) return "";
@@ -435,6 +430,8 @@ export class ApiClient {
   // Undefined with a custom fetch, which turns the undici transport off; see #transport().
   readonly #transportOptions?: TransportOptions;
   readonly #maxCreatesPerMs?: number;
+  #transportPromise?: Promise<Transport | undefined>;
+  #host?: { base: string; name: string; bare: string };
 
   constructor(config: ApiClientConfig) {
     this.baseUrl = stripTrailingSlashes(config.baseUrl);
@@ -464,7 +461,20 @@ export class ApiClient {
    */
   #transport(): Promise<Transport | undefined> {
     if (!this.#transportOptions) return Promise.resolve(undefined);
-    return sharedTransport(this.#transportOptions);
+    this.#transportPromise ??= sharedTransport(this.#transportOptions);
+    return this.#transportPromise;
+  }
+
+  /**
+   * The host of a base URL, parsed once for each base, because a `URL` object
+   * for each request costs CPU in a burst.
+   */
+  #hostOf(base: string): { name: string; bare: string } {
+    const last = this.#host;
+    if (last?.base === base) return last;
+    const name = new URL(base).hostname;
+    this.#host = { base, name, bare: name.replace(/^\[(.*)\]$/, "$1") };
+    return this.#host;
   }
 
   /**
@@ -491,14 +501,14 @@ export class ApiClient {
     }
 
     const transport = await this.#transport();
-    transport?.resolveEarly?.(hostOf(base));
+    const host = this.#hostOf(base);
+    transport?.resolveEarly?.(host.bare);
 
     // Only the pool of the SDK's own transport needs the wait, and an HTTP/2
-    // connection puts no socket back in it.
+    // connection puts no socket back in it. The URL is the base and a path,
+    // so it has the host of the base.
     const released = () =>
-      transport && !transport.multiplexes(new URL(url).hostname)
-        ? socketRelease()
-        : Promise.resolve();
+      transport && !transport.multiplexes(host.name) ? socketRelease() : Promise.resolve();
 
     return {
       url,
