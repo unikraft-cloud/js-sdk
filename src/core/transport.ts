@@ -108,6 +108,8 @@ export interface CachedLookup {
   lookup: LookupFunction;
   /** Drops the answers for a host, so that its next connection resolves it again. */
   forget(hostname: string): void;
+  /** True when the cache holds an answer for a host that has not expired. */
+  fresh(hostname: string): boolean;
 }
 
 /** undici's connector, as `buildConnector` returns it. */
@@ -272,6 +274,10 @@ export function cachedLookup(
     forget(hostname) {
       for (const family of [0, 4, 6]) answers.delete(keyOf(hostname, family));
     },
+    fresh(hostname) {
+      const cached = answers.get(keyOf(hostname));
+      return cached !== undefined && cached.expiresAt > now();
+    },
   };
 }
 
@@ -363,7 +369,13 @@ export async function createTransport(
       // burst is after the setup of every request sent in the same tick. The
       // lookup goes to the libuv thread pool and to the network, so it runs
       // while that setup runs.
-      if (cache) resolveEarly = (hostname) => cache.lookup(hostname, {}, () => {});
+      // A fresh answer needs no lookup, and the call for each request of a
+      // burst would only build a promise chain through the cache.
+      if (cache) {
+        resolveEarly = (hostname) => {
+          if (!cache.fresh(hostname)) cache.lookup(hostname, {}, () => {});
+        };
+      }
     } catch {
       // Continue without the connector, because it only makes requests faster.
     }
