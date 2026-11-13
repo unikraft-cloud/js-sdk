@@ -542,6 +542,25 @@ does, so the SDK gives up an early connection that is not up after 1 second
 and that no request uses yet. A DNS lookup that has not answered also keeps
 the process alive, until it answers.
 
+### The HTTP/2 session in a worker thread
+
+With `http2Worker: true`, a worker thread runs the HTTP/2 session of each API
+host. The worker does the TLS and the HTTP/2 work of each request, and the main
+thread only posts the request and reads the answer. The option turns
+`http2Direct` on.
+
+```ts
+const ukc = new UnikraftCloud({ token, metro: "fra", http2Worker: true, preconnect: true });
+```
+
+This takes more work off the main thread than `http2Direct` alone, for a
+thread and more CPU time in the process. The worker needs some tens of
+milliseconds to start. Until its session is up, the main thread sends the
+requests over its own session, so set `preconnect` to start the worker when
+you make the client. If the worker stops, the requests that it carried fail
+with a network error, and the main thread sends the next requests. An idle
+worker does not keep the process alive.
+
 ### A pace for a burst of creates
 
 When a program creates many instances at the same time, the platform starts

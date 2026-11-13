@@ -150,6 +150,16 @@ export interface ApiClientConfig {
    * Defaults to no limit.
    */
   maxCreatesPerMs?: number;
+  /**
+   * Run the HTTP/2 session of `http2Direct` in a worker thread, which then
+   * does the TLS and the HTTP/2 work of each request. Turns `http2Direct` on.
+   * Takes more work off the main thread than `http2Direct` alone, and costs
+   * the process a thread and more CPU in total. Until the worker's session is
+   * up, the main thread sends the requests itself, so start the worker early
+   * with `preconnect`. If the worker stops, the main thread sends the
+   * requests. Defaults to `false`.
+   */
+  http2Worker?: boolean;
 }
 
 /**
@@ -347,7 +357,8 @@ function transportOptions(config: ApiClientConfig): TransportOptions {
     dnsCache: config.dnsCache ?? true,
     http2: config.http2 ?? false,
     maxConnections: config.maxConnections,
-    http2Direct: config.http2Direct ?? false,
+    http2Direct: (config.http2Direct ?? false) || (config.http2Worker ?? false),
+    http2Worker: config.http2Worker ?? false,
   };
 }
 

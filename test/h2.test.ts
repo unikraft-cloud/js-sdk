@@ -2,6 +2,7 @@
 // Copyright (c) 2026, Unikraft GmbH.
 
 import { spawn } from "node:child_process";
+import { EventEmitter } from "node:events";
 import {
   constants,
   createSecureServer,
@@ -15,7 +16,10 @@ import type { AddressInfo } from "node:net";
 import { connect as connectTcp, createServer as createTcpServer, type Socket } from "node:net";
 import type { TLSSocket } from "node:tls";
 import { fileURLToPath } from "node:url";
+import type { Worker } from "node:worker_threads";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { DirectSender } from "../src/core/h2.js";
+import { createWorkerSender } from "../src/core/h2-worker.js";
 import {
   createTransport,
   type LookupAddress,
@@ -43,6 +47,8 @@ afterEach(() => {
 });
 
 interface Seen {
+  /** The index of the server session that carried the request. */
+  session: number;
   method: string;
   path: string;
   version: string;
@@ -96,6 +102,7 @@ async function listenH2(handler: Handler = ok, onSession?: (session: Http2Sessio
     });
     stream.on("end", () => {
       seen.push({
+        session: sessions.indexOf(stream.session as Http2Session),
         method: headers[":method"] as string,
         path: headers[":path"] as string,
         version: "2.0",
@@ -108,6 +115,7 @@ async function listenH2(handler: Handler = ok, onSession?: (session: Http2Sessio
   server.on("request", (request, response) => {
     if (request.httpVersion === "2.0") return;
     seen.push({
+      session: -1,
       method: request.method ?? "",
       path: request.url ?? "",
       version: request.httpVersion,
@@ -306,9 +314,10 @@ describe("http2Direct", () => {
   });
 
   it.each([
-    { server: "answers only HTTP/1.1", http1: true },
-    { server: "is reached through an http: base URL", http1: false },
-  ])("sends the requests through undici when the server $server", async ({ http1 }) => {
+    { server: "answers only HTTP/1.1", http1: true, worker: false },
+    { server: "answers only HTTP/1.1, with the worker", http1: true, worker: true },
+    { server: "is reached through an http: base URL", http1: false, worker: false },
+  ])("sends the requests through undici when the server $server", async ({ http1, worker }) => {
     const server = http1
       ? createHttpsServer({ key, cert }, (_request, response) => {
           response.writeHead(200, { "content-type": "application/json" });
@@ -324,6 +333,8 @@ describe("http2Direct", () => {
       token: "t",
       baseUrl: `${http1 ? "https" : "http"}://127.0.0.1:${port}`,
       http2Direct: true,
+      http2Worker: worker,
+      preconnect: worker,
     }).api.platform.instances;
 
     try {
@@ -514,20 +525,28 @@ describe("preconnect", () => {
     return { port: server.port, close: async () => {} };
   }
 
-  it.each([
-    { client: "sends a request and returns", server: () => listenH2(), request: true },
-    {
-      client: "connects to a host that never ends the handshake",
-      server: listenSilent,
-      request: false,
-    },
-    { client: "connects to a port that refuses", server: listenClosed, request: false },
-    { client: "connects to an address that never answers", server: listenStopped, request: false },
-  ])(
-    "lets the process exit by itself when the client $client",
-    async ({ server: listen, request }) => {
+  it.each(
+    [false, true].flatMap((worker) => [
+      { client: "sends a request and returns", server: () => listenH2(), request: true, worker },
+      {
+        client: "connects to a host that never ends the handshake",
+        server: listenSilent,
+        request: false,
+        worker,
+      },
+      { client: "connects to a port that refuses", server: listenClosed, request: false, worker },
+      {
+        client: "connects to an address that never answers",
+        server: listenStopped,
+        request: false,
+        worker,
+      },
+    ]),
+  )(
+    "lets the process exit by itself when the client $client (worker: $worker)",
+    async ({ server: listen, request, worker }) => {
       const server = await listen();
-      const options = `{ token: "t", baseUrl: "https://127.0.0.1:${server.port}", http2Direct: true, preconnect: true }`;
+      const options = `{ token: "t", baseUrl: "https://127.0.0.1:${server.port}", http2Direct: true, http2Worker: ${worker}, preconnect: true }`;
       const body = request
         ? `const ukc = new UnikraftCloud(${options});
          await ukc.api.platform.instances.request({ method: "GET", path: "/" });`
@@ -540,4 +559,80 @@ describe("preconnect", () => {
       }
     },
   );
+});
+
+describe("http2Worker", () => {
+  it("carries the requests on the worker's session once it is up, and reads every kind of answer", async () => {
+    const server = await listenH2(byPath);
+    const api = new UnikraftCloud({
+      token: "t",
+      baseUrl: `https://127.0.0.1:${server.port}`,
+      http2Worker: true,
+      preconnect: true,
+    }).api.platform.instances;
+
+    try {
+      // The worker opens session 0. Until the main thread learns that the
+      // worker is up, a request opens a session of the main thread.
+      await vi.waitFor(async () => {
+        await api.request({ method: "GET", path: "/" });
+        expect(server.seen.at(-1)?.session).toBe(0);
+      });
+      const before = server.sessions.length;
+      await Promise.all(
+        Array.from({ length: 50 }, (_, k) =>
+          api.request({ method: "POST", path: "/v1/instances", body: { k } }),
+        ),
+      );
+      await expect(api.request({ method: "GET", path: "/missing" })).rejects.toMatchObject({
+        kind: "http",
+        status: 404,
+        message: "no such instance",
+      });
+      await expect(api.bytes({ method: "GET", path: "/bytes" })).resolves.toEqual(
+        new Uint8Array([0, 1, 255]),
+      );
+
+      expect(server.sessions).toHaveLength(before);
+      expect(server.seen.filter((s) => s.method === "POST").map((s) => s.session)).toEqual(
+        Array(50).fill(0),
+      );
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("fails the requests in a worker that stops, and sends the next requests on the main thread", async () => {
+    class FakeWorker extends EventEmitter {
+      static last?: FakeWorker;
+      constructor() {
+        super();
+        FakeWorker.last = this;
+      }
+      postMessage() {}
+      ref() {}
+      unref() {}
+      terminate() {
+        return Promise.resolve(0);
+      }
+    }
+    const main: DirectSender = {
+      send: vi.fn(() => Promise.resolve({ ok: true, status: 200 } as never)),
+      open: () => true,
+    };
+    const sender = createWorkerSender(main, FakeWorker as unknown as typeof Worker);
+    const origin = "https://api.metro.test";
+
+    sender.open(origin);
+    const worker = FakeWorker.last as FakeWorker;
+    worker.emit("message", { t: "up" });
+    const sent = sender.send(`${origin}/v1/instances`, { method: "GET", headers: {} });
+    worker.emit("exit", 1);
+
+    await expect(sent).rejects.toThrow(/stopped \(exit code 1\)/);
+    await expect(
+      sender.send(`${origin}/v1/instances`, { method: "GET", headers: {} }),
+    ).resolves.toMatchObject({ status: 200 });
+    expect(main.send).toHaveBeenCalledOnce();
+  });
 });
