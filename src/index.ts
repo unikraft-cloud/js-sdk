@@ -27,7 +27,13 @@ const USER_AGENT = "@unikraft/cloud";
 export interface UnikraftCloudConfig
   extends Pick<
     ApiClientConfig,
-    "fetch" | "proxyFromEnv" | "dnsCache" | "http2" | "maxConnections" | "http2Direct"
+    | "fetch"
+    | "proxyFromEnv"
+    | "dnsCache"
+    | "http2"
+    | "maxConnections"
+    | "http2Direct"
+    | "maxCreatesPerMs"
   > {
   /**
    * Bearer token used for authentication. Falls back to the `UKC_TOKEN`
@@ -132,6 +138,7 @@ function buildSession(config: UnikraftCloudConfig): Session {
     http2: config.http2,
     maxConnections: config.maxConnections,
     http2Direct: config.http2Direct,
+    maxCreatesPerMs: config.maxCreatesPerMs,
   };
 
   // A named base URL (explicitly, or as the `metro`) is the only endpoint there

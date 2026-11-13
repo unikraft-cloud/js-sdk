@@ -519,6 +519,20 @@ With the option on, some things differ from undici:
 
 The SDK does not use the direct path on Bun.
 
+### A pace for a burst of creates
+
+When a program creates many instances at the same time, the platform starts
+them all at the same moment. With `maxCreatesPerMs`, at most that many instance
+creates start in each millisecond, and the others wait in order:
+
+```ts
+const ukc = new UnikraftCloud({ token, http2Direct: true, maxCreatesPerMs: 4 });
+```
+
+With a limit of 4, a burst of 100 creates leaves over about 25 ms. All the
+clients of the process with the same API host share one pace. Other requests,
+for example a command in a sandbox, do not wait.
+
 ### Tests and mocks
 
 On Node.js, the SDK does not send its requests through `globalThis.fetch` or
