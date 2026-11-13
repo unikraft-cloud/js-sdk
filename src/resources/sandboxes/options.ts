@@ -247,6 +247,7 @@ const CLIENT_ONLY_OPTIONS = {
   http2: true,
   maxConnections: true,
   http2Direct: true,
+  maxCreatesPerMs: true,
 } as const satisfies Record<ClientOnlyOption, true>;
 
 const CLIENT_ONLY_KEYS = Object.keys(CLIENT_ONLY_OPTIONS) as ClientOnlyOption[];

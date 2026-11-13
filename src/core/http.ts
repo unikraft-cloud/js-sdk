@@ -5,7 +5,7 @@
 // A single UnikraftCloudError is defined here so `instanceof` works across
 // every resource of both the platform and control-plane APIs.
 
-import { Http1Host } from "./h2.js";
+import { Http1Host, splitUrl } from "./h2.js";
 import { type Dispatcher, sharedTransport, type Transport } from "./transport.js";
 import { stripTrailingSlashes } from "./url.js";
 
@@ -136,6 +136,15 @@ export interface ApiClientConfig {
    * direct session. Not used on Bun. Defaults to `false`.
    */
   http2Direct?: boolean;
+  /**
+   * The most instance creates (`POST /v1/instances`) that start in each
+   * millisecond, for all the clients of this process with the same API host.
+   * The other creates wait in order for the next millisecond. A burst of
+   * creates then reaches the platform over a longer time, so the platform
+   * starts fewer instances at the same moment. Other requests do not wait.
+   * Defaults to no limit.
+   */
+  maxCreatesPerMs?: number;
 }
 
 /**
@@ -265,6 +274,77 @@ function socketRelease(): Promise<void> {
   return new Promise((resolve) => nativeSetImmediate(resolve));
 }
 
+// Taken when this module loads, for the same reason as `nativeSetImmediate`.
+const nativeSetTimeout = setTimeout;
+
+/**
+ * Returns undefined when a create can start now, or a promise that resolves
+ * when its slot comes.
+ */
+type Pace = () => Promise<void> | undefined;
+
+const paces = new Map<string, Pace>();
+
+/**
+ * One pace for each origin and limit, which every client of the process
+ * shares. The key is the origin, not the base URL, because each sandbox has a
+ * client with a base URL of its own on the same origin.
+ */
+function paceFor(origin: string, perMs: number): Pace {
+  const key = `${perMs} ${origin}`;
+  let pace = paces.get(key);
+  if (!pace) {
+    pace = createPace(perMs);
+    paces.set(key, pace);
+  }
+  return pace;
+}
+
+/**
+ * Lets at most `perMs` creates start in each slot of about 1 ms; the others
+ * wait in order for a later slot. A Node.js timer has a step of 1 ms, so the
+ * pace releases a group of creates for each timer, not one create for each
+ * fraction of a millisecond.
+ */
+function createPace(perMs: number): Pace {
+  const now = () => performance.now();
+  const queue: (() => void)[] = [];
+  let budget = perMs;
+  let slotStart = now();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const tick = () => {
+    timer = undefined;
+    slotStart = now();
+    budget = perMs;
+    while (budget > 0 && queue.length > 0) {
+      budget--;
+      queue.shift()?.();
+    }
+    if (queue.length > 0) timer = nativeSetTimeout(tick, 1);
+  };
+  return () => {
+    if (timer === undefined && now() - slotStart >= 1) {
+      slotStart = now();
+      budget = perMs;
+    }
+    if (budget > 0 && queue.length === 0) {
+      budget--;
+      return undefined;
+    }
+    timer ??= nativeSetTimeout(tick, 1);
+    return new Promise<void>((resolve) => queue.push(resolve));
+  };
+}
+
+function positiveInteger(name: string, value: number | undefined): number | undefined {
+  if (value !== undefined && !(Number.isInteger(value) && value > 0)) {
+    throw new UnikraftCloudError(`${name} must be a positive integer, not ${value}.`, {
+      kind: "config",
+    });
+  }
+  return value;
+}
+
 /** The host name of a base URL, without the IPv6 brackets. */
 function hostOf(base: string): string {
   return new URL(base).hostname.replace(/^\[(.*)\]$/, "$1");
@@ -310,6 +390,7 @@ export class ApiClient {
   readonly #http2: boolean;
   readonly #maxConnections?: number;
   readonly #http2Direct: boolean;
+  readonly #maxCreatesPerMs?: number;
   // A custom fetch turns the undici transport off; see #transport().
   readonly #hasCustomFetch: boolean;
 
@@ -332,14 +413,9 @@ export class ApiClient {
     this.proxyFromEnv = config.proxyFromEnv ?? true;
     this.#dnsCache = config.dnsCache ?? true;
     this.#http2 = config.http2 ?? false;
-    const max = config.maxConnections;
-    if (max !== undefined && !(Number.isInteger(max) && max > 0)) {
-      throw new UnikraftCloudError(`maxConnections must be a positive integer, not ${max}.`, {
-        kind: "config",
-      });
-    }
-    this.#maxConnections = max;
+    this.#maxConnections = positiveInteger("maxConnections", config.maxConnections);
     this.#http2Direct = config.http2Direct ?? false;
+    this.#maxCreatesPerMs = positiveInteger("maxCreatesPerMs", config.maxCreatesPerMs);
   }
 
   /**
@@ -455,6 +531,10 @@ export class ApiClient {
   ): Promise<{ response: BufferedResponse; url: string; released: () => Promise<void> }> {
     const prepared = await this.#prepare(args, options, accept);
     const { url, init, transport, released } = prepared;
+    if (this.#maxCreatesPerMs && args.method === "POST" && args.path === "/v1/instances") {
+      const slot = paceFor(splitUrl(url).origin, this.#maxCreatesPerMs)();
+      if (slot) await slot;
+    }
     const direct = transport?.direct?.send(url, init);
     if (direct) {
       try {
