@@ -25,6 +25,7 @@ export type {
   ListSandboxesOptions,
   LogsRawOptions,
   ParentsOptions,
+  ReleaseLogsOptions,
   SandboxCallOptions,
   SandboxRef,
   SandboxRequestOptions,
