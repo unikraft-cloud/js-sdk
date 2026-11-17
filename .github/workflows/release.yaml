@@ -58,7 +58,7 @@ jobs:
     # Trusted publishing requires npm >= 11.5.1, which is newer than the npm
     # bundled with some Node 24 patch releases.
     - name: Update npm
-      run: npm install -g npm@latest
+      run: npm install -g npm@12.2.2
 
     - name: Install svu
       run: |
