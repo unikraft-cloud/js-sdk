@@ -5,7 +5,13 @@
 // A single UnikraftCloudError is defined here so `instanceof` works across
 // every resource of both the platform and control-plane APIs.
 
-import { type Dispatcher, sharedTransport, type Transport } from "./transport.js";
+import { Http1Host, splitUrl } from "./h2.js";
+import {
+  type Dispatcher,
+  sharedTransport,
+  type Transport,
+  type TransportOptions,
+} from "./transport.js";
 import { stripTrailingSlashes } from "./url.js";
 
 /** A single error entry returned within a response envelope. */
@@ -85,10 +91,10 @@ export interface ApiClientConfig {
   /**
    * Custom `fetch` implementation. Without it, the SDK uses its own undici
    * transport on Node and the global `fetch` elsewhere. A custom `fetch` turns
-   * off the DNS cache, HTTP/2, `maxConnections`, and the proxy from the
-   * environment. The transport bypasses `globalThis.fetch` and the global
-   * undici dispatcher, so a test that mocks either (`vi.stubGlobal`, MSW, nock,
-   * `MockAgent`) passes `(url, init) => globalThis.fetch(url, init)`.
+   * off the DNS cache, HTTP/2, `maxConnections`, `http2Direct`, and the proxy
+   * from the environment. The transport bypasses `globalThis.fetch` and the
+   * global undici dispatcher, so a test that mocks either (`vi.stubGlobal`,
+   * MSW, nock, `MockAgent`) passes `(url, init) => globalThis.fetch(url, init)`.
    */
   fetch?: FetchLike;
   /** Default headers sent with every request. */
@@ -125,6 +131,35 @@ export interface ApiClientConfig {
    * Defaults to no limit.
    */
   maxConnections?: number;
+  /**
+   * On Node, send the requests that the SDK reads whole over Node's own
+   * `node:http2` client: one session to each API host, opened at the first
+   * request, with no undici objects for each request. A burst of requests
+   * then costs the main thread less CPU. The SDK uses undici as before for a
+   * host that answers only HTTP/1.1, an `http:` base URL, a proxy from the
+   * environment, and event streams. `maxConnections` does not apply to the
+   * direct session. Not used on Bun. Defaults to `false`.
+   */
+  http2Direct?: boolean;
+  /**
+   * The most instance creates (`POST /v1/instances`) that start in each
+   * millisecond, for all the clients of this process with the same API host.
+   * The other creates wait in order for the next millisecond. A burst of
+   * creates then reaches the platform over a longer time, so the platform
+   * starts fewer instances at the same moment. Other requests do not wait.
+   * Defaults to no limit.
+   */
+  maxCreatesPerMs?: number;
+  /**
+   * Run the HTTP/2 session of `http2Direct` in a worker thread, which then
+   * does the TLS and the HTTP/2 work of each request. Turns `http2Direct` on.
+   * Takes more work off the main thread than `http2Direct` alone, and costs
+   * the process a thread and more CPU in total. Until the worker's session is
+   * up, the main thread sends the requests itself, so start the worker early
+   * with `preconnect`. If the worker stops, the main thread sends the
+   * requests. Defaults to `false`.
+   */
+  http2Worker?: boolean;
 }
 
 /**
@@ -254,9 +289,106 @@ function socketRelease(): Promise<void> {
   return new Promise((resolve) => nativeSetImmediate(resolve));
 }
 
-/** The host name of a base URL, without the IPv6 brackets. */
-function hostOf(base: string): string {
-  return new URL(base).hostname.replace(/^\[(.*)\]$/, "$1");
+// Taken when this module loads, for the same reason as `nativeSetImmediate`.
+const nativeSetTimeout = setTimeout;
+
+/**
+ * Returns undefined when a create can start now, or a promise that resolves
+ * when its slot comes.
+ */
+type Pace = () => Promise<void> | undefined;
+
+const paces = new Map<string, Pace>();
+
+/**
+ * One pace for each origin and limit, which every client of the process
+ * shares. The key is the origin, not the base URL, because each sandbox has a
+ * client with a base URL of its own on the same origin.
+ */
+function paceFor(origin: string, perMs: number): Pace {
+  const key = `${perMs} ${origin}`;
+  let pace = paces.get(key);
+  if (!pace) {
+    pace = createPace(perMs);
+    paces.set(key, pace);
+  }
+  return pace;
+}
+
+/**
+ * Lets at most `perMs` creates start in each slot of about 1 ms; the others
+ * wait in order for a later slot. A Node.js timer has a step of 1 ms, so the
+ * pace releases a group of creates for each timer, not one create for each
+ * fraction of a millisecond.
+ */
+function createPace(perMs: number): Pace {
+  const now = () => performance.now();
+  const queue: (() => void)[] = [];
+  let budget = perMs;
+  let slotStart = now();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const tick = () => {
+    timer = undefined;
+    slotStart = now();
+    budget = perMs;
+    while (budget > 0 && queue.length > 0) {
+      budget--;
+      queue.shift()?.();
+    }
+    if (queue.length > 0) timer = nativeSetTimeout(tick, 1);
+  };
+  return () => {
+    if (timer === undefined && now() - slotStart >= 1) {
+      slotStart = now();
+      budget = perMs;
+    }
+    if (budget > 0 && queue.length === 0) {
+      budget--;
+      return undefined;
+    }
+    timer ??= nativeSetTimeout(tick, 1);
+    return new Promise<void>((resolve) => queue.push(resolve));
+  };
+}
+
+function transportOptions(config: ApiClientConfig): TransportOptions {
+  return {
+    proxyFromEnv: config.proxyFromEnv ?? true,
+    dnsCache: config.dnsCache ?? true,
+    http2: config.http2 ?? false,
+    maxConnections: config.maxConnections,
+    http2Direct: (config.http2Direct ?? false) || (config.http2Worker ?? false),
+    http2Worker: config.http2Worker ?? false,
+  };
+}
+
+/**
+ * Opens the connection that the requests of a client with `config` use, to
+ * the origin of its base URL, without a request. With `http2Direct`, this
+ * opens the HTTP/2 session; on undici, it only starts the DNS lookup of the
+ * host. Never throws: a failed connection is left to the first request,
+ * which opens a new one. The connection does not keep the process alive.
+ */
+export function preconnect(config: ApiClientConfig): void {
+  if (typeof config.fetch === "function") return;
+  try {
+    const { origin } = splitUrl(stripTrailingSlashes(config.baseUrl));
+    sharedTransport(transportOptions(config))
+      .then((transport) => transport?.open?.(origin))
+      .catch(() => {});
+  } catch {
+    // A start before the first request only saves time, so its failure is
+    // not the caller's problem.
+  }
+}
+
+function positiveInteger(name: string, value: number | undefined): number | undefined {
+  if (value !== undefined && !(Number.isInteger(value) && value > 0)) {
+    throw new UnikraftCloudError(`${name} must be a positive integer, not ${value}.`, {
+      kind: "config",
+    });
+  }
+  return value;
 }
 
 /** Serialise a query object into a URL search string (form/explode style). */
@@ -295,16 +427,16 @@ export class ApiClient {
   protected readonly fetchImpl: FetchLike;
   protected readonly defaultHeaders: Record<string, string>;
   protected readonly proxyFromEnv: boolean;
-  readonly #dnsCache: boolean;
-  readonly #http2: boolean;
-  readonly #maxConnections?: number;
-  // A custom fetch turns the undici transport off; see #transport().
-  readonly #hasCustomFetch: boolean;
+  // Undefined with a custom fetch, which turns the undici transport off; see #transport().
+  readonly #transportOptions?: TransportOptions;
+  readonly #maxCreatesPerMs?: number;
+  #transportPromise?: Promise<Transport | undefined>;
+  #host?: { base: string; name: string; bare: string };
 
   constructor(config: ApiClientConfig) {
     this.baseUrl = stripTrailingSlashes(config.baseUrl);
     this.token = config.token;
-    this.#hasCustomFetch = typeof config.fetch === "function";
+    const hasCustomFetch = typeof config.fetch === "function";
     const resolvedFetch = config.fetch ?? globalThis.fetch;
     if (typeof resolvedFetch !== "function") {
       throw new UnikraftCloudError(
@@ -314,19 +446,13 @@ export class ApiClient {
     }
     // Bind the global fetch to globalThis (required by browsers and Node); use
     // a caller-supplied fetch as-is so its own `this` binding is preserved.
-    this.fetchImpl = this.#hasCustomFetch ? resolvedFetch : resolvedFetch.bind(globalThis);
+    this.fetchImpl = hasCustomFetch ? resolvedFetch : resolvedFetch.bind(globalThis);
     this.defaultHeaders = { ...config.headers };
     if (config.userAgent) this.defaultHeaders["User-Agent"] = config.userAgent;
     this.proxyFromEnv = config.proxyFromEnv ?? true;
-    this.#dnsCache = config.dnsCache ?? true;
-    this.#http2 = config.http2 ?? false;
-    const max = config.maxConnections;
-    if (max !== undefined && !(Number.isInteger(max) && max > 0)) {
-      throw new UnikraftCloudError(`maxConnections must be a positive integer, not ${max}.`, {
-        kind: "config",
-      });
-    }
-    this.#maxConnections = max;
+    positiveInteger("maxConnections", config.maxConnections);
+    if (!hasCustomFetch) this.#transportOptions = transportOptions(config);
+    this.#maxCreatesPerMs = positiveInteger("maxCreatesPerMs", config.maxCreatesPerMs);
   }
 
   /**
@@ -334,13 +460,21 @@ export class ApiClient {
    * not work with a foreign fetch, so it gets none.
    */
   #transport(): Promise<Transport | undefined> {
-    if (this.#hasCustomFetch) return Promise.resolve(undefined);
-    return sharedTransport({
-      proxyFromEnv: this.proxyFromEnv,
-      dnsCache: this.#dnsCache,
-      http2: this.#http2,
-      maxConnections: this.#maxConnections,
-    });
+    if (!this.#transportOptions) return Promise.resolve(undefined);
+    this.#transportPromise ??= sharedTransport(this.#transportOptions);
+    return this.#transportPromise;
+  }
+
+  /**
+   * The host of a base URL, parsed once for each base, because a `URL` object
+   * for each request costs CPU in a burst.
+   */
+  #hostOf(base: string): { name: string; bare: string } {
+    const last = this.#host;
+    if (last?.base === base) return last;
+    const name = new URL(base).hostname;
+    this.#host = { base, name, bare: name.replace(/^\[(.*)\]$/, "$1") };
+    return this.#host;
   }
 
   /**
@@ -367,14 +501,14 @@ export class ApiClient {
     }
 
     const transport = await this.#transport();
-    transport?.resolveEarly?.(hostOf(base));
+    const host = this.#hostOf(base);
+    transport?.resolveEarly?.(host.bare);
 
     // Only the pool of the SDK's own transport needs the wait, and an HTTP/2
-    // connection puts no socket back in it.
+    // connection puts no socket back in it. The URL is the base and a path,
+    // so it has the host of the base.
     const released = () =>
-      transport && !transport.multiplexes(new URL(url).hostname)
-        ? socketRelease()
-        : Promise.resolve();
+      transport && !transport.multiplexes(host.name) ? socketRelease() : Promise.resolve();
 
     return {
       url,
@@ -441,6 +575,19 @@ export class ApiClient {
   ): Promise<{ response: BufferedResponse; url: string; released: () => Promise<void> }> {
     const prepared = await this.#prepare(args, options, accept);
     const { url, init, transport, released } = prepared;
+    if (this.#maxCreatesPerMs && args.method === "POST" && args.path === "/v1/instances") {
+      const slot = paceFor(splitUrl(url).origin, this.#maxCreatesPerMs)();
+      if (slot) await slot;
+    }
+    const direct = transport?.direct?.send(url, init);
+    if (direct) {
+      try {
+        return { response: await direct, url, released: () => Promise.resolve() };
+      } catch (cause) {
+        // A host that answers only HTTP/1.1 got no request, so undici sends it.
+        if (!(cause instanceof Http1Host)) throw this.#networkError(url, transport, cause);
+      }
+    }
     if (!transport?.request) return this.#fetch(prepared);
     try {
       const { statusCode, statusText, body } = await transport.request(url, {

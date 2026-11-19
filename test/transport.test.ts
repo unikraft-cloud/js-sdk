@@ -384,10 +384,42 @@ describe("UnikraftCloud", () => {
   });
 
   // undici reads a limit of 0 as no limit.
-  it.each([0, -1, 1.5])("rejects a maxConnections of %s", (maxConnections) => {
-    expect(() => new UnikraftCloud({ token: "t", metro: "fra", maxConnections })).toThrow(
-      expect.objectContaining({ kind: "config", message: expect.stringMatching(/maxConnections/) }),
+  it.each(
+    ["maxConnections", "maxCreatesPerMs"].flatMap((option) =>
+      [0, -1, 1.5].map((value) => ({ option, value })),
+    ),
+  )("rejects a $option of $value", ({ option, value }) => {
+    expect(() => new UnikraftCloud({ token: "t", metro: "fra", [option]: value })).toThrow(
+      expect.objectContaining({ kind: "config", message: expect.stringContaining(option) }),
     );
+  });
+
+  it("starts at most maxCreatesPerMs creates in each millisecond, and holds no other request", async () => {
+    // The pace takes `setTimeout` when its module loads, so the fake clock
+    // must come before the import.
+    vi.useFakeTimers({ toFake: ["setTimeout", "performance"] });
+    vi.resetModules();
+    const { UnikraftCloud: Fresh } = await import("../src/index.js");
+    const sent: string[] = [];
+    const fetch = async (_url: string, init?: RequestInit) => {
+      sent.push(init?.method ?? "GET");
+      return Response.json({ status: "success", op_time_us: 1 });
+    };
+    const api = new Fresh({ token: "t", metro: "fra", fetch, maxCreatesPerMs: 4 }).api.platform
+      .instances;
+    const creates = () => sent.filter((method) => method === "POST").length;
+
+    const all = Promise.all([
+      ...Array.from({ length: 10 }, () => api.request({ method: "POST", path: "/v1/instances" })),
+      api.request({ method: "GET", path: "/v1/instances" }),
+    ]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect([creates(), sent.includes("GET")]).toEqual([4, true]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(creates()).toBe(8);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(creates()).toBe(10);
+    await all;
   });
 
   it.each([
