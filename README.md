@@ -47,10 +47,10 @@ variable. Create a token in the [Unikraft Cloud dashboard][dashboard].
 
 The SDK is explicitly two layers, and you choose per call which one you are in:
 
-| Layer         | Where                                                       | What you get                                                                  |
-| ------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| **Porcelain** | `@unikraft/cloud` — `ukc.instances`, `ukc.volumes`, …       | Short verbs, no envelope, auto-pagination, metro fan-out, chainable handles    |
-| **Plumbing**  | `@unikraft/cloud/api/platform`, `.../api/controlplane`      | The OpenAPI specification as written: `operationId` methods, raw envelope, one metro per call |
+| Layer         | Where                                                  | What you get                                                                                  |
+| ------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| **Porcelain** | `@unikraft/cloud` — `ukc.instances`, `ukc.volumes`, …  | Short verbs, no envelope, auto-pagination, metro fan-out, chainable handles                   |
+| **Plumbing**  | `@unikraft/cloud/api/platform`, `.../api/controlplane` | The OpenAPI specification as written: `operationId` methods, raw envelope, one metro per call |
 
 The porcelain layer **holds** a plumbing client rather than extending one, so the
 two never blur together — and the raw client is always one property away:
@@ -114,10 +114,10 @@ const ukc = new UnikraftCloud({ token });
 for await (const inst of ukc.instances.list()) console.log(inst.metro, inst.name);
 
 // Explicit scopes — these also skip metro discovery entirely.
-ukc.metro("fra").instances.list();            // one metro
-ukc.metros(["fra", "dal"]).instances.list();  // several
-ukc.instances.list({ metros: ["fra", "dal"] });  // just this call
-ukc.instances.list({ metros: "all" });           // back to everything
+ukc.metro("fra").instances.list(); // one metro
+ukc.metros(["fra", "dal"]).instances.list(); // several
+ukc.instances.list({ metros: ["fra", "dal"] }); // just this call
+ukc.instances.list({ metros: "all" }); // back to everything
 
 // What the account can reach.
 for (const { metro, baseUrl } of await ukc.availableMetros()) console.log(metro, baseUrl);
@@ -126,8 +126,8 @@ for (const { metro, baseUrl } of await ukc.availableMetros()) console.log(metro,
 Set the default scope at construction, too:
 
 ```ts
-new UnikraftCloud({ token });                      // all metros (default)
-new UnikraftCloud({ token, metro: "fra" });        // one metro
+new UnikraftCloud({ token }); // all metros (default)
+new UnikraftCloud({ token, metro: "fra" }); // one metro
 new UnikraftCloud({ token, metros: ["fra", "dal"] }); // several
 ```
 
@@ -174,7 +174,7 @@ await ukc.instances.get({ name: "web", metro: "fra" }).suspend();
 await ukc.metro("fra").instances.get({ name: "web" }).suspend();
 
 // 3. Address every metro holding it, on purpose.
-await ukc.instances.each({ name: "web" }).suspend();  // one result per metro
+await ukc.instances.each({ name: "web" }).suspend(); // one result per metro
 ```
 
 `{ uuid }` refs never need qualifying: a UUID identifies one resource wherever it
@@ -191,8 +191,8 @@ try {
   await ukc.instances.get({ name: "web" }).suspend();
 } catch (err) {
   if (err instanceof AmbiguousRefError) {
-    err.metros;   // ["fra", "dal", "sin"]
-    err.matches;  // the instances themselves, each tagged with .metro
+    err.metros; // ["fra", "dal", "sin"]
+    err.matches; // the instances themselves, each tagged with .metro
   }
 }
 ```
@@ -227,7 +227,7 @@ try {
   for await (const inst of ukc.instances.list()) use(inst); // fra, dal, was delivered
 } catch (err) {
   if (err instanceof MetroFanoutError) {
-    err.message;  // "1 of 4 metros failed: sin (503)"
+    err.message; // "1 of 4 metros failed: sin (503)"
     err.failures; // [{ metro: "sin", error: UnikraftCloudError }]
   }
 }
@@ -243,12 +243,13 @@ one resource in one metro. Awaiting a handle gives the resource; calling an
 operation on it returns another handle:
 
 ```ts
-await ukc.instances.get({ name: "web" });            // -> Instance
-await ukc.instances.get({ name: "web" }).suspend();  // -> the suspended instance
+await ukc.instances.get({ name: "web" }); // -> Instance
+await ukc.instances.get({ name: "web" }).suspend(); // -> the suspended instance
 await ukc.instances.get({ name: "web" }).update({ memory_mb: 512 });
 
-await ukc.metro("fra").instances
-  .create({ image: "nginx:latest" })
+await ukc
+  .metro("fra")
+  .instances.create({ image: "nginx:latest" })
   .wait({ state: "running", timeoutSeconds: 30 })
   .logs({ offset: -4096 });
 
@@ -258,10 +259,10 @@ await ukc.volumes.get({ name: "data" }).attach({ attach_to: { name: "web" }, at:
 Nothing is sent until a handle is awaited or chained onto, and each step runs at
 most once however many times you await it. What that costs depends on the scope:
 
-| Ref and scope                  | `get(ref).suspend()`                                              |
-| ------------------------------ | ----------------------------------------------------------------- |
-| `{ name, metro }`, any scope   | 1 request — the suspend. The ref says where.                       |
-| `{ name }`, one metro in scope | 1 request — the scope says where.                                  |
+| Ref and scope                  | `get(ref).suspend()`                                                                                                       |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `{ name, metro }`, any scope   | 1 request — the suspend. The ref says where.                                                                               |
+| `{ name }`, one metro in scope | 1 request — the scope says where.                                                                                          |
 | `{ name }`, many metros        | Locate first (one concurrent read per metro), then suspend where it lives — or throw `AmbiguousRefError` if several match. |
 
 Handles also answer where they landed, and mutating steps return what that
@@ -270,7 +271,7 @@ not a full instance):
 
 ```ts
 const web = ukc.instances.get({ name: "web" });
-await web.where();   // "dal"
+await web.where(); // "dal"
 await web.resolve(); // { ref: { name: "web" }, metro: "dal", baseUrl: "..." }
 ```
 
@@ -288,7 +289,7 @@ omitted (or `undefined`) property is left alone, following JSON Merge Patch:
 ```ts
 await ukc.instances.get({ name: "web" }).update({ memory_mb: 512, vcpus: 2 });
 await ukc.instances.get({ name: "web" }).update({ env: { LOG_LEVEL: "debug" } });
-await ukc.instances.get({ name: "web" }).update({ autokill: null });   // remove it
+await ukc.instances.get({ name: "web" }).update({ autokill: null }); // remove it
 await ukc.volumes.get({ name: "data" }).update({ size_mb: 2048 });
 await ukc.services.get({ name: "web" }).update({ soft_limit: 5, hard_limit: 20 });
 ```
@@ -300,7 +301,9 @@ When `set` is not what you mean — merging into a property, or removing individ
 members — stage the operations with `edit()` and send them as one request:
 
 ```ts
-await ukc.instances.get({ name: "web" }).edit()
+await ukc.instances
+  .get({ name: "web" })
+  .edit()
   .set({ memory_mb: 512 })
   .add({ env: { LOG_LEVEL: "debug" }, tags: ["prod"] })
   .del({ env: ["OLD_FLAG"], tags: ["staging"] })
@@ -313,8 +316,9 @@ await ukc.services.edit({ name: "web" }).del({ domains: null }).apply();
 `apply()` returns a handle like any other operation, so chaining continues:
 
 ```ts
-await ukc.metro("fra").instances
-  .edit({ name: "web" })
+await ukc
+  .metro("fra")
+  .instances.edit({ name: "web" })
   .set({ memory_mb: 1024 })
   .apply()
   .wait({ state: "running" });
@@ -345,13 +349,13 @@ await ukc.instances.stop([{ name: "web" }, { uuid: "550e8400-e29b-41d4-a716-4466
 
 ## Idiomatic methods
 
-| Resource           | Methods                                                                                         |
-| ------------------ | ----------------------------------------------------------------------------------------------- |
+| Resource           | Methods                                                                                                                       |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
 | `ukc.instances`    | `create`, `get`, `each`, `list`, `update`, `edit`, `delete`, `start`, `stop`, `suspend`, `wait`, `metrics`, `history`, `logs` |
-| `ukc.volumes`      | `create`, `get`, `each`, `list`, `update`, `edit`, `delete`, `attach`, `detach`                  |
-| `ukc.services`     | `create`, `get`, `each`, `list`, `update`, `edit`, `delete`                                      |
-| `ukc.certificates` | `create`, `get`, `each`, `list`, `update`, `delete`                                             |
-| `ukc.users`        | `quotas`, `quotasByUuid`                                                                       |
+| `ukc.volumes`      | `create`, `get`, `each`, `list`, `update`, `edit`, `delete`, `attach`, `detach`                                               |
+| `ukc.services`     | `create`, `get`, `each`, `list`, `update`, `edit`, `delete`                                                                   |
+| `ukc.certificates` | `create`, `get`, `each`, `list`, `update`, `delete`                                                                           |
+| `ukc.users`        | `quotas`, `quotasByUuid`                                                                                                      |
 
 Handles add the per-resource operations: `refresh`, `start`, `stop`, `suspend`,
 `delete`, `update`, `edit`, `wait`, `logs`, `metrics`, `history` on an instance;
@@ -387,11 +391,11 @@ try {
 
 `err.kind` says which layer failed:
 
-| `kind`      | Meaning                                                                                                              |
-| ----------- | -------------------------------------------------------------------------------------------------------------------- |
+| `kind`      | Meaning                                                                                                               |
+| ----------- | --------------------------------------------------------------------------------------------------------------------- |
 | `"http"`    | The server answered with a non-2xx status. `err.status` and `err.errors` carry the detail.                            |
 | `"network"` | The request never got an answer: a refused connection, a reset, a DNS miss, an unreachable proxy.                     |
-| `"parse"`   | The server answered, but the body is not the JSON the operation expects.                                             |
+| `"parse"`   | The server answered, but the body is not the JSON the operation expects.                                              |
 | `"fanout"`  | A multi-metro operation that partly failed, or an unusable scope — see `MetroFanoutError` above.                      |
 | `"config"`  | The call could never be sent as configured: a missing token, or two options that contradict each other.               |
 | `"timeout"` | A wait ran out of time. It carries no `status`, because no single request failed; the last failure is in `err.cause`. |

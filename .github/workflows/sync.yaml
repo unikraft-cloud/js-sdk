@@ -9,8 +9,8 @@ on:
         default: prod-staging
         type: choice
         options:
-        - prod-stable
-        - prod-staging
+          - prod-stable
+          - prod-staging
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -24,61 +24,61 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      with:
-        ref: ${{ inputs.channel }}
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.channel }}
 
-    - name: Set up Go
-      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-      with:
-        go-version: stable
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
 
-    - name: Set up Node
-      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-      with:
-        node-version: 24
-        cache: npm
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
 
-    - name: Install dependencies
-      run: npm ci
+      - name: Install dependencies
+        run: npm ci
 
-    - name: Generate SDK from the OpenAPI spec
-      run: make generate CHANNEL=${{ inputs.channel }}
+      - name: Generate SDK from the OpenAPI spec
+        run: make generate CHANNEL=${{ inputs.channel }}
 
-    - name: Show diff
-      run: git --no-pager diff --stat
+      - name: Show diff
+        run: git --no-pager diff --stat
 
-    # The release workflow derives the version from the commit history, so a
-    # sync never touches package.json. It only has to decide whether the
-    # regenerated client differs from what is already on the branch.
-    - name: Check for changes
-      id: check
-      run: |
-        if git diff --quiet -- src/api; then
-          echo "changed=false" >> "$GITHUB_OUTPUT"
-          echo "src/api unchanged; no pull request needed."
-        else
-          echo "changed=true" >> "$GITHUB_OUTPUT"
-        fi
+      # The release workflow derives the version from the commit history, so a
+      # sync never touches package.json. It only has to decide whether the
+      # regenerated client differs from what is already on the branch.
+      - name: Check for changes
+        id: check
+        run: |
+          if git diff --quiet -- src/api; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "src/api unchanged; no pull request needed."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
 
-    - name: Create pull request
-      if: steps.check.outputs.changed == 'true'
-      uses: peter-evans/create-pull-request@3ffccacd46053766916f087ce41d627c0b8cf2d1 # v8.1.3
-      with:
-        token: ${{ secrets.GH_PAT }}
-        base: ${{ inputs.channel }}
-        branch: sync/${{ inputs.channel }}
-        commit-message: "chore: Update SDK from OpenAPI spec"
-        title: "chore: Update SDK from OpenAPI spec (${{ inputs.channel }})"
-        body: |
-          Automated regeneration of the plumbing client from the
-          `${{ inputs.channel }}` OpenAPI specification.
+      - name: Create pull request
+        if: steps.check.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@3ffccacd46053766916f087ce41d627c0b8cf2d1 # v8.1.3
+        with:
+          token: ${{ secrets.GH_PAT }}
+          base: ${{ inputs.channel }}
+          branch: sync/${{ inputs.channel }}
+          commit-message: "chore: Update SDK from OpenAPI spec"
+          title: "chore: Update SDK from OpenAPI spec (${{ inputs.channel }})"
+          body: |
+            Automated regeneration of the plumbing client from the
+            `${{ inputs.channel }}` OpenAPI specification.
 
-          Merging this pull request publishes a new version. The release
-          workflow derives the number from the commit history.
-        author: Unikraft Bot <monkey@unikraft.io>
-        committer: Unikraft Bot <monkey@unikraft.io>
-        signoff: true
-        add-paths: |
-          src/api
+            Merging this pull request publishes a new version. The release
+            workflow derives the number from the commit history.
+          author: Unikraft Bot <monkey@unikraft.io>
+          committer: Unikraft Bot <monkey@unikraft.io>
+          signoff: true
+          add-paths: |
+            src/api

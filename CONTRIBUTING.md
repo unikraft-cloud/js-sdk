@@ -51,7 +51,7 @@ until someone wraps it. Wrap only where it improves the developer experience.
 
 When adding a porcelain method, keep the metro rules in `src/core/resource.ts`.
 Reads fan out across the scope and tag results with `metro`. A name only
-identifies a resource *within* a metro, so a ref may match in several: use
+identifies a resource _within_ a metro, so a ref may match in several: use
 `locate()` when the operation acts on one (it throws `AmbiguousRefError`, with
 the matches attached, rather than guessing), `locateAll()` when it acts on all of
 them (`each()`, bulk ops), and `oneEndpoint()` for creation. Refs reaching the
