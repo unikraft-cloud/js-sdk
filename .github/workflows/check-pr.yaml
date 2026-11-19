@@ -3,13 +3,13 @@ name: check/pr
 on:
   pull_request:
     types:
-    - opened
-    - synchronize
-    - reopened
-    - edited
+      - opened
+      - synchronize
+      - reopened
+      - edited
     branches:
-    - prod-staging
-    - prod-stable
+      - prod-staging
+      - prod-stable
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -22,71 +22,74 @@ jobs:
   pr:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
-    - name: Run check-pr
-      uses: unikraft-cloud/x/.github/actions/check-pr@prod-staging
+      - name: Run check-pr
+        uses: unikraft-cloud/x/.github/actions/check-pr@prod-staging
 
   # Biome and tsc are runtime-independent, so these two run on one Node only.
   lint:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-    - name: Set up Node
-      uses: actions/setup-node@v4
-      with:
-        node-version: 24
-        cache: npm
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
 
-    - name: Install dependencies
-      run: npm ci
+      - name: Install dependencies
+        run: npm ci
 
-    - name: Lint
-      run: npm run lint
+      - name: Lint
+        run: npm run lint
 
   typecheck:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-    - name: Set up Node
-      uses: actions/setup-node@v4
-      with:
-        node-version: 24
-        cache: npm
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
 
-    - name: Install dependencies
-      run: npm ci
+      - name: Install dependencies
+        run: npm ci
 
-    - name: Type-check
-      run: npm run typecheck
+      - name: Type-check
+        run: npm run typecheck
 
-  # The test suite and the build cover every supported runtime.
+  # The test suite and the build cover every supported runtime. The transport
+  # depends on how undici behaves on each Node major, so the tests run on the
+  # oldest supported Node too.
   test:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         node-version:
-        - 22
-        - 24
+          - "22.19"
+          - 24
+          - 26
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-    - name: Set up Node
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ matrix.node-version }}
-        cache: npm
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
 
-    - name: Install dependencies
-      run: npm ci
+      - name: Install dependencies
+        run: npm ci
 
-    - name: Test
-      run: npm run test
+      - name: Test
+        run: npm run test
 
   build:
     runs-on: ubuntu-latest
@@ -94,22 +97,22 @@ jobs:
       fail-fast: false
       matrix:
         node-version:
-        - "22.12"
-        - 24
+          - "22.19"
+          - 24
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-    - name: Set up Node
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ matrix.node-version }}
-        cache: npm
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
 
-    - name: Install dependencies
-      run: npm ci
+      - name: Install dependencies
+        run: npm ci
 
-    - name: Build
-      run: npm run build
+      - name: Build
+        run: npm run build
 
-    - name: Check the published entry points
-      run: npm run check:package
+      - name: Check the published entry points
+        run: npm run check:package

@@ -2,12 +2,16 @@
 // Copyright (c) 2026, Unikraft GmbH.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as controlPlaneClients from "../src/api/controlplane/index.gen.js";
+import * as platformClients from "../src/api/platform/index.gen.js";
 import {
   AmbiguousRefError,
+  ControlPlaneApi,
   collect,
   type FetchLike,
   MetroFanoutError,
   metroBaseUrl,
+  PlatformApi,
   pluginBaseUrl,
   toQuery,
   UnikraftCloud,
@@ -389,6 +393,22 @@ describe("the two layers", () => {
     expect(res.op_time_us).toBe(1);
     expect(res.data?.instances).toEqual([{ uuid: "u1" }]);
     expect(calls[0]?.url).toContain("https://api.fra.unikraft.cloud/v1/instances?");
+  });
+
+  // The sync workflow adds each new generated client to the barrel, but the
+  // container that groups them is written by hand, so a new resource can ship
+  // exported and still unreachable from `ukc.api`.
+  it.each([
+    ["platform", PlatformApi, platformClients],
+    ["control-plane", ControlPlaneApi, controlPlaneClients],
+  ] as const)("wires every generated %s client into its container", (_, Container, clients) => {
+    const wired = Object.values(new Container({ baseUrl: "https://example.test" }));
+    const missing = Object.values(clients)
+      .filter((value) => typeof value === "function")
+      .filter((Client) => !wired.some((instance) => instance instanceof Client))
+      .map((Client) => Client.name);
+
+    expect(missing).toEqual([]);
   });
 
   it("keeps a per-resource escape hatch on the idiomatic client", async () => {

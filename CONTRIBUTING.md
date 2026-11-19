@@ -51,7 +51,7 @@ until someone wraps it. Wrap only where it improves the developer experience.
 
 When adding a porcelain method, keep the metro rules in `src/core/resource.ts`.
 Reads fan out across the scope and tag results with `metro`. A name only
-identifies a resource *within* a metro, so a ref may match in several: use
+identifies a resource _within_ a metro, so a ref may match in several: use
 `locate()` when the operation acts on one (it throws `AmbiguousRefError`, with
 the matches attached, rather than guessing), `locateAll()` when it acts on all of
 them (`each()`, bulk ops), and `oneEndpoint()` for creation. Refs reaching the
@@ -202,8 +202,9 @@ the same code.
 
 - Formatting and linting are enforced by [Biome](https://biomejs.dev)
   (`npm run lint`). Run `npx biome check --write .` to fix.
-- Keep runtime dependencies at zero: rely on the platform `fetch` and standard
-  Web/Node APIs. The one exception is the generated plugin plumbing packages
+- Add no runtime dependency: rely on the platform `fetch` and the standard
+  Web and Node APIs. The two exceptions are `undici`, which carries the
+  transport on Node, and the generated plugin plumbing packages
   (`@unikraft/cloud-plugin-<name>-api`), which the porcelain wraps.
 - Add a test in `test/` for new idiomatic behaviour.
 

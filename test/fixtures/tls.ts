@@ -1,0 +1,25 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026, Unikraft GmbH.
+//
+// A self-signed certificate for api.metro.test, for a local HTTPS server in
+// the tests. The key protects nothing.
+
+export const key = `-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgjKn5gmw0A6mwMvYy
+i56CugZOUf4hZKKuZ62N2ZKvyqChRANCAAQGEn3XYP5vpukJ+eanJaSknLYnMaO3
+RhE+WK2OK3eyFTikKQINbwcDsOdzkHtfSFWmP4pYgNcEaBEcn/95k7E+
+-----END PRIVATE KEY-----
+`;
+
+export const cert = `-----BEGIN CERTIFICATE-----
+MIIBpDCCAUqgAwIBAgIUEv/+isG+duwQrZIAP0Xn9pSYssUwCgYIKoZIzj0EAwIw
+GTEXMBUGA1UEAwwOYXBpLm1ldHJvLnRlc3QwIBcNMjYxMDI3MTY1NzI0WhgPMjEy
+NjEwMDMxNjU3MjRaMBkxFzAVBgNVBAMMDmFwaS5tZXRyby50ZXN0MFkwEwYHKoZI
+zj0CAQYIKoZIzj0DAQcDQgAEBhJ912D+b6bpCfnmpyWkpJy2JzGjt0YRPlitjit3
+shU4pCkCDW8HA7Dnc5B7X0hVpj+KWIDXBGgRHJ//eZOxPqNuMGwwHQYDVR0OBBYE
+FL3CfURll831pyAsyw3uwOUIBeUkMB8GA1UdIwQYMBaAFL3CfURll831pyAsyw3u
+wOUIBeUkMA8GA1UdEwEB/wQFMAMBAf8wGQYDVR0RBBIwEIIOYXBpLm1ldHJvLnRl
+c3QwCgYIKoZIzj0EAwIDSAAwRQIhAPLCDdi+yCg58yJUaOu1X3eiSySChPi+vRBC
+0D98pl8kAiAdixbUJTtifRbFtqPuiIQd6KsDeQF+gzs9NJWLG54FLA==
+-----END CERTIFICATE-----
+`;

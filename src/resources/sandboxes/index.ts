@@ -10,6 +10,7 @@ export { Command } from "./command.js";
 export {
   DEFAULT_AUTOKILL_MS,
   DEFAULT_BOOT_TIMEOUT_S,
+  DEFAULT_PLUGIN_IMAGE,
   DEFAULT_PLUGIN_NAME,
   DEFAULT_PLUGIN_ROM,
 } from "./options.js";

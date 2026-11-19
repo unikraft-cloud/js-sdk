@@ -22,19 +22,19 @@ const METRO = "http://api.ukp-staging.apw.unikraft.internal";
 const IMAGE = "debian-slim:latest";
 
 /**
- * The sandbox plugin ROM the live suite attaches, which is deliberately not
- * the SDK's `DEFAULT_PLUGIN_ROM`. That default names the `:latest` tag, which
+ * The sandbox plugin image the live suite attaches, which is deliberately not
+ * the SDK's `DEFAULT_PLUGIN_IMAGE`. That default names the `:latest` tag, which
  * is not published yet, so a sandbox created without this pin never boots its
  * plugin. Drop this pin once `:latest` exists.
  */
-const ROM = "plugins/sandbox:staging";
+const PLUGIN_IMAGE = "plugins/sandbox:staging";
 
 /** What one live sandbox needs. */
 export interface LiveConfig {
   token: string;
   metro: string;
   image: string;
-  rom: string;
+  pluginImage: string;
 }
 
 /** A variable that is set but empty is as absent as one that is unset. */
@@ -61,6 +61,6 @@ export function liveConfig(): LiveConfig {
     token,
     metro: env("UKC_METRO") ?? METRO,
     image: env("UKC_SANDBOX_IMAGE") ?? IMAGE,
-    rom: env("UKC_SANDBOX_ROM") ?? ROM,
+    pluginImage: env("UKC_SANDBOX_PLUGIN_IMAGE") ?? PLUGIN_IMAGE,
   };
 }

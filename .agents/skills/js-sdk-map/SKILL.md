@@ -1,4 +1,5 @@
 ---
+
 name: js-sdk-map
 description: Maps the repositories and layers behind `@unikraft/cloud`, and says which one owns each decision. Use when editing `src/api` or `templates/`, when a commit type or a version needs choosing, when a porcelain resource wraps a plugin plumbing package, when an install nests a second copy of the SDK or a peer range fails to resolve, when a release or a dist-tag looks wrong, or when the live e2e suite must run.
 ---
@@ -12,13 +13,13 @@ carries only what no file in the repository confesses.
 
 ## Who owns what
 
-| Repository | Owns |
-| --- | --- |
-| `unikraft-cloud/js-sdk` | **This repo.** The transport (`src/core`), the porcelain (`src/resources`), the generated platform plumbing (`src/api`), and the templates that generate it. |
-| `unikraft-cloud/openapi` | The compiled platform specs, one branch per channel. `make generate` reads them. |
-| `unikraft-cloud/plugins` | Each plugin's `api.tsp`, and every publish workflow, including the one that republishes a plugin plumbing package. |
-| `unikraft-cloud/plugin-sdk` | `tsplugingen`, which generates the `@unikraft/cloud-plugin-<name>-api` packages and derives their peer range. |
-| `unikraft-cloud/x` | `tools/openapi-gen`, the template engine behind `make generate`. |
+| Repository                  | Owns                                                                                                                                                         |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `unikraft-cloud/js-sdk`     | **This repo.** The transport (`src/core`), the porcelain (`src/resources`), the generated platform plumbing (`src/api`), and the templates that generate it. |
+| `unikraft-cloud/openapi`    | The compiled platform specs, one branch per channel. `make generate` reads them.                                                                             |
+| `unikraft-cloud/plugins`    | Each plugin's `api.tsp`, and every publish workflow, including the one that republishes a plugin plumbing package.                                           |
+| `unikraft-cloud/plugin-sdk` | `tsplugingen`, which generates the `@unikraft/cloud-plugin-<name>-api` packages and derives their peer range.                                                |
+| `unikraft-cloud/x`          | `tools/openapi-gen`, the template engine behind `make generate`.                                                                                             |
 
 ## Two kinds of plumbing
 

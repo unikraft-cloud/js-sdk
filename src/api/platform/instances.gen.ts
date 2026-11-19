@@ -8,6 +8,58 @@ import type * as models from "./models.gen.js";
  */
 export class InstancesApi extends ApiClient {
   /**
+   * Abort Instance Migration by UUID
+   */
+  abortInstanceMigrationByUuid(
+    uuid: string,
+    params: CallOptions = {},
+  ): Promise<models.AbortInstanceMigrationsResponse> {
+    return this.request<models.AbortInstanceMigrationsResponse>(
+      {
+        method: "PUT",
+        path: `/v1/instances/${uuid}/migrate/abort`,
+      },
+      params,
+    );
+  }
+
+  /**
+   * Abort Instance Migrations
+   */
+  abortInstanceMigrations(
+    params: {
+      body: models.NameOrUUID[];
+    } & CallOptions,
+  ): Promise<models.AbortInstanceMigrationsResponse> {
+    return this.request<models.AbortInstanceMigrationsResponse>(
+      {
+        method: "PUT",
+        path: `/v1/instances/migrate/abort`,
+        body: params.body,
+      },
+      params,
+    );
+  }
+
+  /**
+   * Accept Instance Migrations
+   */
+  acceptInstanceMigrations(
+    params: {
+      body?: models.AcceptInstanceMigrationsRequestItem[];
+    } & CallOptions = {},
+  ): Promise<models.AcceptInstanceMigrationsResponse> {
+    return this.request<models.AcceptInstanceMigrationsResponse>(
+      {
+        method: "PUT",
+        path: `/v1/instances/migrate/accept`,
+        body: params.body,
+      },
+      params,
+    );
+  }
+
+  /**
    * Create Checkpoint Instances
    */
   createCheckpointInstances(
@@ -482,6 +534,43 @@ export class InstancesApi extends ApiClient {
           sortby: params["sortby"],
           tags: params["tags"],
         },
+      },
+      params,
+    );
+  }
+
+  /**
+   * Migrate Instance by UUID
+   */
+  migrateInstanceByUuid(
+    uuid: string,
+    params: {
+      body: models.MigrateInstanceByUUIDRequestBody;
+    } & CallOptions,
+  ): Promise<models.MigrateInstancesResponse> {
+    return this.request<models.MigrateInstancesResponse>(
+      {
+        method: "PUT",
+        path: `/v1/instances/${uuid}/migrate`,
+        body: params.body,
+      },
+      params,
+    );
+  }
+
+  /**
+   * Migrate Instances
+   */
+  migrateInstances(
+    params: {
+      body: models.MigrateInstancesRequestItem[];
+    } & CallOptions,
+  ): Promise<models.MigrateInstancesResponse> {
+    return this.request<models.MigrateInstancesResponse>(
+      {
+        method: "PUT",
+        path: `/v1/instances/migrate`,
+        body: params.body,
       },
       params,
     );

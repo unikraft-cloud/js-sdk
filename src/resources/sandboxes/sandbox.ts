@@ -11,7 +11,8 @@
 // `Sandboxes`, which runs through one you already have. They call each other,
 // so they share a module rather than a cycle.
 
-import { SandboxPluginApi } from "@unikraft/cloud-plugin-sandbox-api";
+import { SandboxPluginApi, type models as sandboxModels } from "@unikraft/cloud-plugin-sandbox-api";
+import { decodeText } from "../../core/base64.js";
 import { readEnv } from "../../core/env.js";
 import { ApiClient, type CallOptions, UnikraftCloudError } from "../../core/http.js";
 import type { Metro, MetroEndpoint, MetroScope } from "../../core/metro.js";
@@ -40,8 +41,10 @@ import {
   DEFAULT_MEMORY_MB,
   DEFAULT_PLUGIN_NAME,
   encodeFileData,
+  MAX_WAIT_SLICE_S,
   MISSING_TOKEN,
   pluginsFromSnapshot,
+  secondsUntil,
   started,
   withoutClientConfig,
   withSandboxPlugin,
@@ -151,8 +154,8 @@ export class Sandbox implements AsyncDisposable {
    *
    * A `template`, a `branch_from` source, or a `checkpoint` replaces the image.
    * The snapshot carries the image, the memory and the plugins of its source,
-   * so the sandbox plugin comes with it: leave `rom` out, and pass `pluginName`
-   * only when the source attached the plugin under another name.
+   * so the sandbox plugin comes with it: leave `pluginImage` out, and pass
+   * `pluginName` only when the source attached the plugin under another name.
    *
    * The sandbox goes to one metro: `metro`, or `metros` naming a single one, or
    * `UKC_METRO`, or the default. Name a full `http(s)://` URL as the `metro` to
@@ -274,11 +277,9 @@ export class Sandbox implements AsyncDisposable {
           ? `the instance is running but carries no plugin at all, so nothing answers at \`${this.pluginName}\`. A plugin is attached when the instance is created, which \`sandboxes.create()\` does for you`
           : `the instance is running but carries no plugin named \`${this.pluginName}\`, only ${names.join(", ")}. Pass the name it does carry as \`pluginName\``;
       }
-      const rom =
-        plugin === undefined
-          ? ""
-          : ` and that its ROM (\`${plugin.rom}\`) is a sandbox plugin image`;
-      return `the instance is running, so it is the sandbox plugin that did not answer. Read the instance's console log (\`sandbox.instance.logs()\`), which carries the plugin's own output${rom}`;
+      const pluginImage =
+        plugin === undefined ? "" : ` and that its image (\`${plugin.image}\`) is a sandbox plugin`;
+      return `the instance is running, so it is the sandbox plugin that did not answer. Read the instance's console log (\`sandbox.instance.logs()\`), which carries the plugin's own output${pluginImage}`;
     }
 
     // The platform wakes a sleeping instance to serve a plugin request, so
@@ -303,27 +304,40 @@ export class Sandbox implements AsyncDisposable {
     // An instance that never ran is a different failure from one that ran and
     // exited, and it wants different advice: its console log is empty, so
     // pointing at the log sends the caller to look at nothing. An image or a
-    // plugin ROM that could not be pulled lands here, such as a private image
-    // or a typo in a ROM name.
+    // plugin image that could not be pulled lands here, such as a private image
+    // or a typo in an image name.
     if (!started(instance)) {
-      const roms = [
+      const images = [
         `\`${instance.image}\``,
-        ...(plugin === undefined ? [] : [`\`${plugin.rom}\``]),
+        ...(plugin === undefined ? [] : [`\`${plugin.image}\``]),
       ];
-      return `${state} and never started, so nothing inside it has run yet. The usual cause is an image the platform could not fetch or boot: check that ${roms.join(" or ")} ${roms.length > 1 ? "both exist" : "exists"}, that the name is spelled as the registry has it, and that this account can read ${roms.length > 1 ? "them" : "it"}`;
+      return `${state} and never started, so nothing inside it has run yet. The usual cause is an image the platform could not fetch or boot: check that ${images.join(" or ")} ${images.length > 1 ? "both exist" : "exists"}, that the name is spelled as the registry has it, and that this account can read ${images.length > 1 ? "them" : "it"}`;
     }
 
     return `${state}${exit}, and the sandbox plugin runs inside the instance, so nothing answers while the instance is down. Start it again (\`sandbox.instance.start()\`) and read the console log (\`sandbox.instance.logs()\`); a base image whose main process exits immediately stops the instance with it`;
   }
 
   /**
-   * Run a command, wait for it to exit, and return its output. Five requests
-   * over four round trips: start, wait, then the exit code and the logs
-   * together, then delete the record.
+   * Run a command, wait for it to exit, and return its output. One request for
+   * a command that exits within {@link MAX_WAIT_SLICE_S} seconds: the start
+   * request holds the plugin until the command exits, carries its exit code
+   * and output back, and forgets the record. A longer command continues in
+   * {@link Command.wait}, then costs the exit code and the logs together, and
+   * the delete.
    *
    * A `timeoutSeconds` that runs out is not an error: you get the output so far
    * and `exitcode: null`, and the command is left running and addressable as
    * `sandbox.command(uuid)`.
+   *
+   * The command gets no standard input: a read gets end of file at once,
+   * because nothing can write to it before `exec` returns. To feed input to a
+   * command, use {@link Sandbox.start} and {@link Command.stdin}.
+   *
+   * A sandbox plugin from before `req_timeout_s` ignores it and `stdin_eof`,
+   * and starts the command at once. `exec` then waits, and reads the exit code
+   * and the logs, as five requests. Standard input stays open there, so a
+   * command that reads it does not exit, and `exec` returns only when
+   * `timeoutSeconds` runs out.
    *
    * @example
    * const { stdout, exitcode } = await sandbox.exec("echo hello");
@@ -332,14 +346,41 @@ export class Sandbox implements AsyncDisposable {
   async exec(cmd: string, opts: ExecOptions = {}): Promise<ExecResult> {
     const { keep, timeoutSeconds, cwd, env, ...rest } = opts;
     const call = callOptions(rest);
-
-    const command = await this.start(cmd, {
+    const deadline = timeoutSeconds === undefined ? undefined : Date.now() + timeoutSeconds * 1000;
+    const request: sandboxModels.RunCommandRequest = {
+      cmd,
       ...(cwd === undefined ? {} : { cwd }),
       ...(env === undefined ? {} : { env }),
-      ...call,
-    });
+      // The plugin closes standard input by default only on a start that holds
+      // the request. The plain start, which `timeoutSeconds: 0` takes, needs
+      // the flag too.
+      stdin_eof: true,
+    };
+
+    const started = await this.#startBlocking(request, deadline, keep ?? false, call);
+
+    // The one-request path answered. The record is already forgotten when the
+    // command exited, and a timeout that is also the caller's deadline leaves
+    // nothing more to ask.
+    if (started?.logs !== undefined) {
+      const timedOut = started.exitcode === null;
+      if (!timedOut || (deadline !== undefined && secondsUntil(deadline) <= 0)) {
+        return {
+          uuid: started.uuid,
+          stdout: decodeText(started.logs.stdout),
+          stderr: decodeText(started.logs.stderr),
+          exitcode: started.exitcode,
+        };
+      }
+    }
+
+    const command =
+      started === undefined
+        ? await this.#startPlain(request, call)
+        : new Command(this, started.uuid);
+
     await command.wait({
-      ...(timeoutSeconds === undefined ? {} : { timeoutSeconds }),
+      ...(deadline === undefined ? {} : { timeoutSeconds: secondsUntil(deadline) }),
       ...call,
     });
     // Two reads of unrelated state, so they go together: one round trip
@@ -357,6 +398,57 @@ export class Sandbox implements AsyncDisposable {
   }
 
   /**
+   * Start a command and hold the request until it exits or the first wait slice
+   * ends. The slice is the caller's whole timeout when that is shorter. A
+   * deadline that has already passed sends nothing and reports no start, so the
+   * plain path polls once, as `timeoutSeconds: 0` asks.
+   */
+  async #startBlocking(
+    request: sandboxModels.RunCommandRequest,
+    deadline: number | undefined,
+    keep: boolean,
+    call: CallOptions,
+  ): Promise<sandboxModels.RunCommandData | undefined> {
+    const slice =
+      deadline === undefined
+        ? MAX_WAIT_SLICE_S
+        : Math.min(MAX_WAIT_SLICE_S, secondsUntil(deadline));
+    if (slice <= 0) return undefined;
+    return this.#run(
+      {
+        ...request,
+        req_timeout_s: slice,
+        // `forget` deletes the record when the command exits within the slice,
+        // and does nothing on a timeout, where the record is still needed.
+        ...(keep ? {} : { forget: true }),
+      },
+      call,
+    );
+  }
+
+  /** Start a command and return at once, as a `Command`. */
+  async #startPlain(request: sandboxModels.RunCommandRequest, call: CallOptions): Promise<Command> {
+    const { uuid } = await this.#run(request, call);
+    return new Command(this, uuid);
+  }
+
+  /** Send one start request, and refuse an answer that names no command. */
+  async #run(
+    request: sandboxModels.RunCommandRequest,
+    call: CallOptions,
+  ): Promise<sandboxModels.RunCommandData> {
+    const res = await this.api.commands.runCommand({ body: request, ...call });
+    const data = unwrap(res);
+    if (data?.uuid === undefined) {
+      throw new UnikraftCloudError("The sandbox started a command but reported no UUID for it.", {
+        kind: "http",
+        body: res,
+      });
+    }
+    return data;
+  }
+
+  /**
    * Start a command and return immediately, without waiting for it to exit.
    *
    * @example
@@ -365,22 +457,14 @@ export class Sandbox implements AsyncDisposable {
    */
   async start(cmd: string, opts: StartCommandOptions = {}): Promise<Command> {
     const { cwd, env, ...rest } = opts;
-    const res = await this.api.commands.runCommand({
-      body: {
+    return this.#startPlain(
+      {
         cmd,
         ...(cwd === undefined ? {} : { cwd }),
         ...(env === undefined ? {} : { env }),
       },
-      ...callOptions(rest),
-    });
-    const uuid = unwrap(res)?.uuid;
-    if (uuid === undefined) {
-      throw new UnikraftCloudError("The sandbox started a command but reported no UUID for it.", {
-        kind: "http",
-        body: res,
-      });
-    }
-    return new Command(this, uuid);
+      callOptions(rest),
+    );
   }
 
   /** Every command the sandbox knows about, in the order they were started. */
@@ -531,8 +615,18 @@ export class Sandboxes {
   async create(spec: SandboxSpec = {}, opts: CreateSandboxOptions = {}): Promise<Sandbox> {
     assertNoClientConfig(opts, "`sandboxes.create()`");
     assertSandboxSpec(spec);
-    const { rom, pluginName: named, image: namedImage, ...instanceSpec } = spec;
+    const {
+      rom,
+      pluginImage: namedPluginImage,
+      pluginName: named,
+      image: namedImage,
+      ...instanceSpec
+    } = spec;
     const pluginName = named ?? DEFAULT_PLUGIN_NAME;
+    // `rom` is the former name of `pluginImage`, and `assertSandboxSpec` has
+    // already refused a spec that carries both.
+    const pluginImage = namedPluginImage ?? rom;
+    const pluginImageKey = namedPluginImage === undefined ? "rom" : "pluginImage";
     // `template`, `branch_from` and `checkpoint` create from a snapshot, which
     // carries the image, the memory and the plugins of its source. The platform
     // answers 400 to `memory_mb` next to one, and refuses a second entry for a
@@ -550,8 +644,8 @@ export class Sandboxes {
       ? instanceSpec.memory_mb
       : (instanceSpec.memory_mb ?? DEFAULT_MEMORY_MB);
     const plugins = fromSnapshot
-      ? pluginsFromSnapshot(instanceSpec.plugins, pluginName, rom)
-      : withSandboxPlugin(instanceSpec.plugins, pluginName, rom);
+      ? pluginsFromSnapshot(instanceSpec.plugins, pluginName, pluginImage, pluginImageKey)
+      : withSandboxPlugin(instanceSpec.plugins, pluginName, pluginImage, pluginImageKey);
 
     const call = callOptions(opts);
     const instance = await this.#createInstance(
