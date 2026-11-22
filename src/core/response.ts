@@ -104,7 +104,8 @@ export function unwrap<T>(res: Envelope<T>): T {
 /**
  * Unwrap an envelope and return the first element of one of its list fields,
  * throwing a descriptive error if the list is empty. Most single-resource
- * operations return the resource inside a singleton array.
+ * operations return the resource inside a singleton array. An element that
+ * reports its own failure throws too, whatever the envelope's status is.
  */
 export function unwrapFirst<T, K extends keyof T>(
   res: Envelope<T>,
@@ -116,6 +117,24 @@ export function unwrapFirst<T, K extends keyof T>(
   const first = list?.[0];
   if (first === undefined) {
     throw new UnikraftCloudError(`${what} not found`, { kind: "http", status: 404, body: res });
+  }
+  // The caller asked for one resource, so a failed entry is the answer even
+  // when the envelope says "success". A create that waits for `running` and
+  // sees the instance stop marks only its entry, with no message.
+  if (isFailure(first)) {
+    const { uuid, state } = first as ResultEntry & { uuid?: string; state?: string };
+    const code = first.error;
+    throw new UnikraftCloudError(
+      first.message ??
+        `The platform reported an error for ${what}${uuid === undefined ? "" : ` ${uuid}`}${
+          state === undefined ? "" : `, which is "${state}"`
+        }`,
+      {
+        kind: "http",
+        status: code === undefined ? undefined : ENTRY_ERROR_STATUS.get(code),
+        body: res,
+      },
+    );
   }
   return first as never;
 }
