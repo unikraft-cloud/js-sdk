@@ -7,5 +7,5 @@
     "rootDir": "./src"
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["src/**/*.test.ts", "**/*.test.ts", "test/**"]
+  "exclude": ["src/**/*.test.ts", "**/*.test.ts", "test/**", "src/core/h2-worker-thread.ts"]
 }

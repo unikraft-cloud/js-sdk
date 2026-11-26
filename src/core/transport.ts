@@ -39,7 +39,7 @@ export interface TransportDeps {
   importUndici?: () => Promise<unknown>;
   /** Resolves a host on a cache miss. Defaults to `dns.promises.lookup`. */
   resolve?: Resolver;
-  direct?: Omit<DirectOptions, "cache">;
+  direct?: Omit<DirectOptions, "cache" | "onProtocol">;
 }
 
 /** One address of a host, as `dns.lookup` reports it. */

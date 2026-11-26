@@ -3,217 +3,40 @@
 
 import type { Worker } from "node:worker_threads";
 import {
-  CONNECT_TIMEOUT_MS,
   type DirectInit,
   type DirectOptions,
   type DirectResponse,
   type DirectSender,
-  IDLE_TIMEOUT_MS,
-  requestHeaders,
-  STALL_TIMEOUT_MS,
   splitUrl,
   toResponse,
 } from "./h2.js";
+import { WORKER_SOURCE } from "./h2-worker-source.js";
 import type { CachedLookup } from "./transport.js";
 
-type ToWorker =
+export type ToWorker =
   | { t: "addr"; address?: string; family?: number }
-  | { t: "req"; id: number; h: Record<string, string>; b?: string }
+  | {
+      t: "req";
+      id: number;
+      path: string;
+      method: string;
+      headers: Record<string, string>;
+      body?: string;
+      cancellable?: boolean;
+    }
   | { t: "cancel"; id: number };
 
-type FromWorker =
+export type FromWorker =
   | { t: "up" }
   | { t: "http1" }
   | { t: "forget" }
-  | { t: "res"; id: number; s: number; b: ArrayBuffer }
-  | { t: "err"; id: number; m: string; c?: string; http1?: boolean };
+  | { t: "not-sent"; id: number }
+  | { t: "res"; id: number; status: number; body: ArrayBuffer }
+  | { t: "err"; id: number; message: string; code?: string };
 
-interface WorkerConfig {
+export interface WorkerConfig extends Omit<DirectOptions, "cache" | "onProtocol"> {
   origin: string;
-  host: string;
-  port: number;
-  connectTimeoutMs: number;
-  stallTimeoutMs: number;
-  idleTimeoutMs: number;
 }
-
-// The worker runs from this source with `eval: true`, not from a file. A file
-// next to this module is missing when a bundler packs the SDK, and has the
-// wrong extension when the SDK runs from its TypeScript sources. The worker
-// gets no `execArgv`, so it does not load a loader of the parent, for example
-// tsx, a second time.
-const WORKER_SOURCE = `
-const { parentPort, workerData } = require("node:worker_threads");
-const http2 = require("node:http2");
-const tls = require("node:tls");
-const net = require("node:net");
-const dns = require("node:dns");
-const { NGHTTP2_CANCEL, NGHTTP2_NO_ERROR, NGHTTP2_REFUSED_STREAM } = http2.constants;
-const { origin, host, port, connectTimeoutMs, stallTimeoutMs, idleTimeoutMs } = workerData;
-const MAX_RETRIES = 2;
-const post = (message, transfer) => parentPort.postMessage(message, transfer);
-
-let address;
-let session;
-let tlsTicket;
-let inFlight = 0;
-let http1 = false;
-const streams = new Map();
-
-function lookup(hostname, options, callback) {
-  if (!address) return dns.lookup(hostname, options, callback);
-  if (options.all) callback(null, [address]);
-  else callback(null, address.address, address.family);
-}
-
-function timeoutError(message) {
-  return Object.assign(new Error(message), { code: "ETIMEDOUT" });
-}
-
-function sessionError(error) {
-  return error && error.code === "ERR_HTTP2_STREAM_CANCEL" && error.cause instanceof Error
-    ? error.cause
-    : error;
-}
-
-function connect() {
-  let connected = false;
-  let socket;
-  const s = http2.connect(origin, {
-    createConnection: () => {
-      socket = tls.connect({
-        host,
-        port,
-        ALPNProtocols: ["h2", "http/1.1"],
-        ...(net.isIP(host) === 0 ? { servername: host } : {}),
-        lookup,
-        ...(tlsTicket ? { session: tlsTicket } : {}),
-      });
-      socket.on("session", (ticket) => { tlsTicket = ticket; });
-      socket.once("error", (error) => { if (!connected) failedConnect(error); });
-      return socket;
-    },
-  });
-  const drop = () => { if (session === s) session = undefined; };
-  const failedConnect = (error) => {
-    drop();
-    if (error && error.code === "ERR_SSL_TLSV1_ALERT_NO_APPLICATION_PROTOCOL") {
-      http1 = true;
-      post({ t: "http1" });
-    } else {
-      address = undefined;
-      post({ t: "forget" });
-    }
-  };
-  const timer = setTimeout(() => {
-    const error = timeoutError("The connection to " + origin + " did not open in " + connectTimeoutMs + " ms.");
-    failedConnect(error);
-    // destroy() on a session that still connects leaves its socket alone.
-    if (socket) socket.destroy(error);
-    s.destroy(error);
-  }, connectTimeoutMs);
-  s.once("connect", () => {
-    clearTimeout(timer);
-    connected = true;
-    if (s.alpnProtocol !== "h2") {
-      http1 = true;
-      post({ t: "http1" });
-      s.destroy();
-      return;
-    }
-    post({ t: "up" });
-  });
-  s.on("error", () => { clearTimeout(timer); drop(); });
-  s.on("close", () => { clearTimeout(timer); drop(); });
-  s.on("goaway", drop);
-  const onIdle = () => {
-    if (inFlight === 0) s.close();
-    else s.setTimeout(idleTimeoutMs, onIdle);
-  };
-  s.setTimeout(idleTimeoutMs, onIdle);
-  session = s;
-  return s;
-}
-
-function retry(s, retries) {
-  if (s.closed || s.destroyed) {
-    return retries.closed < MAX_RETRIES ? { refused: retries.refused, closed: retries.closed + 1 } : undefined;
-  }
-  return retries.refused < MAX_RETRIES ? { refused: retries.refused + 1, closed: retries.closed } : undefined;
-}
-
-function attempt(id, headers, body, retries) {
-  if (http1) {
-    post({ t: "err", id, m: origin + " does not answer HTTP/2.", http1: true });
-    return;
-  }
-  const s = session && !session.closed && !session.destroyed ? session : connect();
-  let stream;
-  try {
-    stream = s.request(headers, { endStream: body === undefined });
-  } catch (error) {
-    post({ t: "err", id, m: String(error.message), c: error.code });
-    return;
-  }
-  inFlight++;
-  streams.set(id, stream);
-  const chunks = [];
-  let length = 0;
-  let status = 0;
-  let settled = false;
-  const settle = () => {
-    if (settled) return false;
-    settled = true;
-    inFlight--;
-    if (streams.get(id) === stream) streams.delete(id);
-    return true;
-  };
-  const fail = (error) => {
-    if (!settle()) return;
-    if (http1) post({ t: "err", id, m: origin + " does not answer HTTP/2.", http1: true });
-    else {
-      const next = stream.rstCode === NGHTTP2_REFUSED_STREAM ? retry(s, retries) : undefined;
-      if (next) return attempt(id, headers, body, next);
-      const cause = sessionError(error);
-      post({ t: "err", id, m: String(cause && cause.message), c: cause && cause.code });
-    }
-  };
-  stream.setTimeout(stallTimeoutMs, () => {
-    fail(timeoutError(origin + " sent no data for " + stallTimeoutMs + " ms."));
-    stream.close(NGHTTP2_CANCEL);
-  });
-  stream.on("response", (h) => { status = Number(h[":status"]); });
-  stream.on("data", (chunk) => { chunks.push(chunk); length += chunk.length; });
-  stream.on("end", () => {
-    if (status === 0 || stream.rstCode !== NGHTTP2_NO_ERROR) {
-      return fail(new Error(origin + " closed the stream before its end (code " + stream.rstCode + ")."));
-    }
-    if (!settle()) return;
-    // The chunks can be views of a shared pool, so they go into one buffer of
-    // their own, which the post then transfers without a copy.
-    const out = new ArrayBuffer(length);
-    const view = new Uint8Array(out);
-    let at = 0;
-    for (const chunk of chunks) { view.set(chunk, at); at += chunk.length; }
-    post({ t: "res", id, s: status, b: out }, [out]);
-  });
-  stream.on("error", fail);
-  if (body !== undefined) stream.end(body);
-}
-
-parentPort.on("message", (m) => {
-  if (m.t === "addr") {
-    if (m.address) address = { address: m.address, family: m.family || 4 };
-    if (!session) connect();
-  } else if (m.t === "req") {
-    attempt(m.id, m.h, m.b, { refused: 0, closed: 0 });
-  } else if (m.t === "cancel") {
-    const stream = streams.get(m.id);
-    streams.delete(m.id);
-    if (stream) stream.close(NGHTTP2_CANCEL);
-  }
-});
-`;
 
 interface Pending {
   resolve: (response: DirectResponse | "not-sent") => void;
@@ -227,7 +50,7 @@ interface WorkerEntry {
   pending: Map<number, Pending>;
 }
 
-export interface WorkerSenderOptions extends Omit<DirectOptions, "cache"> {
+export interface WorkerSenderOptions extends Omit<WorkerConfig, "origin"> {
   cache?: CachedLookup;
 }
 
@@ -250,17 +73,17 @@ export function createWorkerSender(
   }
 
   function start(origin: string): WorkerEntry {
-    const { hostname, port } = new URL(origin);
-    const host = hostname.replace(/^\[(.*)\]$/, "$1");
-    const config: WorkerConfig = {
-      origin,
-      host,
-      port: Number(port) || 443,
-      connectTimeoutMs: timeouts.connectTimeoutMs ?? CONNECT_TIMEOUT_MS,
-      stallTimeoutMs: timeouts.stallTimeoutMs ?? STALL_TIMEOUT_MS,
-      idleTimeoutMs: timeouts.idleTimeoutMs ?? IDLE_TIMEOUT_MS,
-    };
-    const worker = new WorkerClass(WORKER_SOURCE, { eval: true, execArgv: [], workerData: config });
+    const host = new URL(origin).hostname.replace(/^\[(.*)\]$/, "$1");
+    // The worker runs from a string with `eval: true`, not from a file. A file
+    // next to this module is missing when a bundler packs the SDK, and has the
+    // wrong extension when the SDK runs from its TypeScript sources. The worker
+    // gets no `execArgv`, so it does not load a loader of the parent, for
+    // example tsx, a second time.
+    const worker = new WorkerClass(WORKER_SOURCE, {
+      eval: true,
+      execArgv: [],
+      workerData: { origin, ...timeouts } satisfies WorkerConfig,
+    });
     const entry: WorkerEntry = { worker, up: false, retired: false, pending: new Map() };
     workers.set(origin, entry);
 
@@ -284,9 +107,9 @@ export function createWorkerSender(
         if (!pending) return;
         entry.pending.delete(m.id);
         if (entry.pending.size === 0) worker.unref();
-        if (m.t === "res") pending.resolve(toResponse(m.s, Buffer.from(m.b)));
-        else if (m.http1) pending.resolve("not-sent");
-        else pending.reject(Object.assign(new Error(m.m), m.c ? { code: m.c } : {}));
+        if (m.t === "res") pending.resolve(toResponse(m.status, Buffer.from(m.body)));
+        else if (m.t === "not-sent") pending.resolve("not-sent");
+        else pending.reject(Object.assign(new Error(m.message), m.code ? { code: m.code } : {}));
       }
     });
     worker.on("error", die);
@@ -349,8 +172,11 @@ export function createWorkerSender(
       entry.worker.postMessage({
         t: "req",
         id,
-        h: requestHeaders(path, init),
-        ...(init.body !== undefined && { b: init.body }),
+        path,
+        method: init.method,
+        headers: init.headers,
+        ...(init.body !== undefined && { body: init.body }),
+        ...(signal && { cancellable: true }),
       } satisfies ToWorker);
     });
   }

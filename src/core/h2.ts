@@ -33,11 +33,12 @@ export interface DirectModules {
 }
 
 export interface DirectOptions {
-  cache?: CachedLookup;
+  cache?: Pick<CachedLookup, "lookup" | "forget">;
   connectTimeoutMs?: number;
   stallTimeoutMs?: number;
   idleTimeoutMs?: number;
   earlyConnectTimeoutMs?: number;
+  onProtocol?: (origin: string, protocol: "h2" | "http/1.1") => void;
 }
 
 export const CONNECT_TIMEOUT_MS = 10_000;
@@ -72,7 +73,7 @@ export function splitUrl(url: string): { origin: string; path: string } {
     : { origin: url.slice(0, slash), path: url.slice(slash) };
 }
 
-export function requestHeaders(path: string, init: DirectInit): Record<string, string> {
+function requestHeaders(path: string, init: DirectInit): Record<string, string> {
   const headers: Record<string, string> = { ":method": init.method, ":path": path };
   for (const name in init.headers) headers[name.toLowerCase()] = init.headers[name] as string;
   if (init.body !== undefined) headers["content-length"] = String(Buffer.byteLength(init.body));
@@ -115,12 +116,17 @@ export function createDirectSender(
     stallTimeoutMs = STALL_TIMEOUT_MS,
     idleTimeoutMs = IDLE_TIMEOUT_MS,
     earlyConnectTimeoutMs = EARLY_CONNECT_TIMEOUT_MS,
+    onProtocol,
   }: DirectOptions = {},
 ): DirectSender {
   const { NGHTTP2_CANCEL, NGHTTP2_NO_ERROR, NGHTTP2_REFUSED_STREAM } = http2.constants;
   const sessions = new Map<string, Entry>();
   const http1Origins = new Set<string>();
   const tlsSessions = new Map<string, Buffer>();
+  const http1Only = (origin: string) => {
+    http1Origins.add(origin);
+    onProtocol?.(origin, "http/1.1");
+  };
 
   const sweepMs = Math.max(5, Math.min(stallTimeoutMs, idleTimeoutMs) / SWEEPS_PER_TIMEOUT);
   const stallSweeps = Math.ceil(stallTimeoutMs / sweepMs);
@@ -178,7 +184,7 @@ export function createDirectSender(
     function failedConnect(error: unknown) {
       drop();
       if ((error as { code?: unknown })?.code === "ERR_SSL_TLSV1_ALERT_NO_APPLICATION_PROTOCOL") {
-        http1Origins.add(origin);
+        http1Only(origin);
       } else {
         cache?.forget(host);
       }
@@ -216,8 +222,10 @@ export function createDirectSender(
     session.once("connect", () => {
       clearTimeout(timer);
       connected = true;
-      if (session.alpnProtocol !== "h2") {
-        http1Origins.add(origin);
+      if (session.alpnProtocol === "h2") {
+        onProtocol?.(origin, "h2");
+      } else {
+        http1Only(origin);
         session.destroy();
       }
     });
