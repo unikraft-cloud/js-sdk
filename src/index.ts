@@ -27,14 +27,7 @@ const USER_AGENT = "@unikraft/cloud";
 export interface UnikraftCloudConfig
   extends Pick<
     ApiClientConfig,
-    | "fetch"
-    | "proxyFromEnv"
-    | "dnsCache"
-    | "http2"
-    | "maxConnections"
-    | "http2Direct"
-    | "maxCreatesPerMs"
-    | "http2Worker"
+    "fetch" | "proxyFromEnv" | "http2Direct" | "maxCreatesPerMs" | "http2Worker"
   > {
   /**
    * Bearer token used for authentication. Falls back to the `UKC_TOKEN`
@@ -63,16 +56,14 @@ export interface UnikraftCloudConfig
   /** Override the default User-Agent. */
   userAgent?: string;
   /**
-   * Prepare the connection to the API host of a metro when the client for it
-   * is made, not at its first request: when this constructor names one metro
-   * (`metro`, `baseUrl` or `UKC_METRO`), and in {@link UnikraftCloud.metro}.
-   * With `http2Direct` on Node, the SDK opens the HTTP/2 session, with its TLS
-   * handshake. Otherwise it only starts the DNS lookup of the host. This
+   * With `http2Direct`, open the HTTP/2 session to the API host of a metro
+   * when the client for it is made, not at its first request: when this
+   * constructor names one metro (`metro`, `baseUrl` or `UKC_METRO`), and in
+   * {@link UnikraftCloud.metro}. Does nothing without `http2Direct`. This
    * never throws: if the connection fails, the first request opens a new one.
-   * An open connection does not keep the process alive. A TCP connect with no
-   * answer does, so the SDK gives up an early connection that is not up after
-   * 1 s and that no request uses yet. A DNS lookup that has not answered also
-   * keeps the process alive. Defaults to `false`.
+   * An open session does not keep the process alive. A TCP connect with no
+   * answer does, so the SDK gives up an early session that is not up after
+   * 1 s and that no request uses yet. Defaults to `false`.
    */
   preconnect?: boolean;
 }
@@ -149,9 +140,6 @@ function buildSession(config: UnikraftCloudConfig): Session {
     headers: config.headers,
     userAgent: config.userAgent ?? USER_AGENT,
     proxyFromEnv: config.proxyFromEnv,
-    dnsCache: config.dnsCache,
-    http2: config.http2,
-    maxConnections: config.maxConnections,
     http2Direct: config.http2Direct,
     maxCreatesPerMs: config.maxCreatesPerMs,
     http2Worker: config.http2Worker,

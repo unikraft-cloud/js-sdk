@@ -3,9 +3,9 @@
 //
 // The direct HTTP/2 path of `http2Direct`: one `node:http2` session for each
 // origin carries the requests that the SDK reads whole. It skips the request,
-// body and pool objects of undici, which cost the main thread more CPU than the
-// HTTP/2 framing itself. Proxies, `http:` origins, hosts that answer only
-// HTTP/1.1, and event streams stay on undici.
+// response and stream objects of `fetch`, which cost the main thread more CPU
+// than the HTTP/2 framing itself. Proxies, `http:` origins, hosts that answer
+// only HTTP/1.1, and event streams stay on `fetch`.
 
 import type { ClientHttp2Session, ClientHttp2Stream, IncomingHttpHeaders } from "node:http2";
 import type { TLSSocket } from "node:tls";
@@ -71,8 +71,8 @@ export interface DirectOptions {
   openTimeoutMs?: number;
 }
 
-// The same limits as undici's defaults, so the option changes the transport,
-// not how long a request may take.
+// The same limits as the `fetch` of Node, so the option changes the
+// transport, not how long a request may take.
 export const CONNECT_TIMEOUT_MS = 10_000;
 export const ANSWER_TIMEOUT_MS = 300_000;
 export const IDLE_TIMEOUT_MS = 60_000;
@@ -279,7 +279,7 @@ export function createDirectSender(
       if (session.alpnProtocol !== "h2") {
         http1Origins.add(origin);
         // The streams that wait for the session fail with a cancel and were
-        // not sent, so the caller sends them again through undici.
+        // not sent, so the caller sends them again through `fetch`.
         session.destroy();
       }
     });

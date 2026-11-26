@@ -447,79 +447,56 @@ const ukc = new UnikraftCloud({
 The SDK needs Node.js 22.19 or later, and ships only ESM. Node.js can
 `require()` an ESM package, so CommonJS code can load it too.
 
-In browsers and Deno, the SDK uses the global `fetch`. To use a different
-runtime, or to customise the transport, pass your own:
+The SDK uses the global `fetch`. To use a different runtime, or to customise
+the transport, pass your own:
 
 ```ts
 import { UnikraftCloud } from "@unikraft/cloud";
 const ukc = new UnikraftCloud({ token, fetch: myFetch });
 ```
 
-On Node.js, the SDK sends requests through undici and an `Agent` that it
-configures, because the global `fetch` of Node.js takes no such options. It
-uses undici's `request()`, which costs less CPU for each request than `fetch`,
-and uses undici's `fetch` only for an event stream. For a burst of parallel
-requests, that transport:
-
-- Keeps the DNS answer of each API host for 5 minutes. Node.js resolves the
-  host of each new connection with `dns.lookup`, which runs on the libuv thread
-  pool of 4 threads, so without the cache the connections of a burst wait in
-  turn. A failed connection drops the answer. The lookup starts when the SDK
-  sets up the first request, so it runs while the burst sets up the other
-  requests. Set `dnsCache: false` to turn the cache off.
-- Offers HTTP/2 to the API host when you set `http2: true`. A host that
-  answers only HTTP/1.1 stays on HTTP/1.1.
-
-Until the first HTTP/2 connection is up, undici opens one connection per
-request, so a cold burst still does one TLS handshake per request. When the API
-host answers HTTP/2, set `http2: true` and `maxConnections` to make the burst
-share a few connections:
-
-```ts
-const ukc = new UnikraftCloud({ token, http2: true, maxConnections: 8 });
-```
-
-Do not set `maxConnections` for a host that answers only HTTP/1.1: there, a
-limit of 8 lets only 8 requests run at the same time.
+A custom `fetch` turns off `http2Direct` and the proxy from the environment.
 
 ### The direct HTTP/2 path
 
-With `http2Direct: true`, the SDK sends the requests that it reads whole
-through the `node:http2` client of Node.js, not through undici. Each API host
-gets one HTTP/2 session, and each request is one stream on it. A burst of
-requests then costs the main thread less CPU, because the SDK makes no undici
-request, body or pool objects for each request.
+With `http2Direct: true` on Node.js, the SDK sends the requests that it reads
+whole through the `node:http2` client of Node.js, not through `fetch`. Each API
+host gets one HTTP/2 session, and each request is one stream on it. A burst of
+parallel requests then shares one connection, and costs the main thread less
+CPU, because the SDK makes no `Request`, `Response` or stream objects for each
+request.
 
 ```ts
 const ukc = new UnikraftCloud({ token, http2Direct: true });
 ```
 
-The SDK still uses undici for these requests:
+The SDK still uses `fetch` for these requests:
 
 - Requests to a host that answers only HTTP/1.1. The SDK learns this from the
-  TLS handshake, and sends the request through undici.
+  TLS handshake, and sends the request through `fetch`.
 - Requests to a base URL that starts with `http:`.
 - All requests when a proxy variable is set (see below).
 - Event streams.
 
-The direct path has the same limits as undici: a connection must open in 10
-seconds, and a request fails after 300 seconds with no data from the server.
-If the server refuses a request before it processes it, the SDK sends the
-request again, at most two times. If the server closes the session before it
-processes a request, for example when it reloads, the SDK sends the request
-again on a new session, also at most two times. The SDK closes a session that
-carries no request for 60 seconds.
+On the direct path, a connection must open in 10 seconds, and a request fails
+after 300 seconds with no data from the server. If the server refuses a request
+before it processes it, the SDK sends the request again, at most two times. If
+the server closes the session before it processes a request, for example when
+it reloads, the SDK sends the request again on a new session, also at most two
+times. The SDK closes a session that carries no request for 60 seconds.
 
-With the option on, some things differ from undici:
+With the option on, some things differ from `fetch`:
 
 - The `cause` of a network error carries Node.js error codes, for example
   `ERR_HTTP2_STREAM_ERROR` or `ETIMEDOUT`, and not the `UND_ERR_*` codes of
-  undici.
-- A tool that traces requests through the diagnostics channels of undici, for
-  example the undici instrumentation of OpenTelemetry, does not see these
-  requests. Node.js publishes them on its `http2.client.stream.*` channels.
-- `maxConnections` does not apply: one session carries all the requests to a
-  host.
+  `fetch`.
+- A test that replaces `globalThis.fetch` (`vi.stubGlobal`, MSW, nock) does not
+  see these requests. In such a test, leave the option off or pass your mock as
+  `fetch`.
+- A tool that traces the requests of `fetch` through the diagnostics channels
+  of undici, for example the undici instrumentation of OpenTelemetry, does not
+  see these requests. Node.js publishes them on its `http2.client.stream.*`
+  channels.
 
 The SDK does not use the direct path on Bun.
 
@@ -527,24 +504,23 @@ The SDK does not use the direct path on Bun.
 
 By default, the SDK connects to an API host at the first request to it, so the
 first request waits for the DNS lookup, the TCP connection and the TLS
-handshake. With `preconnect: true`, the SDK starts this work when you make the
-client:
+handshake. With `http2Direct` and `preconnect: true`, the SDK opens the HTTP/2
+session when you make the client:
 
 ```ts
 const ukc = new UnikraftCloud({ token, metro: "fra", http2Direct: true, preconnect: true });
 ```
 
-The SDK prepares the connection to the metro that the constructor names
-(`metro`, `baseUrl` or `UKC_METRO`), and to each metro of `ukc.metro()`. With
-`http2Direct`, it opens the HTTP/2 session. Without it, it only starts the DNS
-lookup, because undici opens its connections at the first request.
+The SDK opens the session to the metro that the constructor names (`metro`,
+`baseUrl` or `UKC_METRO`), and to each metro of `ukc.metro()`. Without
+`http2Direct`, the option does nothing, because `fetch` opens its connections
+itself.
 
 The option never throws. If the connection fails, or the server closes it
-before the first request, the first request opens a new one. An open
-connection does not keep the process alive. A TCP connect that has no answer
-does, so the SDK gives up an early connection that is not up after 1 second
-and that no request uses yet. A DNS lookup that has not answered also keeps
-the process alive, until it answers.
+before the first request, the first request opens a new one. An open session
+does not keep the process alive. A TCP connect that has no answer does, so the
+SDK gives up an early session that is not up after 1 second and that no request
+uses yet.
 
 ### The HTTP/2 session in a worker thread
 
@@ -579,21 +555,6 @@ With a limit of 4, a burst of 100 creates leaves over about 25 ms. All the
 clients of the process with the same API host share one pace. Other requests,
 for example a command in a sandbox, do not wait.
 
-### Tests and mocks
-
-On Node.js, the SDK does not send its requests through `globalThis.fetch` or
-the global undici dispatcher. So a mock that replaces `globalThis.fetch`
-(`vi.stubGlobal`, MSW, nock) or an undici `MockAgent` does not see them, and the
-requests go to the real API. In tests, pass your mock as `fetch`, or pass a
-`fetch` that calls the global one when the request goes out:
-
-```ts
-const ukc = new UnikraftCloud({ token, fetch: (url, init) => globalThis.fetch(url, init) });
-```
-
-A custom `fetch` turns off the DNS cache, HTTP/2, `maxConnections`,
-`http2Direct`, and the proxy from the environment.
-
 ## Debugging with a proxy (MITM)
 
 On Node, the client honours the standard proxy environment variables so you can
@@ -602,6 +563,7 @@ route traffic through a man-in-the-middle proxy such as
 change:
 
 ```sh
+npm install undici                 # optional peer dependency, enables proxy support
 export HTTPS_PROXY=http://127.0.0.1:8080
 export NODE_EXTRA_CA_CERTS=~/.mitmproxy/mitmproxy-ca-cert.pem   # trust the proxy CA
 node your-script.js
@@ -609,8 +571,9 @@ node your-script.js
 
 `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY` are all recognised, in
 upper- or lower-case. Node's global `fetch` ignores these by itself, so the SDK
-applies them via undici's `EnvHttpProxyAgent`. If `undici` does not load,
-requests proceed unproxied and a one-time warning is logged.
+applies them via undici's `EnvHttpProxyAgent`, imported only when a proxy
+variable is set. If `undici` is not installed, requests proceed unproxied and a
+one-time warning is logged.
 
 Opt out per client with `new UnikraftCloud({ proxyFromEnv: false })`. Proxy
 support is Node-only; browsers and Deno ignore these variables.

@@ -65,8 +65,8 @@ jobs:
         run: npm run typecheck
 
   # The test suite and the build cover every supported runtime. The transport
-  # depends on how undici behaves on each Node major, so the tests run on the
-  # oldest supported Node too.
+  # depends on how `node:http2` and `fetch` behave on each Node major, so the
+  # tests run on the oldest supported Node too.
   test:
     runs-on: ubuntu-latest
     strategy:

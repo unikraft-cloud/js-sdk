@@ -79,7 +79,6 @@ interface Prepared {
     body?: string;
   };
   transport: Transport | undefined;
-  released: () => Promise<void>;
 }
 
 /** Configuration for the plumbing {@link ApiClient}. */
@@ -89,12 +88,9 @@ export interface ApiClientConfig {
   /** Bearer token used for authentication. */
   token?: string;
   /**
-   * Custom `fetch` implementation. Without it, the SDK uses its own undici
-   * transport on Node and the global `fetch` elsewhere. A custom `fetch` turns
-   * off the DNS cache, HTTP/2, `maxConnections`, `http2Direct`, and the proxy
-   * from the environment. The transport bypasses `globalThis.fetch` and the
-   * global undici dispatcher, so a test that mocks either (`vi.stubGlobal`,
-   * MSW, nock, `MockAgent`) passes `(url, init) => globalThis.fetch(url, init)`.
+   * Custom `fetch` implementation. Without it, the SDK uses the global
+   * `fetch`. A custom `fetch` turns off `http2Direct` and the proxy from the
+   * environment.
    */
   fetch?: FetchLike;
   /** Default headers sent with every request. */
@@ -108,37 +104,12 @@ export interface ApiClientConfig {
    */
   proxyFromEnv?: boolean;
   /**
-   * Cache the DNS answer of each API host on Node. Then the new connections of
-   * a burst share one `dns.lookup`, and do not wait in turn for the libuv
-   * thread pool. An answer stays for 5 minutes, and a failed connection drops
-   * it. Defaults to `true`.
-   */
-  dnsCache?: boolean;
-  /**
-   * Offer HTTP/2 to the API host on Node, in the TLS handshake. With
-   * `maxConnections`, a host that answers HTTP/2 then carries a burst on a few
-   * connections instead of a TLS handshake per request. A host that answers
-   * only HTTP/1.1 stays on HTTP/1.1. Defaults to `false`.
-   */
-  http2?: boolean;
-  /**
-   * The most connections the undici transport opens to one API host. Until
-   * the first HTTP/2 connection is up, undici opens one connection per
-   * request, so a cold burst of 100 does 100 TLS handshakes without a limit.
-   * Set it, for example to 8, with `http2: true` and only when the host
-   * answers HTTP/2: over HTTP/1.1, a limit of n lets only n requests run at
-   * the same time.
-   * Defaults to no limit.
-   */
-  maxConnections?: number;
-  /**
    * On Node, send the requests that the SDK reads whole over Node's own
    * `node:http2` client: one session to each API host, opened at the first
-   * request, with no undici objects for each request. A burst of requests
-   * then costs the main thread less CPU. The SDK uses undici as before for a
+   * request. A burst of requests then shares one connection, and costs the
+   * main thread less CPU than `fetch`. The SDK uses `fetch` as before for a
    * host that answers only HTTP/1.1, an `http:` base URL, a proxy from the
-   * environment, and event streams. `maxConnections` does not apply to the
-   * direct session. Not used on Bun. Defaults to `false`.
+   * environment, and event streams. Not used on Bun. Defaults to `false`.
    */
   http2Direct?: boolean;
   /**
@@ -271,25 +242,8 @@ function parseSseEvent(block: string, url: string, status: number): unknown {
 }
 
 // Taken when this module loads, so that a caller's fake timers, which replace
-// the global `setImmediate` and run it only when the test advances the clock,
-// do not hold every request.
-const nativeSetImmediate = typeof setImmediate === "function" ? setImmediate : undefined;
-
-/**
- * Resolves after the current turn of the event loop. undici, which carries
- * `fetch` on Node, puts a keep-alive socket back in its pool only in a
- * `setImmediate` after the response ends. A request that the caller sends
- * before then finds no free socket, so it opens a new connection and pays one
- * more round trip, and a TLS handshake over HTTPS. undici queues its
- * `setImmediate` before the body ends, so one queued after the body is read
- * runs after it. Runtimes without `setImmediate` resolve at once.
- */
-function socketRelease(): Promise<void> {
-  if (nativeSetImmediate === undefined) return Promise.resolve();
-  return new Promise((resolve) => nativeSetImmediate(resolve));
-}
-
-// Taken when this module loads, for the same reason as `nativeSetImmediate`.
+// the global `setTimeout` and run it only when the test advances the clock, do
+// not hold every create.
 const nativeSetTimeout = setTimeout;
 
 /**
@@ -354,27 +308,24 @@ function createPace(perMs: number): Pace {
 function transportOptions(config: ApiClientConfig): TransportOptions {
   return {
     proxyFromEnv: config.proxyFromEnv ?? true,
-    dnsCache: config.dnsCache ?? true,
-    http2: config.http2 ?? false,
-    maxConnections: config.maxConnections,
     http2Direct: (config.http2Direct ?? false) || (config.http2Worker ?? false),
     http2Worker: config.http2Worker ?? false,
   };
 }
 
 /**
- * Opens the connection that the requests of a client with `config` use, to
- * the origin of its base URL, without a request. With `http2Direct`, this
- * opens the HTTP/2 session; on undici, it only starts the DNS lookup of the
- * host. Never throws: a failed connection is left to the first request,
- * which opens a new one. The connection does not keep the process alive.
+ * Opens the HTTP/2 session that the requests of a client with `config` use,
+ * to the origin of its base URL, without a request. Does nothing without
+ * `http2Direct`, because the global `fetch` opens its connections itself.
+ * Never throws: a failed connection is left to the first request, which opens
+ * a new one. The session does not keep the process alive.
  */
 export function preconnect(config: ApiClientConfig): void {
   if (typeof config.fetch === "function") return;
   try {
     const { origin } = splitUrl(stripTrailingSlashes(config.baseUrl));
     sharedTransport(transportOptions(config))
-      .then((transport) => transport?.open?.(origin))
+      .then((transport) => transport?.direct?.open(origin))
       .catch(() => {});
   } catch {
     // A start before the first request only saves time, so its failure is
@@ -427,11 +378,10 @@ export class ApiClient {
   protected readonly fetchImpl: FetchLike;
   protected readonly defaultHeaders: Record<string, string>;
   protected readonly proxyFromEnv: boolean;
-  // Undefined with a custom fetch, which turns the undici transport off; see #transport().
+  // Undefined with a custom fetch, which carries every request itself; see #transport().
   readonly #transportOptions?: TransportOptions;
   readonly #maxCreatesPerMs?: number;
   #transportPromise?: Promise<Transport | undefined>;
-  #host?: { base: string; name: string; bare: string };
 
   constructor(config: ApiClientConfig) {
     this.baseUrl = stripTrailingSlashes(config.baseUrl);
@@ -450,14 +400,13 @@ export class ApiClient {
     this.defaultHeaders = { ...config.headers };
     if (config.userAgent) this.defaultHeaders["User-Agent"] = config.userAgent;
     this.proxyFromEnv = config.proxyFromEnv ?? true;
-    positiveInteger("maxConnections", config.maxConnections);
     if (!hasCustomFetch) this.#transportOptions = transportOptions(config);
     this.#maxCreatesPerMs = positiveInteger("maxCreatesPerMs", config.maxCreatesPerMs);
   }
 
   /**
-   * A custom fetch owns the transport, and a standalone-undici dispatcher does
-   * not work with a foreign fetch, so it gets none.
+   * A custom fetch owns the transport, and the proxy dispatcher of undici
+   * does not work with a foreign fetch, so it gets none.
    */
   #transport(): Promise<Transport | undefined> {
     if (!this.#transportOptions) return Promise.resolve(undefined);
@@ -466,20 +415,8 @@ export class ApiClient {
   }
 
   /**
-   * The host of a base URL, parsed once for each base, because a `URL` object
-   * for each request costs CPU in a burst.
-   */
-  #hostOf(base: string): { name: string; bare: string } {
-    const last = this.#host;
-    if (last?.base === base) return last;
-    const name = new URL(base).hostname;
-    this.#host = { base, name, bare: name.replace(/^\[(.*)\]$/, "$1") };
-    return this.#host;
-  }
-
-  /**
-   * Build the URL and the `fetch` init shared by every request, resolve the
-   * transport that carries it, and say how the caller waits for the socket.
+   * Build the URL and the `fetch` init shared by every request, and resolve
+   * the transport that carries it.
    */
   async #prepare(args: RequestArgs, options: CallOptions, accept: string): Promise<Prepared> {
     const base = stripTrailingSlashes(options.baseUrl ?? this.baseUrl);
@@ -500,26 +437,15 @@ export class ApiClient {
       headers["content-type"] = "application/json";
     }
 
-    const transport = await this.#transport();
-    const host = this.#hostOf(base);
-    transport?.resolveEarly?.(host.bare);
-
-    // Only the pool of the SDK's own transport needs the wait, and an HTTP/2
-    // connection puts no socket back in it. The URL is the base and a path,
-    // so it has the host of the base.
-    const released = () =>
-      transport && !transport.multiplexes(host.name) ? socketRelease() : Promise.resolve();
-
     return {
       url,
       init: { method, headers, body: bodyInit, signal: options.signal },
-      transport,
-      released,
+      transport: await this.#transport(),
     };
   }
 
   #networkError(url: string, transport: Transport | undefined, cause: unknown): UnikraftCloudError {
-    const via = transport?.proxied
+    const via = transport?.proxy
       ? " (routed through the proxy from your HTTP_PROXY/HTTPS_PROXY environment; check the proxy is reachable and its CA is trusted via NODE_EXTRA_CA_CERTS)"
       : "";
     return new UnikraftCloudError(`Request to ${url} failed${via}: ${describeCause(cause)}`, {
@@ -538,43 +464,36 @@ export class ApiClient {
     args: RequestArgs,
     options: CallOptions,
     accept: string,
-  ): Promise<{ response: Response; url: string; released: () => Promise<void> }> {
+  ): Promise<{ response: Response; url: string }> {
     return this.#fetch(await this.#prepare(args, options, accept));
   }
 
-  async #fetch({ url, init, transport, released }: Prepared): Promise<{
-    response: Response;
-    url: string;
-    released: () => Promise<void>;
-  }> {
+  async #fetch({ url, init, transport }: Prepared): Promise<{ response: Response; url: string }> {
     // The dispatcher works only with the fetch of its own undici module, so a
-    // transport replaces the configured or global fetch too.
+    // proxy replaces the global fetch too.
     let fetchImpl = this.fetchImpl;
-    if (transport) {
-      fetchImpl = transport.fetch;
-      init.dispatcher = transport.dispatcher;
+    if (transport?.proxy) {
+      fetchImpl = transport.proxy.fetch;
+      init.dispatcher = transport.proxy.dispatcher;
     }
     try {
-      return { response: await fetchImpl(url, init), url, released };
+      return { response: await fetchImpl(url, init), url };
     } catch (cause) {
       throw this.#networkError(url, transport, cause);
     }
   }
 
   /**
-   * As `#send`, for a response that the caller reads whole.
-   * On the undici transport this goes through `request()`, which costs the
-   * main thread less than `fetch` for each request: no WHATWG `Request`,
-   * `Response` or body stream. `request()` follows no redirect; the API sends
-   * none.
+   * As `#send`, for a response that the caller reads whole, which the direct
+   * HTTP/2 path can carry.
    */
   async #sendBuffered(
     args: RequestArgs,
     options: CallOptions,
     accept: string,
-  ): Promise<{ response: BufferedResponse; url: string; released: () => Promise<void> }> {
+  ): Promise<{ response: BufferedResponse; url: string }> {
     const prepared = await this.#prepare(args, options, accept);
-    const { url, init, transport, released } = prepared;
+    const { url, init, transport } = prepared;
     if (this.#maxCreatesPerMs && args.method === "POST" && args.path === "/v1/instances") {
       const slot = paceFor(splitUrl(url).origin, this.#maxCreatesPerMs)();
       if (slot) await slot;
@@ -582,45 +501,22 @@ export class ApiClient {
     const direct = transport?.direct?.send(url, init);
     if (direct) {
       try {
-        return { response: await direct, url, released: () => Promise.resolve() };
+        return { response: await direct, url };
       } catch (cause) {
-        // A host that answers only HTTP/1.1 got no request, so undici sends it.
+        // A host that answers only HTTP/1.1 got no request, so `fetch` sends it.
         if (!(cause instanceof Http1Host)) throw this.#networkError(url, transport, cause);
       }
     }
-    if (!transport?.request) return this.#fetch(prepared);
-    try {
-      const { statusCode, statusText, body } = await transport.request(url, {
-        method: init.method,
-        headers: init.headers,
-        ...(init.body !== undefined && { body: init.body }),
-        ...(init.signal && { signal: init.signal }),
-        dispatcher: transport.dispatcher,
-      });
-      return {
-        response: {
-          ok: statusCode >= 200 && statusCode < 300,
-          status: statusCode,
-          statusText: statusText ?? "",
-          text: () => body.text(),
-          arrayBuffer: () => body.arrayBuffer(),
-        },
-        url,
-        released,
-      };
-    } catch (cause) {
-      throw this.#networkError(url, transport, cause);
-    }
+    return this.#fetch(prepared);
   }
 
   /**
    * Perform a request and return the parsed JSON envelope typed as `T`.
    */
   async request<T>(args: RequestArgs, options: CallOptions = {}): Promise<T> {
-    const { response, url, released } = await this.#sendBuffered(args, options, "application/json");
+    const { response, url } = await this.#sendBuffered(args, options, "application/json");
 
     const text = await response.text();
-    await released();
     let parsed: unknown;
     if (text.length > 0) {
       try {
@@ -669,11 +565,7 @@ export class ApiClient {
    * (unlike {@link ApiClient.stream}, which is named for its SSE delivery).
    */
   async bytes(args: RequestArgs, options: CallOptions = {}): Promise<Uint8Array> {
-    const { response, released } = await this.#sendBuffered(
-      args,
-      options,
-      "application/octet-stream",
-    );
+    const { response } = await this.#sendBuffered(args, options, "application/octet-stream");
 
     if (!response.ok) {
       // A failure is still enveloped JSON (and may be an empty body, e.g. the
@@ -697,9 +589,7 @@ export class ApiClient {
       );
     }
 
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    await released();
-    return bytes;
+    return new Uint8Array(await response.arrayBuffer());
   }
 
   /**

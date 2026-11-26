@@ -140,7 +140,7 @@ async function listenH2(handler: Handler = ok, onSession?: (session: Http2Sessio
 
 async function directTransport(deps: TransportDeps = {}): Promise<Transport> {
   const transport = await createTransport(
-    { proxyFromEnv: true, dnsCache: true, http2Direct: true },
+    { proxyFromEnv: true, http2Direct: true },
     { resolve: async () => loopback, ...deps },
   );
   if (!transport?.direct) throw new Error("expected the direct HTTP/2 path");
@@ -317,7 +317,7 @@ describe("http2Direct", () => {
     { server: "answers only HTTP/1.1", http1: true, worker: false },
     { server: "answers only HTTP/1.1, with the worker", http1: true, worker: true },
     { server: "is reached through an http: base URL", http1: false, worker: false },
-  ])("sends the requests through undici when the server $server", async ({ http1, worker }) => {
+  ])("sends the requests through fetch when the server $server", async ({ http1, worker }) => {
     const server = http1
       ? createHttpsServer({ key, cert }, (_request, response) => {
           response.writeHead(200, { "content-type": "application/json" });
@@ -445,12 +445,7 @@ describe("http2Direct", () => {
     for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value);
     if (bun) Object.defineProperty(process.versions, "bun", { value: "1.3.0", configurable: true });
     try {
-      const transport = await createTransport({
-        proxyFromEnv: true,
-        dnsCache: true,
-        http2Direct: true,
-      });
-      expect(transport).toBeDefined();
+      const transport = await createTransport({ proxyFromEnv: true, http2Direct: true });
       expect(transport?.direct).toBeUndefined();
     } finally {
       if (bun) delete (process.versions as Record<string, string>).bun;
