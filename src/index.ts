@@ -25,10 +25,7 @@ const USER_AGENT = "@unikraft/cloud";
 
 /** Configuration for the top-level {@link UnikraftCloud} client. */
 export interface UnikraftCloudConfig
-  extends Pick<
-    ApiClientConfig,
-    "fetch" | "proxyFromEnv" | "http2Direct" | "maxCreatesPerMs" | "http2Worker"
-  > {
+  extends Pick<ApiClientConfig, "fetch" | "proxyFromEnv" | "http2Direct" | "http2Worker"> {
   /**
    * Bearer token used for authentication. Falls back to the `UKC_TOKEN`
    * environment variables when omitted.
@@ -130,7 +127,6 @@ function buildSession(config: UnikraftCloudConfig): Session {
     userAgent: config.userAgent ?? USER_AGENT,
     proxyFromEnv: config.proxyFromEnv,
     http2Direct: config.http2Direct,
-    maxCreatesPerMs: config.maxCreatesPerMs,
     http2Worker: config.http2Worker,
   };
 

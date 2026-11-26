@@ -244,7 +244,6 @@ const CLIENT_ONLY_OPTIONS = {
   userAgent: true,
   proxyFromEnv: true,
   http2Direct: true,
-  maxCreatesPerMs: true,
   http2Worker: true,
 } as const satisfies Record<ClientOnlyOption, true>;
 

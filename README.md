@@ -509,6 +509,13 @@ request opens a new one. An open session does not keep the process alive. A TCP
 connect that has no answer does, so the SDK gives up an early session that is
 not up after 1 second and that no request uses yet.
 
+On one connection, a burst of instance creates reaches the platform at one
+moment, and the platform then starts all the instances together. So on the
+direct path at most 4 instance creates start in each millisecond, and the
+others wait in order: a burst of 100 creates leaves over about 25 ms. All the
+clients of the process with the same API host share this pace. Other requests,
+for example a command in a sandbox, do not wait.
+
 ### The HTTP/2 session in a worker thread
 
 With `http2Worker: true`, a worker thread runs the HTTP/2 session of each API
@@ -524,23 +531,9 @@ This takes more work off the main thread than `http2Direct` alone, for a
 thread and more CPU time in the process. The worker needs some tens of
 milliseconds to start, and it starts when you make the client. Until its
 session is up, the main thread sends the requests over its own session. If the
-worker stops, the requests that it carried fail
-with a network error, and the main thread sends the next requests. An idle
-worker does not keep the process alive.
-
-### A pace for a burst of creates
-
-When a program creates many instances at the same time, the platform starts
-them all at the same moment. With `maxCreatesPerMs`, at most that many instance
-creates start in each millisecond, and the others wait in order:
-
-```ts
-const ukc = new UnikraftCloud({ token, http2Direct: true, maxCreatesPerMs: 4 });
-```
-
-With a limit of 4, a burst of 100 creates leaves over about 25 ms. All the
-clients of the process with the same API host share one pace. Other requests,
-for example a command in a sandbox, do not wait.
+worker stops, the requests that it carried fail with a network error, and the
+main thread sends the next requests. An idle worker does not keep the process
+alive.
 
 ## Debugging with a proxy (MITM)
 

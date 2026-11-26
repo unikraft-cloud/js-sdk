@@ -186,41 +186,21 @@ describe("createTransport", () => {
 });
 
 describe("UnikraftCloud", () => {
-  it.each([0, -1, 1.5])("rejects a maxCreatesPerMs of %s", (value) => {
-    expect(() => new UnikraftCloud({ token: "t", metro: "fra", maxCreatesPerMs: value })).toThrow(
-      expect.objectContaining({
-        kind: "config",
-        message: expect.stringContaining("maxCreatesPerMs"),
-      }),
-    );
-  });
-
-  it("starts at most maxCreatesPerMs creates in each millisecond, and holds no other request", async () => {
+  it("does not hold the creates of a burst that goes through fetch", async () => {
     // The pace takes `setTimeout` when its module loads, so the fake clock
-    // must come before the import.
+    // must come before the import. A create that waits for the pace then
+    // never starts, and the test ends on its timeout.
     vi.useFakeTimers({ toFake: ["setTimeout", "performance"] });
     vi.resetModules();
     const { UnikraftCloud: Fresh } = await import("../src/index.js");
-    const sent: string[] = [];
-    const fetch = async (_url: string, init?: RequestInit) => {
-      sent.push(init?.method ?? "GET");
-      return Response.json({ status: "success", op_time_us: 1 });
-    };
-    const api = new Fresh({ token: "t", metro: "fra", fetch, maxCreatesPerMs: 4 }).api.platform
-      .instances;
-    const creates = () => sent.filter((method) => method === "POST").length;
+    const globalFetch = vi.fn(async () => Response.json({ status: "success", op_time_us: 1 }));
+    vi.stubGlobal("fetch", globalFetch);
+    const api = new Fresh({ token: "t", metro: "fra" }).api.platform.instances;
 
-    const all = Promise.all([
-      ...Array.from({ length: 10 }, () => api.request({ method: "POST", path: "/v1/instances" })),
-      api.request({ method: "GET", path: "/v1/instances" }),
-    ]);
-    await vi.advanceTimersByTimeAsync(0);
-    expect([creates(), sent.includes("GET")]).toEqual([4, true]);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(creates()).toBe(8);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(creates()).toBe(10);
-    await all;
+    await Promise.all(
+      Array.from({ length: 10 }, () => api.request({ method: "POST", path: "/v1/instances" })),
+    );
+    expect(globalFetch).toHaveBeenCalledTimes(10);
   });
 
   it("reads a JSON answer, an error answer and a byte body through the global fetch", async () => {

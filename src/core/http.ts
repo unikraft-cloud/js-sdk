@@ -109,20 +109,13 @@ export interface ApiClientConfig {
    * then shares one connection, and costs the main thread less CPU than
    * `fetch`. The SDK opens the session when a client names its metro
    * (`metro`, `baseUrl` or `UKC_METRO`), so the first request does not wait
-   * for the TLS handshake. The SDK uses `fetch` as before for a host that
+   * for the TLS handshake. On this path, at most 4 instance creates start in
+   * each millisecond, so a burst of creates does not reach the platform at
+   * one moment. The SDK uses `fetch` as before for a host that
    * answers only HTTP/1.1, an `http:` base URL, a proxy from the environment,
    * and event streams. Not used on Bun. Defaults to `false`.
    */
   http2Direct?: boolean;
-  /**
-   * The most instance creates (`POST /v1/instances`) that start in each
-   * millisecond, for all the clients of this process with the same API host.
-   * The other creates wait in order for the next millisecond. A burst of
-   * creates then reaches the platform over a longer time, so the platform
-   * starts fewer instances at the same moment. Other requests do not wait.
-   * Defaults to no limit.
-   */
-  maxCreatesPerMs?: number;
   /**
    * Run the HTTP/2 session of `http2Direct` in a worker thread, which then
    * does the TLS and the HTTP/2 work of each request. Turns `http2Direct` on.
@@ -275,17 +268,22 @@ type Pace = () => Promise<void> | undefined;
 
 const paces = new Map<string, Pace>();
 
+// On the direct path, a burst of creates leaves on one connection in less
+// than a millisecond, and the platform then starts all the instances at the
+// same moment. At this rate a burst of 100 leaves over 25 ms. `fetch` needs no
+// pace: there, each create waits for a connection of its own.
+const CREATES_PER_MS = 4;
+
 /**
- * One pace for each origin and limit, which every client of the process
- * shares. The key is the origin, not the base URL, because each sandbox has a
- * client with a base URL of its own on the same origin.
+ * One pace for each origin, which every client of the process shares. The key
+ * is the origin, not the base URL, because each sandbox has a client with a
+ * base URL of its own on the same origin.
  */
-function paceFor(origin: string, perMs: number): Pace {
-  const key = `${perMs} ${origin}`;
-  let pace = paces.get(key);
+function paceFor(origin: string): Pace {
+  let pace = paces.get(origin);
   if (!pace) {
-    pace = createPace(perMs);
-    paces.set(key, pace);
+    pace = createPace(CREATES_PER_MS);
+    paces.set(origin, pace);
   }
   return pace;
 }
@@ -355,15 +353,6 @@ export function preconnect(config: ApiClientConfig): void {
   }
 }
 
-function positiveInteger(name: string, value: number | undefined): number | undefined {
-  if (value !== undefined && !(Number.isInteger(value) && value > 0)) {
-    throw new UnikraftCloudError(`${name} must be a positive integer, not ${value}.`, {
-      kind: "config",
-    });
-  }
-  return value;
-}
-
 /** Serialise a query object into a URL search string (form/explode style). */
 function encodeQuery(query: Record<string, QueryValue> | undefined): string {
   if (!query) return "";
@@ -404,7 +393,6 @@ export class ApiClient {
   readonly #transportOptions?: TransportOptions;
   // A custom fetch has a pool of its own, or none, so the SDK does not wait for it.
   readonly #released: () => Promise<void>;
-  readonly #maxCreatesPerMs?: number;
   #transportPromise?: Promise<Transport | undefined>;
 
   constructor(config: ApiClientConfig) {
@@ -426,7 +414,6 @@ export class ApiClient {
     this.proxyFromEnv = config.proxyFromEnv ?? true;
     if (!hasCustomFetch) this.#transportOptions = transportOptions(config);
     this.#released = hasCustomFetch ? () => Promise.resolve() : socketRelease;
-    this.#maxCreatesPerMs = positiveInteger("maxCreatesPerMs", config.maxCreatesPerMs);
   }
 
   /**
@@ -519,8 +506,8 @@ export class ApiClient {
   ): Promise<{ response: BufferedResponse; url: string; released: () => Promise<void> }> {
     const prepared = await this.#prepare(args, options, accept);
     const { url, init, transport } = prepared;
-    if (this.#maxCreatesPerMs && args.method === "POST" && args.path === "/v1/instances") {
-      const slot = paceFor(splitUrl(url).origin, this.#maxCreatesPerMs)();
+    if (transport?.direct?.takes(url) && args.method === "POST" && args.path === "/v1/instances") {
+      const slot = paceFor(splitUrl(url).origin)();
       if (slot) await slot;
     }
     const direct = transport?.direct?.send(url, init);

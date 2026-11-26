@@ -295,6 +295,40 @@ describe("http2Direct", () => {
     }
   });
 
+  it("starts at most 4 creates in each millisecond, and holds no other request", async () => {
+    // The pace takes `setTimeout` when its module loads, so the fake clock
+    // must come before the import.
+    vi.useFakeTimers({ toFake: ["setTimeout", "performance"] });
+    vi.resetModules();
+    const { UnikraftCloud: Fresh } = await import("../src/index.js");
+    const server = await listenH2();
+    const api = new Fresh({
+      token: "t",
+      baseUrl: `https://127.0.0.1:${server.port}`,
+      http2Direct: true,
+    }).api.platform.instances;
+    const creates = () => server.seen.filter((s) => s.method === "POST").length;
+    // The session carries its streams in order, so the server has every
+    // create that left before this request when the answer comes.
+    const sync = () => api.request({ method: "GET", path: "/v1/instances" });
+
+    try {
+      const all = Promise.all(
+        Array.from({ length: 10 }, () => api.request({ method: "POST", path: "/v1/instances" })),
+      );
+      await sync();
+      expect(creates()).toBe(4);
+      await vi.advanceTimersByTimeAsync(1);
+      await sync();
+      expect(creates()).toBe(8);
+      await vi.advanceTimersByTimeAsync(1);
+      await all;
+      expect(creates()).toBe(10);
+    } finally {
+      await server.close();
+    }
+  });
+
   it("opens a new session, which resumes the TLS session, after the server closes the idle one", async () => {
     const server = await listenH2();
     const transport = await directTransport();
@@ -610,6 +644,7 @@ describe("http2Worker", () => {
     const main: DirectSender = {
       send: vi.fn(() => Promise.resolve({ ok: true, status: 200 } as never)),
       open: () => true,
+      takes: () => true,
     };
     const sender = createWorkerSender(main, FakeWorker as unknown as typeof Worker);
     const origin = "https://api.metro.test";

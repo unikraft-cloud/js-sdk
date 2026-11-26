@@ -37,6 +37,8 @@ export interface DirectSender {
    * sent, so the caller sends it another way.
    */
   send(url: string, init: DirectInit): Promise<DirectResponse> | undefined;
+  /** False when `send` returns undefined for the URL. */
+  takes(url: string): boolean;
   /**
    * Opens the session to an origin before a request needs it. Returns false,
    * and opens nothing, when the direct path does not take the origin.
@@ -428,11 +430,14 @@ export function createDirectSender(
     });
   }
 
+  const takes = (url: string) =>
+    url.startsWith("https://") && !http1Origins.has(splitUrl(url).origin);
+
   return {
+    takes,
     send(url, init) {
-      if (!url.startsWith("https://")) return undefined;
+      if (!takes(url)) return undefined;
       const { origin, path } = splitUrl(url);
-      if (http1Origins.has(origin)) return undefined;
       return attempt(origin, requestHeaders(path, init), init, { refused: 0, closed: 0 });
     },
     open(origin) {

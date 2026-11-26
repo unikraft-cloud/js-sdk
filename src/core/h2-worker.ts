@@ -377,6 +377,9 @@ export function createWorkerSender(
   }
 
   return {
+    // A host that answers only HTTP/1.1 leaves its requests to `main`, which
+    // then learns the same from its own handshake.
+    takes: (url) => main.takes(url),
     send(url, init) {
       if (!url.startsWith("https://")) return undefined;
       const { origin, path } = splitUrl(url);
