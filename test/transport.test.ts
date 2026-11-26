@@ -37,15 +37,22 @@ function ask(lookup: LookupFunction, hostname: string, all = true): Promise<unkn
   });
 }
 
-async function listen(): Promise<{ port: number; close: () => Promise<void> }> {
+async function listen(): Promise<{
+  port: number;
+  connections: () => number;
+  close: () => Promise<void>;
+}> {
   const server = createServer((_request, response) => {
     response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify({ status: "success", op_time_us: 1 }));
   });
+  let connections = 0;
+  server.on("connection", () => connections++);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address() as AddressInfo;
   return {
     port,
+    connections: () => connections,
     close: () =>
       new Promise((resolve) => {
         server.closeAllConnections();
@@ -265,5 +272,34 @@ describe("UnikraftCloud", () => {
       op_time_us: 1,
     });
     expect(globalFetch).toHaveBeenCalledOnce();
+  });
+
+  it("sends a request that follows another on the same connection", async () => {
+    const server = await listen();
+    const ukc = new UnikraftCloud({ token: "t", baseUrl: `http://127.0.0.1:${server.port}` });
+
+    try {
+      await ukc.api.platform.instances.getInstances({});
+      await ukc.api.platform.instances.getInstances({});
+      expect(server.connections()).toBe(1);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("answers while fake timers that started before the import hold setImmediate", async () => {
+    vi.useFakeTimers();
+    vi.resetModules();
+    const { UnikraftCloud: Fresh } = await import("../src/index.js");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ status: "success", op_time_us: 1 })),
+    );
+    const ukc = new Fresh({ token: "t", metro: "fra" });
+
+    await expect(ukc.api.platform.instances.getInstances({})).resolves.toEqual({
+      status: "success",
+      op_time_us: 1,
+    });
   });
 });

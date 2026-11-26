@@ -242,8 +242,28 @@ function parseSseEvent(block: string, url: string, status: number): unknown {
 }
 
 // Taken when this module loads, so that a caller's fake timers, which replace
-// the global `setTimeout` and run it only when the test advances the clock, do
-// not hold every create.
+// the global `setImmediate` and run it only when the test advances the clock,
+// do not hold every request. Fake timers that are on before this module loads
+// are the ones this would take: they carry a `clock` property (jest and
+// vitest both use @sinonjs/fake-timers), and then the SDK does not wait.
+const nativeSetImmediate =
+  typeof setImmediate === "function" && !("clock" in setImmediate) ? setImmediate : undefined;
+
+/**
+ * Resolves after the current turn of the event loop. The `fetch` of Node puts
+ * a keep-alive socket back in its pool only in a `setImmediate` after the
+ * response ends. A request that the caller sends before then finds no free
+ * socket, so it opens a new connection and pays one more round trip, and a
+ * TLS handshake over HTTPS. `fetch` queues its `setImmediate` before the body
+ * ends, so one queued after the body is read runs after it. Runtimes without
+ * `setImmediate` resolve at once.
+ */
+function socketRelease(): Promise<void> {
+  if (nativeSetImmediate === undefined) return Promise.resolve();
+  return new Promise((resolve) => nativeSetImmediate(resolve));
+}
+
+// Taken when this module loads, for the same reason as `nativeSetImmediate`.
 const nativeSetTimeout = setTimeout;
 
 /**
@@ -380,6 +400,8 @@ export class ApiClient {
   protected readonly proxyFromEnv: boolean;
   // Undefined with a custom fetch, which carries every request itself; see #transport().
   readonly #transportOptions?: TransportOptions;
+  // A custom fetch has a pool of its own, or none, so the SDK does not wait for it.
+  readonly #released: () => Promise<void>;
   readonly #maxCreatesPerMs?: number;
   #transportPromise?: Promise<Transport | undefined>;
 
@@ -401,6 +423,7 @@ export class ApiClient {
     if (config.userAgent) this.defaultHeaders["User-Agent"] = config.userAgent;
     this.proxyFromEnv = config.proxyFromEnv ?? true;
     if (!hasCustomFetch) this.#transportOptions = transportOptions(config);
+    this.#released = hasCustomFetch ? () => Promise.resolve() : socketRelease;
     this.#maxCreatesPerMs = positiveInteger("maxCreatesPerMs", config.maxCreatesPerMs);
   }
 
@@ -491,7 +514,7 @@ export class ApiClient {
     args: RequestArgs,
     options: CallOptions,
     accept: string,
-  ): Promise<{ response: BufferedResponse; url: string }> {
+  ): Promise<{ response: BufferedResponse; url: string; released: () => Promise<void> }> {
     const prepared = await this.#prepare(args, options, accept);
     const { url, init, transport } = prepared;
     if (this.#maxCreatesPerMs && args.method === "POST" && args.path === "/v1/instances") {
@@ -501,22 +524,24 @@ export class ApiClient {
     const direct = transport?.direct?.send(url, init);
     if (direct) {
       try {
-        return { response: await direct, url };
+        // An HTTP/2 session puts no socket back in a pool.
+        return { response: await direct, url, released: () => Promise.resolve() };
       } catch (cause) {
         // A host that answers only HTTP/1.1 got no request, so `fetch` sends it.
         if (!(cause instanceof Http1Host)) throw this.#networkError(url, transport, cause);
       }
     }
-    return this.#fetch(prepared);
+    return { ...(await this.#fetch(prepared)), released: this.#released };
   }
 
   /**
    * Perform a request and return the parsed JSON envelope typed as `T`.
    */
   async request<T>(args: RequestArgs, options: CallOptions = {}): Promise<T> {
-    const { response, url } = await this.#sendBuffered(args, options, "application/json");
+    const { response, url, released } = await this.#sendBuffered(args, options, "application/json");
 
     const text = await response.text();
+    await released();
     let parsed: unknown;
     if (text.length > 0) {
       try {
@@ -565,7 +590,11 @@ export class ApiClient {
    * (unlike {@link ApiClient.stream}, which is named for its SSE delivery).
    */
   async bytes(args: RequestArgs, options: CallOptions = {}): Promise<Uint8Array> {
-    const { response } = await this.#sendBuffered(args, options, "application/octet-stream");
+    const { response, released } = await this.#sendBuffered(
+      args,
+      options,
+      "application/octet-stream",
+    );
 
     if (!response.ok) {
       // A failure is still enveloped JSON (and may be an empty body, e.g. the
@@ -589,7 +618,9 @@ export class ApiClient {
       );
     }
 
-    return new Uint8Array(await response.arrayBuffer());
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    await released();
+    return bytes;
   }
 
   /**
