@@ -2,12 +2,7 @@
 // Copyright (c) 2026, Unikraft GmbH.
 
 import { createServer, request as httpRequest } from "node:http";
-import { createSecureServer } from "node:http2";
-import { createServer as createTlsServer } from "node:https";
 import type { AddressInfo } from "node:net";
-import type { TLSSocket } from "node:tls";
-import { setFlagsFromString } from "node:v8";
-import { runInNewContext } from "node:vm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cachedLookup,
@@ -15,12 +10,8 @@ import {
   type LookupAddress,
   type LookupFunction,
   type Resolver,
-  type Transport,
-  type TransportDeps,
-  type TransportOptions,
 } from "../src/core/transport.js";
 import { UnikraftCloud } from "../src/index.js";
-import { cert, key } from "./fixtures/tls.js";
 
 // Proxy variables from the developer's shell would change the route of these
 // requests. undici reads `no_proxy` before `NO_PROXY`, so a `no_proxy` from
@@ -46,23 +37,13 @@ function ask(lookup: LookupFunction, hostname: string, all = true): Promise<unkn
   });
 }
 
-async function listen({ keepAlive = false } = {}): Promise<{
+async function listen(): Promise<{
   port: number;
   connections: () => number;
-  fetchModes: (string | undefined)[];
   close: () => Promise<void>;
 }> {
-  // `fetch` sends a `sec-fetch-mode` header on each request, and undici's
-  // `request()` sends none, so the header tells the two paths apart.
-  const fetchModes: (string | undefined)[] = [];
-  const server = createServer((request, response) => {
-    fetchModes.push(request.headers["sec-fetch-mode"] as string | undefined);
-    // Without keep-alive, each request opens a new connection, and each new
-    // connection looks up the host.
-    response.writeHead(200, {
-      "content-type": "application/json",
-      ...(!keepAlive && { connection: "close" }),
-    });
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify({ status: "success", op_time_us: 1 }));
   });
   let connections = 0;
@@ -72,7 +53,6 @@ async function listen({ keepAlive = false } = {}): Promise<{
   return {
     port,
     connections: () => connections,
-    fetchModes,
     close: () =>
       new Promise((resolve) => {
         server.closeAllConnections();
@@ -80,47 +60,6 @@ async function listen({ keepAlive = false } = {}): Promise<{
       }),
   };
 }
-
-async function directTransport(
-  deps: TransportDeps = {},
-  options: Partial<TransportOptions> = {},
-): Promise<Transport> {
-  const transport = await createTransport({ proxyFromEnv: true, dnsCache: true, ...options }, deps);
-  if (!transport) throw new Error("expected the undici transport");
-  return transport;
-}
-
-// V8 gives `gc()` only behind a flag. A new context sees a flag set at run time.
-setFlagsFromString("--expose-gc");
-const collectGarbage = runInNewContext("gc") as () => void;
-
-/** An HTTPS server that records, per request, whether its connection resumed a TLS session. */
-async function listenTls(): Promise<{
-  port: number;
-  resumed: boolean[];
-  close: () => Promise<void>;
-}> {
-  const resumed: boolean[] = [];
-  const server = createTlsServer({ key, cert }, (request, response) => {
-    resumed.push((request.socket as TLSSocket).isSessionReused());
-    response.writeHead(200, { "content-type": "application/json", connection: "close" });
-    response.end(JSON.stringify({ status: "success", op_time_us: 1 }));
-  });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const { port } = server.address() as AddressInfo;
-  return {
-    port,
-    resumed,
-    close: () =>
-      new Promise((resolve) => {
-        server.closeAllConnections();
-        server.close(() => resolve());
-      }),
-  };
-}
-
-const send = (transport: Transport, url: string) =>
-  transport.fetch(url, { dispatcher: transport.dispatcher } as RequestInit);
 
 /**
  * A forward proxy for plain HTTP: it repeats each request to the port in its
@@ -207,142 +146,19 @@ describe("cachedLookup", () => {
 });
 
 describe("createTransport", () => {
-  it("resolves a host once for an early lookup and parallel requests to it", async () => {
-    const server = await listen();
-    const resolve = vi.fn<Resolver>(async () => loopback);
-    const transport = await directTransport({ resolve });
-
-    try {
-      expect(transport.resolveEarly).toBeTypeOf("function");
-      transport.resolveEarly?.("api.metro.test");
-      const responses = await Promise.all(
-        Array.from({ length: 20 }, () => send(transport, `http://api.metro.test:${server.port}/`)),
-      );
-
-      expect(responses.map((response) => response.status)).toEqual(Array(20).fill(200));
-      expect(resolve).toHaveBeenCalledOnce();
-    } finally {
-      await server.close();
-    }
-  });
-
-  it("resolves the host again after a connection to it fails", async () => {
-    const server = await listen();
-    await server.close();
-    const resolve = vi.fn<Resolver>(async () => loopback);
-    const transport = await directTransport({ resolve });
-    const url = `http://api.metro.test:${server.port}/`;
-
-    await expect(send(transport, url)).rejects.toMatchObject({ cause: { code: "ECONNREFUSED" } });
-    await expect(send(transport, url)).rejects.toMatchObject({ cause: { code: "ECONNREFUSED" } });
-    expect(resolve).toHaveBeenCalledTimes(2);
-  });
-
-  it.each([
-    { route: "with no proxy", env: {} },
-    // Port 9 is the discard port, so a request sent to the proxy fails.
-    {
-      route: "in NO_PROXY while HTTP_PROXY is set",
-      env: { HTTP_PROXY: "http://127.0.0.1:9", NO_PROXY: "127.0.0.1" },
-    },
-  ])("opens no more than maxConnections connections to a host $route", async ({ env }) => {
-    for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value);
-    const server = await listen({ keepAlive: true });
-    const transport = await directTransport({}, { maxConnections: 2 });
-
-    try {
-      const responses = await Promise.all(
-        Array.from({ length: 20 }, () => send(transport, `http://127.0.0.1:${server.port}/`)),
-      );
-
-      expect(responses.map((response) => response.status)).toEqual(Array(20).fill(200));
-      expect(server.connections()).toBe(2);
-    } finally {
-      await server.close();
-    }
-  });
-
-  it("resumes the TLS session of a host after a garbage collection", async () => {
-    // The certificate of the fixture is self-signed, so no CA can verify it.
-    vi.stubEnv("NODE_TLS_REJECT_UNAUTHORIZED", "0");
-    const server = await listenTls();
-    const transport = await directTransport({ resolve: async () => loopback });
-    const url = `https://api.metro.test:${server.port}/`;
-
-    try {
-      await (await send(transport, url)).arrayBuffer();
-      collectGarbage();
-      await (await send(transport, url)).arrayBuffer();
-
-      expect(server.resumed).toEqual([false, true]);
-    } finally {
-      await server.close();
-    }
-  });
-
-  it.each([
-    { http2: undefined, multiplexed: false },
-    { http2: true, multiplexed: true },
-  ])(
-    "speaks HTTP/2 to a host that offers it only when http2 is $http2",
-    async ({ http2, multiplexed }) => {
-      vi.stubEnv("NODE_TLS_REJECT_UNAUTHORIZED", "0");
-      // allowHTTP1 lets the server answer a client that does not offer HTTP/2.
-      const server = createSecureServer({ key, cert, allowHTTP1: true }, (_request, response) => {
-        response.writeHead(200, { "content-type": "application/json" });
-        response.end(JSON.stringify({ status: "success", op_time_us: 1 }));
-      });
-      const sockets = new Set<TLSSocket>();
-      server.on("secureConnection", (socket) => sockets.add(socket));
-      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-      const { port } = server.address() as AddressInfo;
-      const transport = await directTransport({ resolve: async () => loopback }, { http2 });
-
-      try {
-        await (await send(transport, `https://api.metro.test:${port}/`)).arrayBuffer();
-        expect(transport.multiplexes("api.metro.test")).toBe(multiplexed);
-      } finally {
-        for (const socket of sockets) socket.destroy();
-        await new Promise((resolve) => server.close(resolve));
-      }
-    },
-  );
-
   it("sends a request through the proxy that HTTP_PROXY names", async () => {
     const server = await listen();
     const proxy = await listenProxy();
     vi.stubEnv("HTTP_PROXY", `http://127.0.0.1:${proxy.port}`);
-    const resolve = vi.fn<Resolver>(async () => loopback);
-    const transport = await directTransport({ resolve });
+    const transport = await createTransport({ proxyFromEnv: true });
     const url = `http://api.metro.test:${server.port}/`;
 
     try {
-      expect(transport.proxied).toBe(true);
-      await expect(send(transport, url)).resolves.toMatchObject({ status: 200 });
+      const sent = transport?.proxy?.fetch(url, {
+        dispatcher: transport.proxy.dispatcher,
+      } as RequestInit);
+      await expect(sent).resolves.toMatchObject({ status: 200 });
       expect(proxy.requests).toEqual([url]);
-      // The proxy resolves the host, so the cache sees nothing.
-      expect(resolve).not.toHaveBeenCalled();
-    } finally {
-      await proxy.close();
-      await server.close();
-    }
-  });
-
-  it("sends a request to a host in NO_PROXY through the cached direct connector", async () => {
-    const server = await listen();
-    const proxy = await listenProxy();
-    vi.stubEnv("HTTP_PROXY", `http://127.0.0.1:${proxy.port}`);
-    vi.stubEnv("NO_PROXY", "api.metro.test");
-    const resolve = vi.fn<Resolver>(async () => loopback);
-    const transport = await directTransport({ resolve });
-    const url = `http://api.metro.test:${server.port}/`;
-
-    try {
-      expect(transport.proxied).toBe(true);
-      await Promise.all([send(transport, url), send(transport, url)]);
-      expect(proxy.requests).toEqual([]);
-      expect(server.connections()).toBe(2);
-      expect(resolve).toHaveBeenCalledOnce();
     } finally {
       await proxy.close();
       await server.close();
@@ -350,53 +166,41 @@ describe("createTransport", () => {
   });
 
   it.each([
+    { when: "no proxy variable is set and http2Direct is off", env: {}, deno: false },
     {
-      when: "undici is not installed",
-      importUndici: () => Promise.reject(new Error("Cannot find package 'undici'")),
+      when: "a proxy variable is set and undici is not installed",
+      env: { HTTP_PROXY: "http://127.0.0.1:9" },
       deno: false,
     },
-    { when: "the runtime is Deno", importUndici: () => import("undici"), deno: true },
-  ])("leaves the requests to the global fetch when $when", async ({ importUndici, deno }) => {
+    { when: "the runtime is Deno", env: { HTTP_PROXY: "http://127.0.0.1:9" }, deno: true },
+  ])("leaves the requests to the global fetch when $when", async ({ env, deno }) => {
+    for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value);
     if (deno) vi.stubGlobal("Deno", {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const importUndici = () => Promise.reject(new Error("Cannot find package 'undici'"));
 
     await expect(
-      createTransport({ proxyFromEnv: true, dnsCache: true }, { importUndici }),
+      createTransport({ proxyFromEnv: true }, { importUndici }),
     ).resolves.toBeUndefined();
   });
 });
 
 describe("UnikraftCloud", () => {
-  it("answers through a custom fetch while fake timers hold setImmediate", async () => {
-    // Fake timers that come before the import replace the `setImmediate` the
-    // module takes, so a request through the SDK's own transport would wait
-    // for the clock. A caller's own fetch must not.
-    vi.useFakeTimers();
+  it("does not hold the creates of a burst that goes through fetch", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "performance"] });
     vi.resetModules();
     const { UnikraftCloud: Fresh } = await import("../src/index.js");
-    const fetch = vi.fn(async () => Response.json({ status: "success", op_time_us: 1 }));
-    const ukc = new Fresh({ token: "t", metro: "fra", fetch });
+    const globalFetch = vi.fn(async () => Response.json({ status: "success", op_time_us: 1 }));
+    vi.stubGlobal("fetch", globalFetch);
+    const api = new Fresh({ token: "t", metro: "fra" }).api.platform.instances;
 
-    await expect(ukc.api.platform.instances.getInstances({})).resolves.toEqual({
-      status: "success",
-      op_time_us: 1,
-    });
-    expect(fetch).toHaveBeenCalledOnce();
-  });
-
-  // undici reads a limit of 0 as no limit.
-  it.each([0, -1, 1.5])("rejects a maxConnections of %s", (maxConnections) => {
-    expect(() => new UnikraftCloud({ token: "t", metro: "fra", maxConnections })).toThrow(
-      expect.objectContaining({ kind: "config", message: expect.stringMatching(/maxConnections/) }),
+    await Promise.all(
+      Array.from({ length: 10 }, () => api.request({ method: "POST", path: "/v1/instances" })),
     );
+    expect(globalFetch).toHaveBeenCalledTimes(10);
   });
 
-  it.each([
-    { via: "undici's request()", config: {} },
-    {
-      via: "a custom fetch",
-      config: { fetch: (url: string, init?: RequestInit) => globalThis.fetch(url, init) },
-    },
-  ])("reads a JSON answer, an error answer and a byte body through $via", async ({ config }) => {
+  it("reads a JSON answer, an error answer and a byte body through the global fetch", async () => {
     const server = createServer((request, response) => {
       if (request.url === "/missing") {
         response.writeHead(404, { "content-type": "application/json" });
@@ -411,11 +215,8 @@ describe("UnikraftCloud", () => {
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const { port } = server.address() as AddressInfo;
-    const api = new UnikraftCloud({
-      token: "t",
-      baseUrl: `http://127.0.0.1:${port}`,
-      ...config,
-    }).api.platform.instances;
+    const api = new UnikraftCloud({ token: "t", baseUrl: `http://127.0.0.1:${port}` }).api.platform
+      .instances;
 
     try {
       await expect(api.request({ method: "GET", path: "/ok" })).resolves.toEqual({
@@ -436,45 +237,44 @@ describe("UnikraftCloud", () => {
     }
   });
 
-  it.each([
-    { via: "undici by default", config: {}, globalFetchCalls: 0 },
-    { via: "undici when dnsCache is false", config: { dnsCache: false }, globalFetchCalls: 0 },
-    {
-      via: "the global fetch from a custom fetch that calls it",
-      config: { fetch: (url: string, init?: RequestInit) => globalThis.fetch(url, init) },
-      globalFetchCalls: 1,
-    },
-  ])("sends a request through $via", async ({ config, globalFetchCalls }) => {
-    const server = await listen();
-    const globalFetch = vi.fn(globalThis.fetch);
+  it("sends a request through the global fetch that is set when the client is made", async () => {
+    const globalFetch = vi.fn(async () => Response.json({ status: "success", op_time_us: 1 }));
     vi.stubGlobal("fetch", globalFetch);
-    const baseUrl = `http://127.0.0.1:${server.port}`;
-    const ukc = new UnikraftCloud({ token: "t", baseUrl, ...config });
+    const ukc = new UnikraftCloud({ token: "t", metro: "fra" });
 
-    try {
-      await expect(ukc.api.platform.instances.getInstances({})).resolves.toEqual({
-        status: "success",
-        op_time_us: 1,
-      });
-      expect(globalFetch).toHaveBeenCalledTimes(globalFetchCalls);
-    } finally {
-      await server.close();
-    }
+    await expect(ukc.api.platform.instances.getInstances({})).resolves.toEqual({
+      status: "success",
+      op_time_us: 1,
+    });
+    expect(globalFetch).toHaveBeenCalledOnce();
   });
 
   it("sends a request that follows another on the same connection", async () => {
-    const server = await listen({ keepAlive: true });
-    const baseUrl = `http://127.0.0.1:${server.port}`;
-    const ukc = new UnikraftCloud({ token: "t", baseUrl });
+    const server = await listen();
+    const ukc = new UnikraftCloud({ token: "t", baseUrl: `http://127.0.0.1:${server.port}` });
 
     try {
       await ukc.api.platform.instances.getInstances({});
       await ukc.api.platform.instances.getInstances({});
       expect(server.connections()).toBe(1);
-      // No `sec-fetch-mode` header: both went through undici's request(), not fetch.
-      expect(server.fetchModes).toEqual([undefined, undefined]);
     } finally {
       await server.close();
     }
+  });
+
+  it("answers while fake timers that started before the import hold setImmediate", async () => {
+    vi.useFakeTimers();
+    vi.resetModules();
+    const { UnikraftCloud: Fresh } = await import("../src/index.js");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ status: "success", op_time_us: 1 })),
+    );
+    const ukc = new Fresh({ token: "t", metro: "fra" });
+
+    await expect(ukc.api.platform.instances.getInstances({})).resolves.toEqual({
+      status: "success",
+      op_time_us: 1,
+    });
   });
 });

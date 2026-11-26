@@ -203,9 +203,10 @@ the same code.
 - Formatting and linting are enforced by [Biome](https://biomejs.dev)
   (`npm run lint`). Run `npx biome check --write .` to fix.
 - Add no runtime dependency: rely on the platform `fetch` and the standard
-  Web and Node APIs. The two exceptions are `undici`, which carries the
-  transport on Node, and the generated plugin plumbing packages
-  (`@unikraft/cloud-plugin-<name>-api`), which the porcelain wraps.
+  Web and Node APIs. The one exception is the generated plugin plumbing
+  packages (`@unikraft/cloud-plugin-<name>-api`), which the porcelain wraps.
+  `undici` is an optional peer dependency, loaded only for a proxy from the
+  environment.
 - Add a test in `test/` for new idiomatic behaviour.
 
 ## Commit messages

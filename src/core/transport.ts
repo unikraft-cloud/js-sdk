@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026, Unikraft GmbH.
 
+import {
+  createDirectSender,
+  type DirectModules,
+  type DirectOptions,
+  type DirectSender,
+} from "./h2.js";
+import { createWorkerSender } from "./h2-worker.js";
 import type { FetchLike } from "./http.js";
 
 /** Opaque undici `Dispatcher` handle. */
@@ -8,53 +15,31 @@ export interface Dispatcher {
   dispatch(...args: never[]): boolean;
 }
 
-/** undici's `request()`, which skips the WHATWG streams and objects of `fetch`. */
-export type RequestFn = (
-  url: string,
-  options: {
-    method: string;
-    headers: Record<string, string>;
-    body?: string;
-    signal?: AbortSignal;
-    dispatcher: Dispatcher;
-  },
-) => Promise<{
-  statusCode: number;
-  statusText?: string;
-  body: { text(): Promise<string>; arrayBuffer(): Promise<ArrayBuffer> };
-}>;
-
-/** A version-matched `fetch`, `request` and `dispatcher` from one undici module. */
-export interface Transport {
-  fetch: FetchLike;
-  /** Absent when the installed undici has no `request()`. */
-  request?: RequestFn;
-  dispatcher: Dispatcher;
-  proxied: boolean;
-  /** True when the latest connection to `hostname` speaks HTTP/2. */
-  multiplexes(hostname: string): boolean;
-  /**
-   * Starts the DNS lookup of a host into the cache, if the cache has no
-   * answer. Absent when the transport does not use the cache.
-   */
-  resolveEarly?: (hostname: string) => void;
-}
+export type Transport =
+  | {
+      /**
+       * The two come from the SAME undici module. A dispatcher must only be
+       * used with its own version's `fetch`: mixing a standalone-undici
+       * dispatcher into Node's bundled `fetch` fails with
+       * `UND_ERR_INVALID_ARG: invalid onRequestStart method`.
+       */
+      proxy: { fetch: FetchLike; dispatcher: Dispatcher };
+      direct?: undefined;
+    }
+  | { direct: DirectSender; proxy?: undefined };
 
 export interface TransportOptions {
   proxyFromEnv: boolean;
-  dnsCache: boolean;
-  /** Offer HTTP/2 in the TLS handshake. Defaults to `false`. */
-  http2?: boolean;
-  /** The most connections to one origin. Defaults to no limit. */
-  maxConnections?: number;
+  http2Direct?: boolean;
+  http2Worker?: boolean;
 }
 
 /** The boundaries of {@link createTransport}, which a test can replace. */
 export interface TransportDeps {
-  /** Loads the `undici` module. Defaults to the `import("undici")` that starts when this module loads. */
   importUndici?: () => Promise<unknown>;
   /** Resolves a host on a cache miss. Defaults to `dns.promises.lookup`. */
   resolve?: Resolver;
+  direct?: Omit<DirectOptions, "cache">;
 }
 
 /** One address of a host, as `dns.lookup` reports it. */
@@ -87,21 +72,13 @@ export interface CachedLookup {
   lookup: LookupFunction;
   /** Drops the answers for a host, so that its next connection resolves it again. */
   forget(hostname: string): void;
+  fresh(hostname: string): boolean;
 }
-
-/** undici's connector, as `buildConnector` returns it. */
-type Connector = (
-  options: { hostname: string },
-  callback: (error: Error | null, socket: unknown) => void,
-) => unknown;
 
 /** The parts of the `undici` module that this transport uses. */
 interface Undici {
   fetch?: FetchLike;
-  request?: RequestFn;
-  Agent?: new (options: { connect: Connector; connections?: number }) => Dispatcher;
-  EnvHttpProxyAgent?: new (options?: { connect?: Connector; connections?: number }) => Dispatcher;
-  buildConnector?: (options: { lookup?: LookupFunction; allowH2?: boolean }) => Connector;
+  EnvHttpProxyAgent?: new () => Dispatcher;
 }
 
 // `getaddrinfo` does not report the time to live of a DNS record, so the
@@ -139,6 +116,12 @@ function isNode(): boolean {
   );
 }
 
+// Bun sets `process.versions.node` too, but its `node:http2` client is not
+// the one that the direct path is built and tested on.
+function isBun(): boolean {
+  return typeof process !== "undefined" && typeof process.versions?.bun === "string";
+}
+
 /** True when any HTTP proxy environment variable is set. */
 function hasProxyEnv(): boolean {
   if (typeof process === "undefined" || !process.env) return false;
@@ -149,24 +132,14 @@ function hasProxyEnv(): boolean {
 }
 
 // A non-literal specifier stops a bundler for browsers or Deno from including
-// `undici` or `node:dns`.
+// `undici` or a Node module, and keeps `undici` an optional package.
 function importOptional(specifier: string): Promise<unknown> {
   return import(specifier);
-}
-
-let undiciModule: Promise<unknown> | undefined;
-
-function loadUndici(): Promise<unknown> {
-  undiciModule ??= importOptional("undici");
-  return undiciModule;
 }
 
 let dnsLookup: Resolver | undefined;
 let dnsModule: Promise<Resolver> | undefined;
 
-// A dynamic import resolves only after the microtasks that are queued, so a
-// lookup that awaits it in a burst starts after the setup of every request.
-// The module therefore loads with this one, and a lookup calls it at once.
 function loadDns(): Promise<Resolver> {
   dnsModule ??= importOptional("node:dns").then((dns) => {
     const { promises } = dns as { promises: { lookup: Resolver } };
@@ -176,19 +149,23 @@ function loadDns(): Promise<Resolver> {
   return dnsModule;
 }
 
+let directModules: Promise<DirectModules> | undefined;
+
+// The default export of a built-in module is the object that tracing tools
+// patch, for example `tls.connect`. The named exports of its ESM namespace do
+// not see such a patch, so the direct path calls through the default export.
+const defaultOf = (module: unknown) => (module as { default?: unknown }).default ?? module;
+
+function loadDirectModules(): Promise<DirectModules> {
+  directModules ??= Promise.all(
+    ["node:http2", "node:tls", "node:net"].map((name) => importOptional(name).then(defaultOf)),
+  ).then(([http2, tls, net]) => ({ http2, tls, net }) as DirectModules);
+  return directModules;
+}
+
 /** Resolves a host through `dns.lookup`, which reads /etc/hosts before DNS. */
 async function nodeResolve(...args: Parameters<Resolver>): Promise<LookupAddress[]> {
   return (dnsLookup ?? (await loadDns()))(...args);
-}
-
-// Node needs tens of milliseconds of CPU to load undici. If the first request
-// starts the load, every request sent in the same tick waits for it, and a
-// burst of creates pays the load in each create. So the load starts when this
-// module loads, before the first request. A failed load is reported to
-// createTransport, which decides what to do without undici.
-if (isNode()) {
-  loadUndici().catch(() => {});
-  loadDns().catch(() => {});
 }
 
 /**
@@ -231,136 +208,61 @@ export function cachedLookup(
     forget(hostname) {
       for (const family of [0, 4, 6]) answers.delete(keyOf(hostname, family));
     },
-  };
-}
-
-/** The part of a TLS socket that {@link connector} uses. */
-interface SessionSocket {
-  encrypted?: boolean;
-  on(event: "session", listener: (session: unknown) => void): unknown;
-}
-
-/**
- * undici's connector, with the DNS cache when `dnsCache` is on.
- *
- * undici keeps the TLS session of a host only through a `WeakRef`. So if a
- * garbage collection occurs between two waves of new connections, each
- * connection of the second wave does a full TLS handshake, and the main thread
- * of a burst spends its time on the handshakes. The connector holds the
- * latest session of each host, so that the next connections resume it.
- */
-function connector(
-  buildConnector: NonNullable<Undici["buildConnector"]>,
-  options: TransportOptions,
-  cache: CachedLookup | undefined,
-  http2Hosts: Set<string>,
-): Connector {
-  // undici reads `allowH2` here, not on the Agent, when it gets a connector.
-  const connect = buildConnector({
-    ...(cache && { lookup: cache.lookup }),
-    allowH2: options.http2 ?? false,
-  });
-  const sessions = new Map<string, unknown>();
-  return (target, callback) => {
-    const socket = connect(target, (error, connected) => {
-      if (error) {
-        // The host can move to a new address. A failed connection is the first
-        // sign of that, so the next connection resolves the host again.
-        cache?.forget(target.hostname);
-      } else if ((connected as { alpnProtocol?: string }).alpnProtocol === "h2") {
-        http2Hosts.add(target.hostname);
-      } else {
-        http2Hosts.delete(target.hostname);
-      }
-      callback(error, connected);
-    }) as SessionSocket | undefined;
-    if (socket?.encrypted) {
-      socket.on("session", (session) => sessions.set(target.hostname, session));
-    }
-    return socket;
+    fresh(hostname) {
+      const cached = answers.get(keyOf(hostname));
+      return cached !== undefined && cached.expiresAt > now();
+    },
   };
 }
 
 /**
- * Returns undefined outside Node, or when `undici` does not load, or does not
- * have a part that this transport needs. The global `fetch` then carries the
- * requests. Never throws, because the global `fetch` works without the
- * transport. Callers go through {@link sharedTransport}, which builds it once
- * per process.
- *
- * The dispatcher and fetch come from the SAME undici module. A dispatcher must
- * only be used with its own version's `fetch`: mixing a standalone-undici
- * dispatcher into Node's bundled `fetch` fails with `UND_ERR_INVALID_ARG:
- * invalid onRequestStart method`.
+ * undici's `fetch` with a dispatcher that reads the proxy variables, which the
+ * global `fetch` of Node ignores.
  */
+async function proxyTransport(importUndici: () => Promise<unknown>): Promise<Transport["proxy"]> {
+  let undici: Undici;
+  try {
+    undici = (await importUndici()) as Undici;
+  } catch (cause) {
+    warnProxy(
+      "the optional `undici` dependency is not installed. Install it (`npm install undici`) to route requests through the proxy.",
+      cause,
+    );
+    return undefined;
+  }
+  if (typeof undici.EnvHttpProxyAgent !== "function" || typeof undici.fetch !== "function") {
+    warnProxy("the installed `undici` is too old; upgrade to undici >= 8 for proxy support.");
+    return undefined;
+  }
+  try {
+    return { fetch: undici.fetch, dispatcher: new undici.EnvHttpProxyAgent() };
+  } catch (cause) {
+    warnProxy("failed to construct undici's EnvHttpProxyAgent.", cause);
+    return undefined;
+  }
+}
+
 export async function createTransport(
   options: TransportOptions,
   deps: TransportDeps = {},
 ): Promise<Transport | undefined> {
   if (!isNode()) return undefined;
-  const proxy = options.proxyFromEnv && hasProxyEnv();
-
-  let undici: Undici;
+  if (options.proxyFromEnv && hasProxyEnv()) {
+    const proxy = await proxyTransport(deps.importUndici ?? (() => importOptional("undici")));
+    return proxy && { proxy };
+  }
+  if (!options.http2Direct || isBun()) return undefined;
   try {
-    undici = (await (deps.importUndici ?? loadUndici)()) as Undici;
-  } catch (cause) {
-    if (proxy) {
-      warnProxy("the `undici` dependency does not load.", cause);
+    const [modules] = await Promise.all([loadDirectModules(), loadDns()]);
+    const direct = { ...deps.direct, cache: cachedLookup(deps.resolve) };
+    let sender = createDirectSender(modules, direct);
+    if (options.http2Worker) {
+      const { Worker } = (await importOptional(
+        "node:worker_threads",
+      )) as typeof import("node:worker_threads");
+      sender = createWorkerSender(sender, Worker, direct);
     }
-    return undefined;
-  }
-
-  const http2Hosts = new Set<string>();
-  const multiplexes = (hostname: string) => http2Hosts.has(hostname);
-  let connect: Connector | undefined;
-  let resolveEarly: ((hostname: string) => void) | undefined;
-  if (typeof undici.buildConnector === "function") {
-    try {
-      const cache = options.dnsCache ? cachedLookup(deps.resolve) : undefined;
-      connect = connector(undici.buildConnector, options, cache, http2Hosts);
-      // undici asks for the address only when a connection starts, which in a
-      // burst is after the setup of every request sent in the same tick. The
-      // lookup goes to the libuv thread pool and to the network, so it runs
-      // while that setup runs.
-      if (cache) resolveEarly = (hostname) => cache.lookup(hostname, {}, () => {});
-    } catch {
-      // Continue without the connector, because it only makes requests faster.
-    }
-  }
-  const request = typeof undici.request === "function" ? undici.request : undefined;
-
-  if (proxy) {
-    if (typeof undici.EnvHttpProxyAgent !== "function" || typeof undici.fetch !== "function") {
-      warnProxy("the installed `undici` is too old; upgrade to undici >= 8 for proxy support.");
-      return undefined;
-    }
-    try {
-      // EnvHttpProxyAgent gives `connect` only to its agent for direct
-      // requests, for example to a host in NO_PROXY. For a proxied request,
-      // the proxy resolves the host. It gives `connections` to both agents,
-      // so the cap also applies to the tunnels through the proxy. The
-      // transport starts no early lookup here: most requests go to the proxy,
-      // and the network behind a proxy often has no DNS for the API host.
-      const dispatcher = new undici.EnvHttpProxyAgent({
-        ...(connect && { connect }),
-        ...(options.maxConnections !== undefined && { connections: options.maxConnections }),
-      });
-      return { fetch: undici.fetch, request, dispatcher, proxied: true, multiplexes };
-    } catch (cause) {
-      warnProxy("failed to construct undici's EnvHttpProxyAgent.", cause);
-      return undefined;
-    }
-  }
-
-  if (!connect || typeof undici.Agent !== "function" || typeof undici.fetch !== "function") {
-    return undefined;
-  }
-  try {
-    const dispatcher = new undici.Agent({
-      connect,
-      ...(options.maxConnections !== undefined && { connections: options.maxConnections }),
-    });
-    return { fetch: undici.fetch, request, dispatcher, proxied: false, multiplexes, resolveEarly };
+    return { direct: sender };
   } catch {
     return undefined;
   }
@@ -368,16 +270,11 @@ export async function createTransport(
 
 const shared = new Map<string, Promise<Transport | undefined>>();
 
-/**
- * Resolve the transport for `options`, built at most once per process, so
- * that every client shares one connection pool and one DNS cache.
- */
 export function sharedTransport(options: TransportOptions): Promise<Transport | undefined> {
   const key = [
     options.proxyFromEnv,
-    options.dnsCache,
-    options.http2 ?? false,
-    options.maxConnections ?? "",
+    options.http2Direct ?? false,
+    options.http2Worker ?? false,
   ].join("/");
   let transport = shared.get(key);
   if (!transport) {

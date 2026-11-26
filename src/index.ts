@@ -3,7 +3,7 @@
 
 import { Api } from "./api/index.js";
 import { readEnv } from "./core/env.js";
-import type { ApiClientConfig } from "./core/http.js";
+import { type ApiClientConfig, preconnect } from "./core/http.js";
 import {
   CONTROLPLANE_BASE_URL,
   DEFAULT_METRO,
@@ -25,10 +25,7 @@ const USER_AGENT = "@unikraft/cloud";
 
 /** Configuration for the top-level {@link UnikraftCloud} client. */
 export interface UnikraftCloudConfig
-  extends Pick<
-    ApiClientConfig,
-    "fetch" | "proxyFromEnv" | "dnsCache" | "http2" | "maxConnections"
-  > {
+  extends Pick<ApiClientConfig, "fetch" | "proxyFromEnv" | "http2Direct" | "http2Worker"> {
   /**
    * Bearer token used for authentication. Falls back to the `UKC_TOKEN`
    * environment variables when omitted.
@@ -114,6 +111,7 @@ export class MetroClient extends Scope {
     this.endpoint = endpoint;
     this.api = new Api({ ...session.platform, baseUrl: endpoint.baseUrl }, session.controlPlane);
     this.sandboxes = new Sandboxes(session, endpoint.metro);
+    preconnect({ ...session.platform, baseUrl: endpoint.baseUrl });
   }
 }
 
@@ -128,9 +126,8 @@ function buildSession(config: UnikraftCloudConfig): Session {
     headers: config.headers,
     userAgent: config.userAgent ?? USER_AGENT,
     proxyFromEnv: config.proxyFromEnv,
-    dnsCache: config.dnsCache,
-    http2: config.http2,
-    maxConnections: config.maxConnections,
+    http2Direct: config.http2Direct,
+    http2Worker: config.http2Worker,
   };
 
   // A named base URL (explicitly, or as the `metro`) is the only endpoint there
@@ -201,6 +198,8 @@ export class UnikraftCloud extends Scope {
     const session = buildSession(config);
     super(session, defaultScope(config));
     this.api = new Api(session.platform, session.controlPlane);
+    const named = config.baseUrl ?? config.metro ?? readEnv("UKC_METRO");
+    if (named !== undefined) preconnect(session.platform);
   }
 
   /**
