@@ -334,7 +334,6 @@ describe("http2Direct", () => {
       baseUrl: `${http1 ? "https" : "http"}://127.0.0.1:${port}`,
       http2Direct: true,
       http2Worker: worker,
-      preconnect: worker,
     }).api.platform.instances;
 
     try {
@@ -479,14 +478,13 @@ function runChild(body: string): Promise<{ code: number | null; stderr: string }
   });
 }
 
-describe("preconnect", () => {
+describe("the early session", () => {
   it("opens the direct session when the client is made, and the first request uses it", async () => {
     const server = await listenH2();
     const ukc = new UnikraftCloud({
       token: "t",
       baseUrl: `https://127.0.0.1:${server.port}`,
       http2Direct: true,
-      preconnect: true,
     });
 
     try {
@@ -505,7 +503,6 @@ describe("preconnect", () => {
       token: "t",
       baseUrl: `https://127.0.0.1:${silent.port}`,
       http2Direct: true,
-      preconnect: true,
     });
 
     await expect(
@@ -541,7 +538,7 @@ describe("preconnect", () => {
     "lets the process exit by itself when the client $client (worker: $worker)",
     async ({ server: listen, request, worker }) => {
       const server = await listen();
-      const options = `{ token: "t", baseUrl: "https://127.0.0.1:${server.port}", http2Direct: true, http2Worker: ${worker}, preconnect: true }`;
+      const options = `{ token: "t", baseUrl: "https://127.0.0.1:${server.port}", http2Direct: true, http2Worker: ${worker} }`;
       const body = request
         ? `const ukc = new UnikraftCloud(${options});
          await ukc.api.platform.instances.request({ method: "GET", path: "/" });`
@@ -563,7 +560,6 @@ describe("http2Worker", () => {
       token: "t",
       baseUrl: `https://127.0.0.1:${server.port}`,
       http2Worker: true,
-      preconnect: true,
     }).api.platform.instances;
 
     try {

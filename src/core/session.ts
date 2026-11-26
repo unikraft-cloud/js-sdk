@@ -31,8 +31,6 @@ export interface SessionConfig {
    * caller never mentioned.
    */
   pinned?: MetroEndpoint;
-  /** Prepare the connection to a metro when a client for it is made. */
-  preconnect?: boolean;
 }
 
 /**
@@ -50,8 +48,6 @@ export class Session {
   readonly defaultEndpoint: MetroEndpoint;
   /** The single endpoint every scope collapses to, when one was named. */
   readonly pinned?: MetroEndpoint;
-  /** Prepare the connection to a metro when a client for it is made. */
-  readonly preconnect: boolean;
 
   #metros?: MetrosApi;
   #discovery?: Promise<MetroEndpoint[]>;
@@ -62,7 +58,6 @@ export class Session {
     this.platform = config.platform;
     this.controlPlane = config.controlPlane;
     this.pinned = config.pinned;
-    this.preconnect = config.preconnect ?? false;
     this.defaultEndpoint =
       config.pinned ??
       ({ metro: config.defaultMetro, baseUrl: config.platform.baseUrl } as MetroEndpoint);

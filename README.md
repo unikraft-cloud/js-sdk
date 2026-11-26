@@ -467,7 +467,7 @@ CPU, because the SDK makes no `Request`, `Response` or stream objects for each
 request.
 
 ```ts
-const ukc = new UnikraftCloud({ token, http2Direct: true });
+const ukc = new UnikraftCloud({ token, metro: "fra", http2Direct: true });
 ```
 
 The SDK still uses `fetch` for these requests:
@@ -500,27 +500,14 @@ With the option on, some things differ from `fetch`:
 
 The SDK does not use the direct path on Bun.
 
-### Connect before the first request
-
-By default, the SDK connects to an API host at the first request to it, so the
-first request waits for the DNS lookup, the TCP connection and the TLS
-handshake. With `http2Direct` and `preconnect: true`, the SDK opens the HTTP/2
-session when you make the client:
-
-```ts
-const ukc = new UnikraftCloud({ token, metro: "fra", http2Direct: true, preconnect: true });
-```
-
-The SDK opens the session to the metro that the constructor names (`metro`,
-`baseUrl` or `UKC_METRO`), and to each metro of `ukc.metro()`. Without
-`http2Direct`, the option does nothing, because `fetch` opens its connections
-itself.
-
-The option never throws. If the connection fails, or the server closes it
-before the first request, the first request opens a new one. An open session
-does not keep the process alive. A TCP connect that has no answer does, so the
-SDK gives up an early session that is not up after 1 second and that no request
-uses yet.
+The SDK opens the session when you make the client, so the first request does
+not wait for the DNS lookup, the TCP connection and the TLS handshake. It does
+this for the metro that the constructor names (`metro`, `baseUrl` or
+`UKC_METRO`), and for each metro of `ukc.metro()`. This never throws: if the
+connection fails, or the server closes it before the first request, the first
+request opens a new one. An open session does not keep the process alive. A TCP
+connect that has no answer does, so the SDK gives up an early session that is
+not up after 1 second and that no request uses yet.
 
 ### The HTTP/2 session in a worker thread
 
@@ -530,14 +517,14 @@ thread only posts the request and reads the answer. The option turns
 `http2Direct` on.
 
 ```ts
-const ukc = new UnikraftCloud({ token, metro: "fra", http2Worker: true, preconnect: true });
+const ukc = new UnikraftCloud({ token, metro: "fra", http2Worker: true });
 ```
 
 This takes more work off the main thread than `http2Direct` alone, for a
 thread and more CPU time in the process. The worker needs some tens of
-milliseconds to start. Until its session is up, the main thread sends the
-requests over its own session, so set `preconnect` to start the worker when
-you make the client. If the worker stops, the requests that it carried fail
+milliseconds to start, and it starts when you make the client. Until its
+session is up, the main thread sends the requests over its own session. If the
+worker stops, the requests that it carried fail
 with a network error, and the main thread sends the next requests. An idle
 worker does not keep the process alive.
 

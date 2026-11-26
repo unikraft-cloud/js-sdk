@@ -105,11 +105,13 @@ export interface ApiClientConfig {
   proxyFromEnv?: boolean;
   /**
    * On Node, send the requests that the SDK reads whole over Node's own
-   * `node:http2` client: one session to each API host, opened at the first
-   * request. A burst of requests then shares one connection, and costs the
-   * main thread less CPU than `fetch`. The SDK uses `fetch` as before for a
-   * host that answers only HTTP/1.1, an `http:` base URL, a proxy from the
-   * environment, and event streams. Not used on Bun. Defaults to `false`.
+   * `node:http2` client: one session to each API host. A burst of requests
+   * then shares one connection, and costs the main thread less CPU than
+   * `fetch`. The SDK opens the session when a client names its metro
+   * (`metro`, `baseUrl` or `UKC_METRO`), so the first request does not wait
+   * for the TLS handshake. The SDK uses `fetch` as before for a host that
+   * answers only HTTP/1.1, an `http:` base URL, a proxy from the environment,
+   * and event streams. Not used on Bun. Defaults to `false`.
    */
   http2Direct?: boolean;
   /**
@@ -126,9 +128,8 @@ export interface ApiClientConfig {
    * does the TLS and the HTTP/2 work of each request. Turns `http2Direct` on.
    * Takes more work off the main thread than `http2Direct` alone, and costs
    * the process a thread and more CPU in total. Until the worker's session is
-   * up, the main thread sends the requests itself, so start the worker early
-   * with `preconnect`. If the worker stops, the main thread sends the
-   * requests. Defaults to `false`.
+   * up, and if the worker stops, the main thread sends the requests itself.
+   * Defaults to `false`.
    */
   http2Worker?: boolean;
 }
@@ -342,6 +343,7 @@ function transportOptions(config: ApiClientConfig): TransportOptions {
  */
 export function preconnect(config: ApiClientConfig): void {
   if (typeof config.fetch === "function") return;
+  if (!config.http2Direct && !config.http2Worker) return;
   try {
     const { origin } = splitUrl(stripTrailingSlashes(config.baseUrl));
     sharedTransport(transportOptions(config))

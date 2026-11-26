@@ -245,7 +245,6 @@ const CLIENT_ONLY_OPTIONS = {
   proxyFromEnv: true,
   http2Direct: true,
   maxCreatesPerMs: true,
-  preconnect: true,
   http2Worker: true,
 } as const satisfies Record<ClientOnlyOption, true>;
 

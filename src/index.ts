@@ -55,17 +55,6 @@ export interface UnikraftCloudConfig
   headers?: Record<string, string>;
   /** Override the default User-Agent. */
   userAgent?: string;
-  /**
-   * With `http2Direct`, open the HTTP/2 session to the API host of a metro
-   * when the client for it is made, not at its first request: when this
-   * constructor names one metro (`metro`, `baseUrl` or `UKC_METRO`), and in
-   * {@link UnikraftCloud.metro}. Does nothing without `http2Direct`. This
-   * never throws: if the connection fails, the first request opens a new one.
-   * An open session does not keep the process alive. A TCP connect with no
-   * answer does, so the SDK gives up an early session that is not up after
-   * 1 s and that no request uses yet. Defaults to `false`.
-   */
-  preconnect?: boolean;
 }
 
 /**
@@ -125,7 +114,7 @@ export class MetroClient extends Scope {
     this.endpoint = endpoint;
     this.api = new Api({ ...session.platform, baseUrl: endpoint.baseUrl }, session.controlPlane);
     this.sandboxes = new Sandboxes(session, endpoint.metro);
-    if (session.preconnect) preconnect({ ...session.platform, baseUrl: endpoint.baseUrl });
+    preconnect({ ...session.platform, baseUrl: endpoint.baseUrl });
   }
 }
 
@@ -163,7 +152,6 @@ function buildSession(config: UnikraftCloudConfig): Session {
     controlPlane,
     defaultMetro,
     pinned: explicitUrl ? { metro: baseUrl, baseUrl } : undefined,
-    preconnect: config.preconnect,
   });
 }
 
@@ -217,7 +205,7 @@ export class UnikraftCloud extends Scope {
     // With no metro named, the first request goes to the control plane to
     // discover the metros, so the client knows of no API host that it uses.
     const named = config.baseUrl ?? config.metro ?? readEnv("UKC_METRO");
-    if (session.preconnect && named !== undefined) preconnect(session.platform);
+    if (named !== undefined) preconnect(session.platform);
   }
 
   /**
