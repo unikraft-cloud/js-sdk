@@ -37,7 +37,6 @@ beforeEach(() => {
     vi.stubEnv(name, undefined);
     vi.stubEnv(name.toLowerCase(), undefined);
   }
-  // The certificate of the fixture is self-signed, so no CA can verify it.
   vi.stubEnv("NODE_TLS_REJECT_UNAUTHORIZED", "0");
 });
 
@@ -47,7 +46,6 @@ afterEach(() => {
 });
 
 interface Seen {
-  /** The index of the server session that carried the request. */
   session: number;
   method: string;
   path: string;
@@ -78,11 +76,6 @@ const byPath: Handler = (stream, headers, index) => {
   }
 };
 
-/**
- * An HTTPS server that answers HTTP/2, and HTTP/1.1 to a client that offers
- * only that. It records each request, each HTTP/2 session, and whether each
- * TLS connection resumed a session.
- */
 async function listenH2(handler: Handler = ok, onSession?: (session: Http2Session) => void) {
   const seen: Seen[] = [];
   const resumed: boolean[] = [];
@@ -152,12 +145,7 @@ async function directTransport(deps: TransportDeps = {}): Promise<Transport> {
 type Requests = { request(args: { method: "GET"; path: string }): Promise<unknown> };
 
 async function workerCarriesRequests(server: Awaited<ReturnType<typeof listenH2>>, api: Requests) {
-  // The worker opens its session when the client is made. A request before
-  // that opens a session of the main thread first, so no request goes out
-  // until the server has one session, which is then session 0.
   await vi.waitFor(() => expect(server.sessions).toHaveLength(1));
-  // Until the main thread learns that the worker is up, a request still
-  // opens a session of the main thread.
   await vi.waitFor(async () => {
     await api.request({ method: "GET", path: "/" });
     expect(server.seen.at(-1)?.session).toBe(0);
@@ -170,7 +158,6 @@ function sendDirect(transport: Transport, url: string, signal?: AbortSignal) {
   return sent;
 }
 
-/** A TCP server that accepts connections and never answers, so a TLS handshake never ends. */
 async function listenSilent() {
   const held = new Set<Socket>();
   const server = createTcpServer((socket) => held.add(socket));
@@ -280,15 +267,12 @@ describe("http2Direct", () => {
           : ok(stream, headers, index)) as Handler,
     },
     {
-      // Each request gets a GOAWAY and two refusals, which is more than one
-      // budget of two retries, so the GOAWAY must not use up the refusal budget.
       server: "sends a GOAWAY, and then refuses each request two times on the new session",
       handler: (() => {
         const streamsOf = new Map<unknown, number>();
         return ((stream, headers, index) => {
           const nth = streamsOf.get(stream.session) ?? 0;
           streamsOf.set(stream.session, nth + 1);
-          // The first session sent a GOAWAY, so its streams need no answer.
           if (streamsOf.size === 1) return;
           if (nth < 6) stream.close(constants.NGHTTP2_REFUSED_STREAM);
           else ok(stream, headers, index);
@@ -313,8 +297,6 @@ describe("http2Direct", () => {
   });
 
   it("starts at most 4 creates in each millisecond, and holds no other request", async () => {
-    // The pace takes `setTimeout` when its module loads, so the fake clock
-    // must come before the import.
     vi.useFakeTimers({ toFake: ["setTimeout", "performance"] });
     vi.resetModules();
     const { UnikraftCloud: Fresh } = await import("../src/index.js");
@@ -325,8 +307,6 @@ describe("http2Direct", () => {
       http2Direct: true,
     }).api.platform.instances;
     const creates = () => server.seen.filter((s) => s.method === "POST").length;
-    // The session carries its streams in order, so the server has every
-    // create that left before this request when the answer comes.
     const sync = () => api.request({ method: "GET", path: "/v1/instances" });
 
     try {
@@ -400,8 +380,6 @@ describe("http2Direct", () => {
     }
   });
 
-  // A session that still connects must give up on its socket itself:
-  // `destroy` on the session leaves a pending TCP connect alone.
   it.each([
     { stage: "the TLS handshake", server: listenSilent, lookup: "answers" },
     { stage: "the TCP connect", server: listenStopped, lookup: "answers" },
@@ -420,7 +398,6 @@ describe("http2Direct", () => {
         await expect(sendDirect(transport, url)).rejects.toMatchObject({ code: "ETIMEDOUT" });
         await expect(sendDirect(transport, url)).rejects.toMatchObject({ code: "ETIMEDOUT" });
         expect(resolve).toHaveBeenCalledTimes(2);
-        // A connect that is left behind keeps the process alive.
         await vi.waitFor(() =>
           expect(process.getActiveResourcesInfo()).not.toContain("ConnectWrap"),
         );
@@ -437,7 +414,7 @@ describe("http2Direct", () => {
       .mockReturnValueOnce(new Promise(() => {}))
       .mockResolvedValue(loopback);
     vi.useFakeTimers({ toFake: ["setTimeout"] });
-    const transport = await directTransport({ resolve, direct: { openTimeoutMs: 50 } });
+    const transport = await directTransport({ resolve, direct: { earlyConnectTimeoutMs: 50 } });
     const origin = `https://api.metro.test:${server.port}`;
 
     try {
@@ -455,7 +432,7 @@ describe("http2Direct", () => {
     const server = await listenH2((stream, headers, index) => {
       if (index > 0) ok(stream, headers, index);
     });
-    const transport = await directTransport({ direct: { answerTimeoutMs: 50 } });
+    const transport = await directTransport({ direct: { stallTimeoutMs: 50 } });
     const url = `https://api.metro.test:${server.port}/`;
 
     try {
@@ -532,10 +509,6 @@ describe("http2Direct", () => {
   });
 });
 
-/**
- * Runs `body` in a new Node.js process that has the SDK sources loaded as
- * `UnikraftCloud`, and resolves with the exit code.
- */
 function runChild(body: string): Promise<{ code: number | null; stderr: string }> {
   const index = fileURLToPath(new URL("../src/index.ts", import.meta.url));
   const hooks = fileURLToPath(new URL("./fixtures/ts-hooks.mjs", import.meta.url));
@@ -543,10 +516,6 @@ function runChild(body: string): Promise<{ code: number | null; stderr: string }
   const child = spawn(
     process.execPath,
     ["--no-warnings", "--import", hooks, "--input-type=module", "--eval", code],
-    // A child that does not end gets killed, so that a failure reports an
-    // exit code of null and not a timeout of the test. A pending TCP connect
-    // that the SDK does not give up keeps the child alive for minutes, while
-    // the kernel sends the connect again.
     { env: { ...process.env, NODE_TLS_REJECT_UNAUTHORIZED: "0" }, timeout: 4000 },
   );
   let stderr = "";
@@ -590,7 +559,6 @@ describe("the early session", () => {
     ).rejects.toMatchObject({ kind: "network", message: expect.stringContaining("ECONNREFUSED") });
   });
 
-  // A refused port: a server that listened and closed again.
   async function listenClosed() {
     const server = await listenSilent();
     await server.close();

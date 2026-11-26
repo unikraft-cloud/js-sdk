@@ -260,25 +260,14 @@ function socketRelease(): Promise<void> {
 // Taken when this module loads, for the same reason as `nativeSetImmediate`.
 const nativeSetTimeout = setTimeout;
 
-/**
- * Returns undefined when a create can start now, or a promise that resolves
- * when its slot comes.
- */
 type Pace = () => Promise<void> | undefined;
 
 const paces = new Map<string, Pace>();
 
-// On the direct path, a burst of creates leaves on one connection in less
-// than a millisecond, and the platform then starts all the instances at the
-// same moment. At this rate a burst of 100 leaves over 25 ms. `fetch` needs no
-// pace: there, each create waits for a connection of its own.
+// On one connection, a burst of creates leaves in less than a millisecond,
+// and the platform then starts all the instances at the same moment.
 const CREATES_PER_MS = 4;
 
-/**
- * One pace for each origin, which every client of the process shares. The key
- * is the origin, not the base URL, because each sandbox has a client with a
- * base URL of its own on the same origin.
- */
 function paceFor(origin: string): Pace {
   let pace = paces.get(origin);
   if (!pace) {
@@ -289,10 +278,8 @@ function paceFor(origin: string): Pace {
 }
 
 /**
- * Lets at most `perMs` creates start in each slot of about 1 ms; the others
- * wait in order for a later slot. A Node.js timer has a step of 1 ms, so the
- * pace releases a group of creates for each timer, not one create for each
- * fraction of a millisecond.
+ * A Node.js timer has a step of 1 ms, so the pace releases a group of creates
+ * for each timer, not one create for each fraction of a millisecond.
  */
 function createPace(perMs: number): Pace {
   const now = () => performance.now();
@@ -347,10 +334,7 @@ export function preconnect(config: ApiClientConfig): void {
     sharedTransport(transportOptions(config))
       .then((transport) => transport?.direct?.open(origin))
       .catch(() => {});
-  } catch {
-    // A start before the first request only saves time, so its failure is
-    // not the caller's problem.
-  }
+  } catch {}
 }
 
 /** Serialise a query object into a URL search string (form/explode style). */
@@ -389,9 +373,7 @@ export class ApiClient {
   protected readonly fetchImpl: FetchLike;
   protected readonly defaultHeaders: Record<string, string>;
   protected readonly proxyFromEnv: boolean;
-  // Undefined with a custom fetch, which carries every request itself; see #transport().
   readonly #transportOptions?: TransportOptions;
-  // A custom fetch has a pool of its own, or none, so the SDK does not wait for it.
   readonly #released: () => Promise<void>;
   #transportPromise?: Promise<Transport | undefined>;
 
@@ -416,20 +398,12 @@ export class ApiClient {
     this.#released = hasCustomFetch ? () => Promise.resolve() : socketRelease;
   }
 
-  /**
-   * A custom fetch owns the transport, and the proxy dispatcher of undici
-   * does not work with a foreign fetch, so it gets none.
-   */
   #transport(): Promise<Transport | undefined> {
     if (!this.#transportOptions) return Promise.resolve(undefined);
     this.#transportPromise ??= sharedTransport(this.#transportOptions);
     return this.#transportPromise;
   }
 
-  /**
-   * Build the URL and the `fetch` init shared by every request, and resolve
-   * the transport that carries it.
-   */
   async #prepare(args: RequestArgs, options: CallOptions, accept: string): Promise<Prepared> {
     const base = stripTrailingSlashes(options.baseUrl ?? this.baseUrl);
     const url = base + args.path + encodeQuery(args.query);
@@ -481,8 +455,6 @@ export class ApiClient {
   }
 
   async #fetch({ url, init, transport }: Prepared): Promise<{ response: Response; url: string }> {
-    // The dispatcher works only with the fetch of its own undici module, so a
-    // proxy replaces the global fetch too.
     let fetchImpl = this.fetchImpl;
     if (transport?.proxy) {
       fetchImpl = transport.proxy.fetch;
@@ -495,10 +467,6 @@ export class ApiClient {
     }
   }
 
-  /**
-   * As `#send`, for a response that the caller reads whole, which the direct
-   * HTTP/2 path can carry.
-   */
   async #sendBuffered(
     args: RequestArgs,
     options: CallOptions,
@@ -513,10 +481,8 @@ export class ApiClient {
     const direct = transport?.direct?.send(url, init);
     if (direct) {
       try {
-        // An HTTP/2 session puts no socket back in a pool.
         return { response: await direct, url, released: () => Promise.resolve() };
       } catch (cause) {
-        // A host that answers only HTTP/1.1 got no request, so `fetch` sends it.
         if (!(cause instanceof Http1Host)) throw this.#networkError(url, transport, cause);
       }
     }

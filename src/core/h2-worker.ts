@@ -1,14 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026, Unikraft GmbH.
-//
-// The worker of `http2Worker`: the direct HTTP/2 session of an origin runs in
-// a worker thread, which does the TLS, the HTTP/2 framing and the stream
-// events. The main thread only posts each request and gets the status and
-// the body back.
 
 import type { Worker } from "node:worker_threads";
 import {
-  ANSWER_TIMEOUT_MS,
   CONNECT_TIMEOUT_MS,
   type DirectInit,
   type DirectOptions,
@@ -17,6 +11,7 @@ import {
   Http1Host,
   IDLE_TIMEOUT_MS,
   requestHeaders,
+  STALL_TIMEOUT_MS,
   splitUrl,
   toResponse,
 } from "./h2.js";
@@ -34,13 +29,12 @@ type FromWorker =
   | { t: "res"; id: number; s: number; b: ArrayBuffer }
   | { t: "err"; id: number; m: string; c?: string; http1?: boolean };
 
-/** What the worker gets in `workerData`. */
 interface WorkerConfig {
   origin: string;
   host: string;
   port: number;
   connectTimeoutMs: number;
-  answerTimeoutMs: number;
+  stallTimeoutMs: number;
   idleTimeoutMs: number;
 }
 
@@ -48,8 +42,7 @@ interface WorkerConfig {
 // next to this module is missing when a bundler packs the SDK, and has the
 // wrong extension when the SDK runs from its TypeScript sources. The worker
 // gets no `execArgv`, so it does not load a loader of the parent, for example
-// tsx, a second time. It follows the session rules of `h2.ts`; a change to
-// one must go to the other.
+// tsx, a second time.
 const WORKER_SOURCE = `
 const { parentPort, workerData } = require("node:worker_threads");
 const http2 = require("node:http2");
@@ -57,7 +50,7 @@ const tls = require("node:tls");
 const net = require("node:net");
 const dns = require("node:dns");
 const { NGHTTP2_CANCEL, NGHTTP2_NO_ERROR, NGHTTP2_REFUSED_STREAM } = http2.constants;
-const { origin, host, port, connectTimeoutMs, answerTimeoutMs, idleTimeoutMs } = workerData;
+const { origin, host, port, connectTimeoutMs, stallTimeoutMs, idleTimeoutMs } = workerData;
 const MAX_RETRIES = 2;
 const post = (message, transfer) => parentPort.postMessage(message, transfer);
 
@@ -143,8 +136,6 @@ function connect() {
   return s;
 }
 
-// The retry counts for a refused stream, as in h2.ts: a closed session means
-// that a GOAWAY refused the stream, and has a budget of its own.
 function retry(s, retries) {
   if (s.closed || s.destroyed) {
     return retries.closed < MAX_RETRIES ? { refused: retries.refused, closed: retries.closed + 1 } : undefined;
@@ -188,8 +179,8 @@ function attempt(id, headers, body, retries) {
       post({ t: "err", id, m: String(cause && cause.message), c: cause && cause.code });
     }
   };
-  stream.setTimeout(answerTimeoutMs, () => {
-    fail(timeoutError(origin + " sent no data for " + answerTimeoutMs + " ms."));
+  stream.setTimeout(stallTimeoutMs, () => {
+    fail(timeoutError(origin + " sent no data for " + stallTimeoutMs + " ms."));
     stream.close(NGHTTP2_CANCEL);
   });
   stream.on("response", (h) => { status = Number(h[":status"]); });
@@ -232,10 +223,8 @@ interface Pending {
 
 interface WorkerEntry {
   worker: Worker;
-  /** The worker's session connected once, so the worker carries the requests. */
   up: boolean;
-  /** The worker stopped, or its host answers only HTTP/1.1. The main thread carries the requests. */
-  dead: boolean;
+  retired: boolean;
   pending: Map<number, Pending>;
 }
 
@@ -243,12 +232,6 @@ export interface WorkerSenderOptions extends Omit<DirectOptions, "cache"> {
   cache?: CachedLookup;
 }
 
-/**
- * The direct path in a worker thread: one worker for each origin, started by
- * `open` or by the first request. Until the worker's session is up, and after
- * the worker stops, `main` carries the requests. A worker that stops does not
- * start again.
- */
 export function createWorkerSender(
   main: DirectSender,
   WorkerClass: typeof Worker,
@@ -257,7 +240,6 @@ export function createWorkerSender(
   const workers = new Map<string, WorkerEntry | undefined>();
   let nextId = 1;
 
-  /** The worker of an origin. A worker that fails to start leaves the origin to `main`. */
   function entryFor(origin: string): WorkerEntry | undefined {
     if (workers.has(origin)) return workers.get(origin);
     try {
@@ -276,16 +258,16 @@ export function createWorkerSender(
       host,
       port: Number(port) || 443,
       connectTimeoutMs: timeouts.connectTimeoutMs ?? CONNECT_TIMEOUT_MS,
-      answerTimeoutMs: timeouts.answerTimeoutMs ?? ANSWER_TIMEOUT_MS,
+      stallTimeoutMs: timeouts.stallTimeoutMs ?? STALL_TIMEOUT_MS,
       idleTimeoutMs: timeouts.idleTimeoutMs ?? IDLE_TIMEOUT_MS,
     };
     const worker = new WorkerClass(WORKER_SOURCE, { eval: true, execArgv: [], workerData: config });
-    const entry: WorkerEntry = { worker, up: false, dead: false, pending: new Map() };
+    const entry: WorkerEntry = { worker, up: false, retired: false, pending: new Map() };
     workers.set(origin, entry);
 
     const die = (error: unknown) => {
-      if (entry.dead && entry.pending.size === 0) return;
-      entry.dead = true;
+      if (entry.retired && entry.pending.size === 0) return;
+      entry.retired = true;
       for (const pending of entry.pending.values()) pending.reject(error);
       entry.pending.clear();
     };
@@ -307,18 +289,14 @@ export function createWorkerSender(
         else pending.reject(Object.assign(new Error(m.m), m.c ? { code: m.c } : {}));
       }
     });
-    // A worker without an "error" listener throws its error in the main thread.
     worker.on("error", die);
     worker.on("exit", (code) =>
       die(new Error(`The HTTP/2 worker of the SDK stopped (exit code ${code}).`)),
     );
-    // An idle worker must not keep the process alive; a request holds it. The
-    // call must come after the "message" listener, because Node refs the
+    // The call must come after the "message" listener, because Node refs the
     // port of the worker again when a "message" listener is added.
     worker.unref();
 
-    // The worker starts in parallel with the lookup. It connects when it gets
-    // the address, or resolves the host itself without one.
     const post = (message: ToWorker) => worker.postMessage(message);
     if (cache) {
       cache.lookup(host, {}, (error, address, family) => {
@@ -374,14 +352,12 @@ export function createWorkerSender(
   }
 
   return {
-    // A host that answers only HTTP/1.1 leaves its requests to `main`, which
-    // then learns the same from its own handshake.
     takes: (url) => main.takes(url),
     send(url, init) {
       if (!url.startsWith("https://")) return undefined;
       const { origin, path } = splitUrl(url);
       const entry = entryFor(origin);
-      if (!entry || entry.dead || !entry.up) return main.send(url, init);
+      if (!entry || entry.retired || !entry.up) return main.send(url, init);
       return viaWorker(entry, path, init);
     },
     open(origin) {

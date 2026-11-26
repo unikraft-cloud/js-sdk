@@ -187,9 +187,6 @@ describe("createTransport", () => {
 
 describe("UnikraftCloud", () => {
   it("does not hold the creates of a burst that goes through fetch", async () => {
-    // The pace takes `setTimeout` when its module loads, so the fake clock
-    // must come before the import. A create that waits for the pace then
-    // never starts, and the test ends on its timeout.
     vi.useFakeTimers({ toFake: ["setTimeout", "performance"] });
     vi.resetModules();
     const { UnikraftCloud: Fresh } = await import("../src/index.js");
@@ -240,8 +237,6 @@ describe("UnikraftCloud", () => {
     }
   });
 
-  // A test that mocks the global fetch (`vi.stubGlobal`, MSW, nock) must see
-  // the requests of a client that sets no `fetch`.
   it("sends a request through the global fetch that is set when the client is made", async () => {
     const globalFetch = vi.fn(async () => Response.json({ status: "success", op_time_us: 1 }));
     vi.stubGlobal("fetch", globalFetch);

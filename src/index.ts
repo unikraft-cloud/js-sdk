@@ -198,8 +198,6 @@ export class UnikraftCloud extends Scope {
     const session = buildSession(config);
     super(session, defaultScope(config));
     this.api = new Api(session.platform, session.controlPlane);
-    // With no metro named, the first request goes to the control plane to
-    // discover the metros, so the client knows of no API host that it uses.
     const named = config.baseUrl ?? config.metro ?? readEnv("UKC_METRO");
     if (named !== undefined) preconnect(session.platform);
   }

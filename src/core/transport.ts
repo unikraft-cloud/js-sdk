@@ -15,38 +15,30 @@ export interface Dispatcher {
   dispatch(...args: never[]): boolean;
 }
 
-/**
- * What carries the requests that the global `fetch` does not carry. At most
- * one part is present: a proxy from the environment turns the direct path off.
- */
-export interface Transport {
-  /**
-   * undici's `fetch` and a dispatcher that reads the proxy variables. The
-   * two come from the SAME undici module. A dispatcher must only be used with
-   * its own version's `fetch`: mixing a standalone-undici dispatcher into
-   * Node's bundled `fetch` fails with `UND_ERR_INVALID_ARG: invalid
-   * onRequestStart method`.
-   */
-  proxy?: { fetch: FetchLike; dispatcher: Dispatcher };
-  /** The direct HTTP/2 path. Present only with `http2Direct`, on Node, and with no proxy. */
-  direct?: DirectSender;
-}
+export type Transport =
+  | {
+      /**
+       * The two come from the SAME undici module. A dispatcher must only be
+       * used with its own version's `fetch`: mixing a standalone-undici
+       * dispatcher into Node's bundled `fetch` fails with
+       * `UND_ERR_INVALID_ARG: invalid onRequestStart method`.
+       */
+      proxy: { fetch: FetchLike; dispatcher: Dispatcher };
+      direct?: undefined;
+    }
+  | { direct: DirectSender; proxy?: undefined };
 
 export interface TransportOptions {
   proxyFromEnv: boolean;
-  /** Send the requests that the SDK reads whole over one `node:http2` session per origin. */
   http2Direct?: boolean;
-  /** Run the session of `http2Direct` in a worker thread. */
   http2Worker?: boolean;
 }
 
 /** The boundaries of {@link createTransport}, which a test can replace. */
 export interface TransportDeps {
-  /** Loads the `undici` module. Defaults to `import("undici")`. */
   importUndici?: () => Promise<unknown>;
   /** Resolves a host on a cache miss. Defaults to `dns.promises.lookup`. */
   resolve?: Resolver;
-  /** The timeouts of the direct HTTP/2 path. Defaults to the values in `h2.ts`. */
   direct?: Omit<DirectOptions, "cache">;
 }
 
@@ -80,7 +72,6 @@ export interface CachedLookup {
   lookup: LookupFunction;
   /** Drops the answers for a host, so that its next connection resolves it again. */
   forget(hostname: string): void;
-  /** True when the cache holds an answer for a host that has not expired. */
   fresh(hostname: string): boolean;
 }
 
@@ -226,9 +217,7 @@ export function cachedLookup(
 
 /**
  * undici's `fetch` with a dispatcher that reads the proxy variables, which the
- * global `fetch` of Node ignores. Returns undefined, with one warning, when
- * undici is not installed or is too old. Never throws, because the global
- * `fetch` carries the requests without the proxy.
+ * global `fetch` of Node ignores.
  */
 async function proxyTransport(importUndici: () => Promise<unknown>): Promise<Transport["proxy"]> {
   let undici: Undici;
@@ -253,12 +242,6 @@ async function proxyTransport(importUndici: () => Promise<unknown>): Promise<Tra
   }
 }
 
-/**
- * Returns undefined when the global `fetch` carries every request: outside
- * Node, and when no proxy variable is set and `http2Direct` is off. Never
- * throws. Callers go through {@link sharedTransport}, which builds it once per
- * process.
- */
 export async function createTransport(
   options: TransportOptions,
   deps: TransportDeps = {},
@@ -270,8 +253,6 @@ export async function createTransport(
   }
   if (!options.http2Direct || isBun()) return undefined;
   try {
-    // The first request connects in the turn in which it starts, so the
-    // lookup of the cache must not wait for the load of `node:dns` then.
     const [modules] = await Promise.all([loadDirectModules(), loadDns()]);
     const direct = { ...deps.direct, cache: cachedLookup(deps.resolve) };
     let sender = createDirectSender(modules, direct);
@@ -289,10 +270,6 @@ export async function createTransport(
 
 const shared = new Map<string, Promise<Transport | undefined>>();
 
-/**
- * Resolve the transport for `options`, built at most once per process, so
- * that every client shares one HTTP/2 session for each API host.
- */
 export function sharedTransport(options: TransportOptions): Promise<Transport | undefined> {
   const key = [
     options.proxyFromEnv,

@@ -1,17 +1,10 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026, Unikraft GmbH.
-//
-// The direct HTTP/2 path of `http2Direct`: one `node:http2` session for each
-// origin carries the requests that the SDK reads whole. It skips the request,
-// response and stream objects of `fetch`, which cost the main thread more CPU
-// than the HTTP/2 framing itself. Proxies, `http:` origins, hosts that answer
-// only HTTP/1.1, and event streams stay on `fetch`.
 
 import type { ClientHttp2Session, ClientHttp2Stream, IncomingHttpHeaders } from "node:http2";
 import type { TLSSocket } from "node:tls";
 import type { CachedLookup } from "./transport.js";
 
-/** A request for the direct path. The body is a string, so a retry can send it again. */
 export interface DirectInit {
   method: string;
   headers: Record<string, string>;
@@ -19,7 +12,6 @@ export interface DirectInit {
   signal?: AbortSignal | null;
 }
 
-/** A response of the direct path, read whole. */
 export interface DirectResponse {
   ok: boolean;
   status: number;
@@ -29,24 +21,11 @@ export interface DirectResponse {
 }
 
 export interface DirectSender {
-  /**
-   * Sends a request over the session of its origin. Returns undefined, and
-   * sends nothing, when the direct path does not take the URL: an `http:`
-   * origin, or a host that answered HTTP/1.1 before. Rejects with
-   * {@link Http1Host} when the host answers HTTP/1.1 now; the request was not
-   * sent, so the caller sends it another way.
-   */
   send(url: string, init: DirectInit): Promise<DirectResponse> | undefined;
-  /** False when `send` returns undefined for the URL. */
   takes(url: string): boolean;
-  /**
-   * Opens the session to an origin before a request needs it. Returns false,
-   * and opens nothing, when the direct path does not take the origin.
-   */
   open(origin: string): boolean;
 }
 
-/** The host of the request answers only HTTP/1.1, so the direct path did not send it. */
 export class Http1Host extends Error {
   constructor(origin: string) {
     super(`${origin} does not answer HTTP/2.`);
@@ -61,66 +40,45 @@ export interface DirectModules {
 }
 
 export interface DirectOptions {
-  /** The DNS cache of the transport. Without it, each connection resolves the host itself. */
   cache?: CachedLookup;
-  /** The time a new session has to finish its TLS handshake. */
   connectTimeoutMs?: number;
-  /** The time a stream may go without a frame from the server, before and after the headers. */
-  answerTimeoutMs?: number;
-  /** The time a session with no open stream stays open. */
+  stallTimeoutMs?: number;
   idleTimeoutMs?: number;
-  /** The time the TCP connect of a session from `open`, with no request yet, may take. */
-  openTimeoutMs?: number;
+  earlyConnectTimeoutMs?: number;
 }
 
-// The same limits as the `fetch` of Node, so the option changes the
-// transport, not how long a request may take.
 export const CONNECT_TIMEOUT_MS = 10_000;
-export const ANSWER_TIMEOUT_MS = 300_000;
+export const STALL_TIMEOUT_MS = 300_000;
 export const IDLE_TIMEOUT_MS = 60_000;
 
 // A TCP connect that waits for an answer keeps the process alive, and an
-// unref of the socket does not change that. So a session that `open` started
-// for a request that may never come gives up its connect after this time,
-// and a process that has no other work ends then. A request that comes
-// earlier gets the full connect timeout. The first request after the limit
-// opens a new session.
-export const OPEN_TIMEOUT_MS = 1_000;
+// unref of the socket does not change that.
+export const EARLY_CONNECT_TIMEOUT_MS = 1_000;
 
 // A refused stream is one that the server did not process, so a retry is safe
-// for every method. A request gets two retries for refusals on an open
-// session, which a server under load sends, and two more for a session that
-// closes under it, for example on a GOAWAY when the server reloads. So a
-// GOAWAY in a burst does not use up the retries of a request that the server
-// also refuses.
+// for every method.
 const MAX_RETRIES = 2;
+
+const SWEEPS_PER_TIMEOUT = 10;
 
 interface Entry {
   session: ClientHttp2Session;
-  /** Streams that have not settled. The session holds the process open only while this is above 0. */
   inFlight: number;
-  /** The sweep at which `inFlight` became 0. */
   idleSince: number;
 }
 
-/** A stream that has not settled, for the sweep of the answer timeout. */
 interface Waiting {
-  /** The sweep at which the stream last got a frame. */
   seen: number;
   expire: () => void;
 }
 
-/** The origin and the path of a URL that the SDK built from a base URL and a path. */
 export function splitUrl(url: string): { origin: string; path: string } {
-  // The base URL is a plain origin with an optional path, so the first slash
-  // after the scheme starts the path. This saves a `URL` object per request.
   const slash = url.indexOf("/", url.indexOf("//") + 2);
   return slash === -1
     ? { origin: url, path: "/" }
     : { origin: url.slice(0, slash), path: url.slice(slash) };
 }
 
-/** The headers of an HTTP/2 request: the pseudo-headers, and every name in lower case. */
 export function requestHeaders(path: string, init: DirectInit): Record<string, string> {
   const headers: Record<string, string> = { ":method": init.method, ":path": path };
   for (const name in init.headers) headers[name.toLowerCase()] = init.headers[name] as string;
@@ -161,32 +119,25 @@ export function createDirectSender(
   {
     cache,
     connectTimeoutMs = CONNECT_TIMEOUT_MS,
-    answerTimeoutMs = ANSWER_TIMEOUT_MS,
+    stallTimeoutMs = STALL_TIMEOUT_MS,
     idleTimeoutMs = IDLE_TIMEOUT_MS,
-    openTimeoutMs = OPEN_TIMEOUT_MS,
+    earlyConnectTimeoutMs = EARLY_CONNECT_TIMEOUT_MS,
   }: DirectOptions = {},
 ): DirectSender {
   const { NGHTTP2_CANCEL, NGHTTP2_NO_ERROR, NGHTTP2_REFUSED_STREAM } = http2.constants;
   const sessions = new Map<string, Entry>();
   const http1Origins = new Set<string>();
-  // The latest TLS session of each origin, so that a new connection resumes
-  // it and skips the full handshake.
   const tlsSessions = new Map<string, Buffer>();
 
-  // One coarse timer checks the answer timeout of every stream and the idle
-  // time of every session. A timer for each stream, or a session timer that
-  // Node moves at each frame, costs the main thread more in a burst than the
-  // HTTP/2 framing of the requests. A timeout fires up to one tenth of its
-  // value late.
-  const period = Math.max(5, Math.min(answerTimeoutMs, idleTimeoutMs) / 10);
-  const answerSweeps = Math.ceil(answerTimeoutMs / period);
-  const idleSweeps = Math.ceil(idleTimeoutMs / period);
+  const sweepMs = Math.max(5, Math.min(stallTimeoutMs, idleTimeoutMs) / SWEEPS_PER_TIMEOUT);
+  const stallSweeps = Math.ceil(stallTimeoutMs / sweepMs);
+  const idleSweeps = Math.ceil(idleTimeoutMs / sweepMs);
   const waiting = new Set<Waiting>();
   let sweeps = 0;
   let sweeper: ReturnType<typeof setInterval> | undefined;
   function sweep() {
     sweeps++;
-    for (const w of waiting) if (sweeps - w.seen >= answerSweeps) w.expire();
+    for (const w of waiting) if (sweeps - w.seen >= stallSweeps) w.expire();
     for (const entry of sessions.values()) {
       if (entry.inFlight === 0 && sweeps - entry.idleSince >= idleSweeps) entry.session.close();
     }
@@ -197,7 +148,7 @@ export function createDirectSender(
   }
   function startSweeper() {
     if (sweeper) return;
-    sweeper = setInterval(sweep, period);
+    sweeper = setInterval(sweep, sweepMs);
     sweeper.unref();
   }
 
@@ -217,15 +168,10 @@ export function createDirectSender(
           port: Number(port) || 443,
           ALPNProtocols: ["h2", "http/1.1"],
           ...(net.isIP(host) === 0 && { servername: host }),
-          // The `LookupFunction` of this SDK types the callback for both
-          // answer forms, which the overloads of `net.LookupFunction` cannot
-          // express.
           ...(cache && { lookup: cache.lookup as import("node:net").LookupFunction }),
           ...(tlsSessions.has(origin) && { session: tlsSessions.get(origin) }),
         });
         socket.on("session", (ticket: Buffer) => tlsSessions.set(origin, ticket));
-        // The socket reports its error before the session fails its streams,
-        // so the next request already sees the result of this.
         socket.once("error", (error) => {
           if (!connected) failedConnect(error);
         });
@@ -238,12 +184,9 @@ export function createDirectSender(
     };
     function failedConnect(error: unknown) {
       drop();
-      // The alert of a server that offers no protocol that the client asked for.
       if ((error as { code?: unknown })?.code === "ERR_SSL_TLSV1_ALERT_NO_APPLICATION_PROTOCOL") {
         http1Origins.add(origin);
       } else {
-        // The host can move to a new address. A failed connection is the
-        // first sign of that, so the next connection resolves the host again.
         cache?.forget(host);
       }
     }
@@ -261,15 +204,17 @@ export function createDirectSender(
     );
     timer.unref();
     if (early) {
-      const openTimer = setTimeout(() => {
+      const earlyTimer = setTimeout(() => {
         if (socket?.connecting && entry.inFlight === 0) {
           giveUp(
-            timeoutError(`The early connection to ${origin} did not open in ${openTimeoutMs} ms.`),
+            timeoutError(
+              `The early connection to ${origin} did not open in ${earlyConnectTimeoutMs} ms.`,
+            ),
           );
         }
-      }, openTimeoutMs);
-      openTimer.unref();
-      session.once("close", () => clearTimeout(openTimer));
+      }, earlyConnectTimeoutMs);
+      earlyTimer.unref();
+      session.once("close", () => clearTimeout(earlyTimer));
     }
 
     // The check must wait for this event. A socket that the SDK destroys in
@@ -280,13 +225,9 @@ export function createDirectSender(
       connected = true;
       if (session.alpnProtocol !== "h2") {
         http1Origins.add(origin);
-        // The streams that wait for the session fail with a cancel and were
-        // not sent, so the caller sends them again through `fetch`.
         session.destroy();
       }
     });
-    // A session without an "error" listener throws its error as an uncaught
-    // exception, which an idle session must never do.
     session.on("error", () => {
       clearTimeout(timer);
       drop();
@@ -297,8 +238,6 @@ export function createDirectSender(
     });
     session.on("goaway", drop);
     startSweeper();
-    // An idle session, and a session that still connects, must not keep the
-    // process alive.
     session.unref();
     sessions.set(origin, entry);
     return entry;
@@ -310,7 +249,6 @@ export function createDirectSender(
     return connect(origin, early);
   }
 
-  /** The retry counts for a refused stream, or undefined when the request has used its retries. */
   function retry(
     entry: Entry,
     { refused, closed }: { refused: number; closed: number },
@@ -336,9 +274,6 @@ export function createDirectSender(
         return;
       }
       const entry = sessionFor(origin);
-      // A request made before the TLS handshake ends waits inside the
-      // session. Node sends it at once after the handshake, and does not
-      // wait for the SETTINGS frame of the server.
       const stream: ClientHttp2Stream = entry.session.request(headers, {
         endStream: init.body === undefined,
       });
@@ -351,7 +286,7 @@ export function createDirectSender(
       const wait: Waiting = {
         seen: sweeps,
         expire: () => {
-          fail(timeoutError(`${origin} sent no data for ${answerTimeoutMs} ms.`));
+          fail(timeoutError(`${origin} sent no data for ${stallTimeoutMs} ms.`));
           stream.close(NGHTTP2_CANCEL);
         },
       };
