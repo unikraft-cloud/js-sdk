@@ -149,6 +149,21 @@ async function directTransport(deps: TransportDeps = {}): Promise<Transport> {
   return transport;
 }
 
+type Requests = { request(args: { method: "GET"; path: string }): Promise<unknown> };
+
+async function workerCarriesRequests(server: Awaited<ReturnType<typeof listenH2>>, api: Requests) {
+  // The worker opens its session when the client is made. A request before
+  // that opens a session of the main thread first, so no request goes out
+  // until the server has one session, which is then session 0.
+  await vi.waitFor(() => expect(server.sessions).toHaveLength(1));
+  // Until the main thread learns that the worker is up, a request still
+  // opens a session of the main thread.
+  await vi.waitFor(async () => {
+    await api.request({ method: "GET", path: "/" });
+    expect(server.seen.at(-1)?.session).toBe(0);
+  });
+}
+
 function sendDirect(transport: Transport, url: string, signal?: AbortSignal) {
   const sent = transport.direct?.send(url, { method: "GET", headers: {}, signal });
   if (!sent) throw new Error(`the direct path did not take ${url}`);
@@ -452,6 +467,35 @@ describe("http2Direct", () => {
     }
   });
 
+  it.each([
+    { thread: "the main thread", worker: false },
+    { thread: "the worker", worker: true },
+  ])(
+    "fails a request on $thread when the connection closes in the middle of the answer",
+    async ({ worker }) => {
+      const server = await listenH2((stream, headers, index) => {
+        if (headers[":path"] !== "/cut") return ok(stream, headers, index);
+        stream.respond({ ":status": 200, "content-type": "application/octet-stream" });
+        stream.write("part", () => stream.session?.destroy());
+      });
+      const api = new UnikraftCloud({
+        token: "t",
+        baseUrl: `https://127.0.0.1:${server.port}`,
+        http2Direct: true,
+        http2Worker: worker,
+      }).api.platform.instances;
+
+      try {
+        if (worker) await workerCarriesRequests(server, api);
+        await expect(api.bytes({ method: "GET", path: "/cut" })).rejects.toMatchObject({
+          kind: "network",
+        });
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
   it("rejects with the reason of an aborted signal and resets the stream", async () => {
     let reset: Promise<number> | undefined;
     const server = await listenH2((stream) => {
@@ -599,17 +643,7 @@ describe("http2Worker", () => {
     }).api.platform.instances;
 
     try {
-      // The test needs the session of the worker to be session 0, and the
-      // worker opens it when the client is made. A request before that opens
-      // a session of the main thread first, so no request goes out until the
-      // server has one session.
-      await vi.waitFor(() => expect(server.sessions).toHaveLength(1));
-      // Until the main thread learns that the worker is up, a request still
-      // opens a session of the main thread.
-      await vi.waitFor(async () => {
-        await api.request({ method: "GET", path: "/" });
-        expect(server.seen.at(-1)?.session).toBe(0);
-      });
+      await workerCarriesRequests(server, api);
       const before = server.sessions.length;
       await Promise.all(
         Array.from({ length: 50 }, (_, k) =>

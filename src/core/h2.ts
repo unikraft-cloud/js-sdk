@@ -166,7 +166,7 @@ export function createDirectSender(
     openTimeoutMs = OPEN_TIMEOUT_MS,
   }: DirectOptions = {},
 ): DirectSender {
-  const { NGHTTP2_CANCEL, NGHTTP2_REFUSED_STREAM } = http2.constants;
+  const { NGHTTP2_CANCEL, NGHTTP2_NO_ERROR, NGHTTP2_REFUSED_STREAM } = http2.constants;
   const sessions = new Map<string, Entry>();
   const http1Origins = new Set<string>();
   // The latest TLS session of each origin, so that a new connection resumes
@@ -336,21 +336,12 @@ export function createDirectSender(
         return;
       }
       const entry = sessionFor(origin);
-      let stream: ClientHttp2Stream;
-      try {
-        // A request made before the TLS handshake ends waits inside the
-        // session. Node sends it at once after the handshake, and does not
-        // wait for the SETTINGS frame of the server.
-        stream = entry.session.request(headers, { endStream: init.body === undefined });
-      } catch (error) {
-        // The session closed between the check and the request, for example
-        // on a GOAWAY that came in the same turn. Nothing was sent.
-        if (sessions.get(origin) === entry) sessions.delete(origin);
-        if (retries.closed < MAX_RETRIES) {
-          resolve(attempt(origin, headers, init, { ...retries, closed: retries.closed + 1 }));
-        } else reject(error);
-        return;
-      }
+      // A request made before the TLS handshake ends waits inside the
+      // session. Node sends it at once after the handshake, and does not
+      // wait for the SETTINGS frame of the server.
+      const stream: ClientHttp2Stream = entry.session.request(headers, {
+        endStream: init.body === undefined,
+      });
       if (entry.inFlight++ === 0) entry.session.ref();
       const chunks: Buffer[] = [];
       let length = 0;
@@ -405,8 +396,11 @@ export function createDirectSender(
         wait.seen = sweeps;
       });
       stream.on("end", () => {
-        if (status === 0) {
-          fail(new Error(`${origin} ended the stream before it sent a status.`));
+        // Node ends a stream with no error when its connection closes, or
+        // when the server cancels it. Only the reset code tells such an end
+        // from the end of a whole answer.
+        if (status === 0 || stream.rstCode !== NGHTTP2_NO_ERROR) {
+          fail(new Error(`${origin} closed the stream before its end (code ${stream.rstCode}).`));
           return;
         }
         if (!settle()) return;
@@ -418,14 +412,6 @@ export function createDirectSender(
         );
       });
       stream.on("error", fail);
-      // A reset with no error code ends the stream without "end" or "error".
-      // "close" also comes after a normal end, so the error is made only for a
-      // stream that has not settled: an error captures a stack trace.
-      stream.on("close", () => {
-        if (!settled) {
-          fail(new Error(`${origin} closed the stream before its end (code ${stream.rstCode}).`));
-        }
-      });
       if (init.body !== undefined) stream.end(init.body);
     });
   }

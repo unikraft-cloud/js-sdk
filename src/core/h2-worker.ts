@@ -56,7 +56,7 @@ const http2 = require("node:http2");
 const tls = require("node:tls");
 const net = require("node:net");
 const dns = require("node:dns");
-const { NGHTTP2_CANCEL, NGHTTP2_REFUSED_STREAM } = http2.constants;
+const { NGHTTP2_CANCEL, NGHTTP2_NO_ERROR, NGHTTP2_REFUSED_STREAM } = http2.constants;
 const { origin, host, port, connectTimeoutMs, answerTimeoutMs, idleTimeoutMs } = workerData;
 const MAX_RETRIES = 2;
 const post = (message, transfer) => parentPort.postMessage(message, transfer);
@@ -162,9 +162,7 @@ function attempt(id, headers, body, retries) {
   try {
     stream = s.request(headers, { endStream: body === undefined });
   } catch (error) {
-    if (session === s) session = undefined;
-    if (retries.closed < MAX_RETRIES) attempt(id, headers, body, { refused: retries.refused, closed: retries.closed + 1 });
-    else post({ t: "err", id, m: String(error.message), c: error.code });
+    post({ t: "err", id, m: String(error.message), c: error.code });
     return;
   }
   inFlight++;
@@ -197,7 +195,9 @@ function attempt(id, headers, body, retries) {
   stream.on("response", (h) => { status = Number(h[":status"]); });
   stream.on("data", (chunk) => { chunks.push(chunk); length += chunk.length; });
   stream.on("end", () => {
-    if (status === 0) return fail(new Error(origin + " ended the stream before it sent a status."));
+    if (status === 0 || stream.rstCode !== NGHTTP2_NO_ERROR) {
+      return fail(new Error(origin + " closed the stream before its end (code " + stream.rstCode + ")."));
+    }
     if (!settle()) return;
     // The chunks can be views of a shared pool, so they go into one buffer of
     // their own, which the post then transfers without a copy.
@@ -208,9 +208,6 @@ function attempt(id, headers, body, retries) {
     post({ t: "res", id, s: status, b: out }, [out]);
   });
   stream.on("error", fail);
-  stream.on("close", () => {
-    if (!settled) fail(new Error(origin + " closed the stream before its end (code " + stream.rstCode + ")."));
-  });
   if (body !== undefined) stream.end(body);
 }
 
