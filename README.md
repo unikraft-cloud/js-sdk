@@ -457,83 +457,30 @@ const ukc = new UnikraftCloud({ token, fetch: myFetch });
 
 A custom `fetch` turns off `http2Direct` and the proxy from the environment.
 
-### The direct HTTP/2 path
+### HTTP/2 on Node.js
 
-With `http2Direct: true` on Node.js, the SDK sends the requests that it reads
-whole through the `node:http2` client of Node.js, not through `fetch`. Each API
-host gets one HTTP/2 session, and each request is one stream on it. A burst of
-parallel requests then shares one connection, and costs the main thread less
-CPU, because the SDK makes no `Request`, `Response` or stream objects for each
-request.
+With `http2Direct: true`, the SDK sends its requests over one HTTP/2
+connection for each API host, through `node:http2` and not through `fetch`. A
+burst of parallel requests then shares one connection, and costs the main
+thread less CPU.
 
 ```ts
 const ukc = new UnikraftCloud({ token, metro: "fra", http2Direct: true });
 ```
 
-The SDK still uses `fetch` for these requests:
+The SDK opens the connection when you make the client. On this connection, at
+most 4 instance creates start in each millisecond.
 
-- Requests to a host that answers only HTTP/1.1. The SDK learns this from the
-  TLS handshake, and sends the request through `fetch`.
-- Requests to a base URL that starts with `http:`.
-- All requests when a proxy variable is set (see below).
-- Event streams.
+The SDK still uses `fetch` for event streams, for a host that answers only
+HTTP/1.1, for an `http:` base URL, when a proxy variable is set, and on Bun.
 
-On the direct path, a connection must open in 10 seconds, and a request fails
-after 300 seconds with no data from the server. If the server refuses a request
-before it processes it, the SDK sends the request again, at most two times. If
-the server closes the session before it processes a request, for example when
-it reloads, the SDK sends the request again on a new session, also at most two
-times. The SDK closes a session that carries no request for 60 seconds.
+A test that replaces `globalThis.fetch` (`vi.stubGlobal`, MSW, nock) does not
+see the requests of this option. In such a test, leave the option off or pass
+your mock as `fetch`.
 
-With the option on, some things differ from `fetch`:
-
-- The `cause` of a network error carries Node.js error codes, for example
-  `ERR_HTTP2_STREAM_ERROR` or `ETIMEDOUT`, and not the `UND_ERR_*` codes of
-  `fetch`.
-- A test that replaces `globalThis.fetch` (`vi.stubGlobal`, MSW, nock) does not
-  see these requests. In such a test, leave the option off or pass your mock as
-  `fetch`.
-- A tool that traces the requests of `fetch` through the diagnostics channels
-  of undici, for example the undici instrumentation of OpenTelemetry, does not
-  see these requests. Node.js publishes them on its `http2.client.stream.*`
-  channels.
-
-The SDK does not use the direct path on Bun.
-
-The SDK opens the session when you make the client, so the first request does
-not wait for the DNS lookup, the TCP connection and the TLS handshake. It does
-this for the metro that the constructor names (`metro`, `baseUrl` or
-`UKC_METRO`), and for each metro of `ukc.metro()`. This never throws: if the
-connection fails, or the server closes it before the first request, the first
-request opens a new one. An open session does not keep the process alive. A TCP
-connect that has no answer does, so the SDK gives up an early session that is
-not up after 1 second and that no request uses yet.
-
-On one connection, a burst of instance creates reaches the platform at one
-moment, and the platform then starts all the instances together. So on the
-direct path at most 4 instance creates start in each millisecond, and the
-others wait in order: a burst of 100 creates leaves over about 25 ms. All the
-clients of the process with the same API host share this pace. Other requests,
-for example a command in a sandbox, do not wait.
-
-### The HTTP/2 session in a worker thread
-
-With `http2Worker: true`, a worker thread runs the HTTP/2 session of each API
-host. The worker does the TLS and the HTTP/2 work of each request, and the main
-thread only posts the request and reads the answer. The option turns
-`http2Direct` on.
-
-```ts
-const ukc = new UnikraftCloud({ token, metro: "fra", http2Worker: true });
-```
-
-This takes more work off the main thread than `http2Direct` alone, for a
-thread and more CPU time in the process. The worker needs some tens of
-milliseconds to start, and it starts when you make the client. Until its
-session is up, the main thread sends the requests over its own session. If the
-worker stops, the requests that it carried fail with a network error, and the
-main thread sends the next requests. An idle worker does not keep the process
-alive.
+With `http2Worker: true`, a worker thread runs that connection, and the main
+thread only posts each request and reads the answer. Use it when the main
+thread is busy during a burst. The option turns `http2Direct` on.
 
 ## Debugging with a proxy (MITM)
 
