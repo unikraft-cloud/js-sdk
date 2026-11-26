@@ -110,7 +110,9 @@ async function listenH2(handler: Handler = ok, onSession?: (session: Http2Sessio
         body,
       });
     });
-    handler(stream, headers, index++);
+    // The Node types give the event the base stream type, but a server
+    // only gets server streams.
+    handler(stream as ServerHttp2Stream, headers, index++);
   });
   server.on("request", (request, response) => {
     if (request.httpVersion === "2.0") return;
@@ -597,8 +599,13 @@ describe("http2Worker", () => {
     }).api.platform.instances;
 
     try {
-      // The worker opens session 0. Until the main thread learns that the
-      // worker is up, a request opens a session of the main thread.
+      // The test needs the session of the worker to be session 0, and the
+      // worker opens it when the client is made. A request before that opens
+      // a session of the main thread first, so no request goes out until the
+      // server has one session.
+      await vi.waitFor(() => expect(server.sessions).toHaveLength(1));
+      // Until the main thread learns that the worker is up, a request still
+      // opens a session of the main thread.
       await vi.waitFor(async () => {
         await api.request({ method: "GET", path: "/" });
         expect(server.seen.at(-1)?.session).toBe(0);
