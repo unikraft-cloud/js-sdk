@@ -142,6 +142,20 @@ Biome. The spec-independent HTTP transport lives in the hand-written
 
 Commit the regenerated `src/api` together with the change that motivated it.
 
+### The source of the HTTP/2 worker
+
+`src/core/h2-worker-source.ts` is generated too. It holds the program of the
+`http2Worker` thread as a string, which a script compiles from
+`src/core/h2-worker-thread.ts` and `src/core/h2.ts`. After a change to one of
+these two files, run:
+
+```sh
+npm run generate:worker
+```
+
+Commit the result together with the change. `npm run lint` fails when the file
+is not up to date.
+
 ## Release channels
 
 There are two channels, mirroring the OpenAPI spec branches:

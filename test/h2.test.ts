@@ -133,9 +133,9 @@ async function listenH2(handler: Handler = ok, onSession?: (session: Http2Sessio
   };
 }
 
-async function directTransport(deps: TransportDeps = {}): Promise<Transport> {
+async function directTransport(deps: TransportDeps = {}, http2Worker = false): Promise<Transport> {
   const transport = await createTransport(
-    { proxyFromEnv: true, http2Direct: true },
+    { proxyFromEnv: true, http2Direct: true, http2Worker },
     { resolve: async () => loopback, ...deps },
   );
   if (!transport?.direct) throw new Error("expected the direct HTTP/2 path");
@@ -473,26 +473,40 @@ describe("http2Direct", () => {
     },
   );
 
-  it("rejects with the reason of an aborted signal and resets the stream", async () => {
-    let reset: Promise<number> | undefined;
-    const server = await listenH2((stream) => {
-      reset = new Promise((resolve) =>
-        (stream as Http2Stream).on("close", () => resolve(stream.rstCode)),
-      );
-    });
-    const transport = await directTransport();
-    const controller = new AbortController();
-    const sent = sendDirect(transport, `https://api.metro.test:${server.port}/`, controller.signal);
+  it.each([
+    { thread: "the main thread", worker: false },
+    { thread: "the worker", worker: true },
+  ])(
+    "rejects on $thread with the reason of an aborted signal and resets the stream",
+    async ({ worker }) => {
+      let reset: Promise<number> | undefined;
+      const server = await listenH2((stream, headers, index) => {
+        if (headers[":path"] !== "/hang") return ok(stream, headers, index);
+        reset = new Promise((resolve) =>
+          (stream as Http2Stream).on("close", () => resolve(stream.rstCode)),
+        );
+      });
+      const transport = await directTransport({}, worker);
+      const origin = `https://api.metro.test:${server.port}`;
+      const controller = new AbortController();
 
-    try {
-      await vi.waitFor(() => expect(reset).toBeDefined());
-      controller.abort(new Error("stop"));
-      await expect(sent).rejects.toThrow("stop");
-      await expect(reset).resolves.toBe(constants.NGHTTP2_CANCEL);
-    } finally {
-      await server.close();
-    }
-  });
+      try {
+        if (worker) {
+          transport.direct?.open(origin);
+          await workerCarriesRequests(server, {
+            request: ({ path }) => sendDirect(transport, origin + path),
+          });
+        }
+        const sent = sendDirect(transport, `${origin}/hang`, controller.signal);
+        await vi.waitFor(() => expect(reset).toBeDefined());
+        controller.abort(new Error("stop"));
+        await expect(sent).rejects.toThrow("stop");
+        await expect(reset).resolves.toBe(constants.NGHTTP2_CANCEL);
+      } finally {
+        await server.close();
+      }
+    },
+  );
 
   it.each([
     { when: "a proxy variable is set", env: { HTTPS_PROXY: "http://127.0.0.1:9" }, bun: false },
