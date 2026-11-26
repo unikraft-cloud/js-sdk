@@ -5,7 +5,7 @@
 // A single UnikraftCloudError is defined here so `instanceof` works across
 // every resource of both the platform and control-plane APIs.
 
-import { Http1Host, splitUrl } from "./h2.js";
+import { splitUrl } from "./h2.js";
 import {
   type Dispatcher,
   sharedTransport,
@@ -478,12 +478,14 @@ export class ApiClient {
       const slot = paceFor(splitUrl(url).origin)();
       if (slot) await slot;
     }
-    const direct = transport?.direct?.send(url, init);
-    if (direct) {
+    if (transport?.direct) {
       try {
-        return { response: await direct, url, released: () => Promise.resolve() };
+        const answer = await transport.direct.send(url, init);
+        if (answer !== "not-sent") {
+          return { response: answer, url, released: () => Promise.resolve() };
+        }
       } catch (cause) {
-        if (!(cause instanceof Http1Host)) throw this.#networkError(url, transport, cause);
+        throw this.#networkError(url, transport, cause);
       }
     }
     return { ...(await this.#fetch(prepared)), released: this.#released };

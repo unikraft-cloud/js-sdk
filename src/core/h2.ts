@@ -21,16 +21,9 @@ export interface DirectResponse {
 }
 
 export interface DirectSender {
-  send(url: string, init: DirectInit): Promise<DirectResponse> | undefined;
+  send(url: string, init: DirectInit): Promise<DirectResponse | "not-sent">;
   takes(url: string): boolean;
   open(origin: string): boolean;
-}
-
-export class Http1Host extends Error {
-  constructor(origin: string) {
-    super(`${origin} does not answer HTTP/2.`);
-    this.name = "Http1Host";
-  }
 }
 
 export interface DirectModules {
@@ -266,8 +259,8 @@ export function createDirectSender(
     headers: Record<string, string>,
     init: DirectInit,
     retries: { refused: number; closed: number },
-  ): Promise<DirectResponse> {
-    return new Promise<DirectResponse>((resolve, reject) => {
+  ): Promise<DirectResponse | "not-sent"> {
+    return new Promise<DirectResponse | "not-sent">((resolve, reject) => {
       const signal = init.signal ?? undefined;
       if (signal?.aborted) {
         reject(signal.reason);
@@ -306,7 +299,7 @@ export function createDirectSender(
       const fail = (error: unknown) => {
         if (!settle()) return;
         if (signal?.aborted) reject(signal.reason);
-        else if (http1Origins.has(origin)) reject(new Http1Host(origin));
+        else if (http1Origins.has(origin)) resolve("not-sent");
         else {
           const next =
             stream.rstCode === NGHTTP2_REFUSED_STREAM ? retry(entry, retries) : undefined;
@@ -357,7 +350,7 @@ export function createDirectSender(
   return {
     takes,
     send(url, init) {
-      if (!takes(url)) return undefined;
+      if (!takes(url)) return Promise.resolve("not-sent");
       const { origin, path } = splitUrl(url);
       return attempt(origin, requestHeaders(path, init), init, { refused: 0, closed: 0 });
     },

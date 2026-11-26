@@ -8,7 +8,6 @@ import {
   type DirectOptions,
   type DirectResponse,
   type DirectSender,
-  Http1Host,
   IDLE_TIMEOUT_MS,
   requestHeaders,
   STALL_TIMEOUT_MS,
@@ -217,7 +216,7 @@ parentPort.on("message", (m) => {
 `;
 
 interface Pending {
-  resolve: (response: DirectResponse) => void;
+  resolve: (response: DirectResponse | "not-sent") => void;
   reject: (error: unknown) => void;
 }
 
@@ -265,17 +264,18 @@ export function createWorkerSender(
     const entry: WorkerEntry = { worker, up: false, retired: false, pending: new Map() };
     workers.set(origin, entry);
 
-    const die = (error: unknown) => {
+    const retire = (settle: (pending: Pending) => void) => {
       if (entry.retired && entry.pending.size === 0) return;
       entry.retired = true;
-      for (const pending of entry.pending.values()) pending.reject(error);
+      for (const pending of entry.pending.values()) settle(pending);
       entry.pending.clear();
     };
+    const die = (error: unknown) => retire((pending) => pending.reject(error));
     worker.on("message", (m: FromWorker) => {
       if (m.t === "up") {
         entry.up = true;
       } else if (m.t === "http1") {
-        die(new Http1Host(origin));
+        retire((pending) => pending.resolve("not-sent"));
         worker.terminate().catch(() => {});
       } else if (m.t === "forget") {
         cache?.forget(host);
@@ -285,7 +285,7 @@ export function createWorkerSender(
         entry.pending.delete(m.id);
         if (entry.pending.size === 0) worker.unref();
         if (m.t === "res") pending.resolve(toResponse(m.s, Buffer.from(m.b)));
-        else if (m.http1) pending.reject(new Http1Host(origin));
+        else if (m.http1) pending.resolve("not-sent");
         else pending.reject(Object.assign(new Error(m.m), m.c ? { code: m.c } : {}));
       }
     });
@@ -310,8 +310,12 @@ export function createWorkerSender(
     return entry;
   }
 
-  function viaWorker(entry: WorkerEntry, path: string, init: DirectInit): Promise<DirectResponse> {
-    return new Promise<DirectResponse>((resolve, reject) => {
+  function viaWorker(
+    entry: WorkerEntry,
+    path: string,
+    init: DirectInit,
+  ): Promise<DirectResponse | "not-sent"> {
+    return new Promise<DirectResponse | "not-sent">((resolve, reject) => {
       const signal = init.signal ?? undefined;
       if (signal?.aborted) {
         reject(signal.reason);
@@ -354,7 +358,7 @@ export function createWorkerSender(
   return {
     takes: (url) => main.takes(url),
     send(url, init) {
-      if (!url.startsWith("https://")) return undefined;
+      if (!url.startsWith("https://")) return Promise.resolve("not-sent");
       const { origin, path } = splitUrl(url);
       const entry = entryFor(origin);
       if (!entry || entry.retired || !entry.up) return main.send(url, init);

@@ -152,10 +152,10 @@ async function workerCarriesRequests(server: Awaited<ReturnType<typeof listenH2>
   });
 }
 
-function sendDirect(transport: Transport, url: string, signal?: AbortSignal) {
-  const sent = transport.direct?.send(url, { method: "GET", headers: {}, signal });
-  if (!sent) throw new Error(`the direct path did not take ${url}`);
-  return sent;
+async function sendDirect(transport: Transport, url: string, signal?: AbortSignal) {
+  const answer = await transport.direct?.send(url, { method: "GET", headers: {}, signal });
+  if (!answer || answer === "not-sent") throw new Error(`the direct path did not send ${url}`);
+  return answer;
 }
 
 async function listenSilent() {
